@@ -6,3 +6,12 @@ package are Rigorous Coupled Wave Analysis (RCWA) and Rigorous Diffraction
 Interface Theory (R-DIT). The solver is developed on an automatic differentiable
 framework (PyTorch) and is fully differentiable for more advanced applications.
 
+## Dependencies
+
+- pytorch
+- torchvision
+- numpy
+- tensorboard
+- matplotlib
+- tqdm
+
