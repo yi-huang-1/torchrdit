@@ -32,11 +32,17 @@ class cell3d():
 
         self.device = device
 
+        # # Define floating points
+        # self.tcomplex = torch.complex128
+        # self.tfloat = torch.float64
+        # self.tint = torch.int64
+        # self.nfloat = np.float64
+
         # Define floating points
-        self.tcomplex = torch.complex128
-        self.tfloat = torch.float64
-        self.tint = torch.int64
-        self.nfloat = np.float64
+        self.tcomplex = torch.complex64
+        self.tfloat = torch.float32
+        self.tint = torch.int32
+        self.nfloat = np.float32
 
         # Create a logger
         self.solver_logger = Logger()

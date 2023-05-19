@@ -366,7 +366,7 @@ def redhstar(SA: dict, SB: dict, tcomplex: torch.dtype = torch.complex64) -> dic
 
     return SS
 
-def _create_blur_kernel(radius: int, device: torch.device = torch.device('cpu'), tfloat: torch.dtype = torch.float64):
+def _create_blur_kernel(radius: int, device: torch.device = torch.device('cpu'), tfloat: torch.dtype = torch.float32):
     """_create_blur_kernel.
     Helper function used below for creating the conv kernel.
     Args:
@@ -385,7 +385,7 @@ def operator_blur(rho: torch.Tensor,
                   radius: int = 2,
                   num_blur: int = 1,
                   device: torch.device = torch.device('cpu'),
-                  tfloat: torch.dtype = torch.float64) -> torch.Tensor:
+                  tfloat: torch.dtype = torch.float32) -> torch.Tensor:
     """operator_blur.
     Blur operator implemented via two-dimensional convolution
     Args:
@@ -442,7 +442,7 @@ def blur_filter(rho: torch.Tensor,
                 eta: float = 0.5,
                 num_proj: int = 1, 
                 device: torch.device = torch.device('cpu'),
-                tfloat: torch.dtype = torch.float64):
+                tfloat: torch.dtype = torch.float32):
     """blur_filter.
     This function makes the blur filtering and projections.
 

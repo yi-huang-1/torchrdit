@@ -120,6 +120,11 @@ class FourierBaseSover(cell3d):
                                                         * self.T2[:, 1].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)) / self.k0.unsqueeze(0).unsqueeze(-1).unsqueeze(-2) + 0*1j
 
 
+        # Add small perturbations to make sure matrices are inversable
+        Kx0 = Kx0 + 1.0e-13
+        Ky0 = Ky0 + 1.0e-13
+
+
         if self.layer_manager.is_ref_dispersive == False:
             Kzref0 = torch.conj(torch.sqrt(
                 torch.conj(self.ur1)*torch.conj(self.er1) - Kx0 ** 2 - Ky0 ** 2 + 0*1j))
@@ -133,6 +138,7 @@ class FourierBaseSover(cell3d):
         else:
             Kztrn0 = torch.conj(torch.sqrt(
                 (torch.conj(self.ur2)*torch.conj(self.er2)).unsqueeze(-1).unsqueeze(-2) - Kx0 ** 2 - Ky0 ** 2 + 0*1j))
+
 
         # Transform to diagnal matrices
         kHW = self.kdim[0] * self.kdim[1]
@@ -158,8 +164,11 @@ class FourierBaseSover(cell3d):
 
         Q = blockmat2x2([[Kx @ Ky, I - Kx @ Kx], [Ky @ Ky - I, -Kx @ Ky]])
         W0 = blockmat2x2([[I, Z], [Z, I]])
+
         LAM = blockmat2x2([[1j*Kz, Z], [Z, 1j*Kz]])
+
         V0 = Q @ tinv(LAM)
+
 
         # Initialize global scattering matrix
         Sg = init_smatrix(shape=(self.n_batches, self.n_freqs,
@@ -270,6 +279,8 @@ class FourierBaseSover(cell3d):
                                             - Ky @ Kx]])
         Wref = blockmat2x2([[I, Z], [Z, I]])
         LAMref = blockmat2x2([[1j * Kzref, Z], [Z, 1j*Kzref]])
+
+
         Vref = Q1 @ tinv(LAMref)
 
         S1 = dict()
@@ -445,7 +456,7 @@ class FourierBaseSover(cell3d):
 
         # Calculate wave vector expansion
         self.tlam0 = torch.tensor(
-            self.lam0, dtype=torch.float64, device=self.device)
+            self.lam0, dtype=self.tfloat, device=self.device)
         self.k0 = 2 * torch.pi / self.tlam0  # k0 with dimensions: n_freqs
 
         fp = torch.arange(start=-np.floor(self.kdim[0] / 2), end=np.floor(
