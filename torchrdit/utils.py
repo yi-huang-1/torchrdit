@@ -217,43 +217,38 @@ def gen_toeplitz2d_dispersive(A: torch.Tensor,
     device = A.device
 
     # Computes indices of spatial harmonics
-    P = np.int32(P)
-    Q = np.int32(Q)
+    P = int(P)
+    Q = int(Q)
 
     kHW = P * Q
-    p = torch.arange(start=-np.floor(P / 2),
-                     end=np.floor(P / 2) + 1, dtype=tint)
-    q = torch.arange(start=-np.floor(Q / 2),
-                     end=np.floor(Q / 2) + 1, dtype=tint)
 
-    # construct the convolution matrix
-    C = torch.zeros(size=(n_batches, n_freqs, kHW, kHW),
-                    dtype=tcomplex, device=device)
+    # # construct the convolution matrix
+    # C = torch.zeros(size=(n_batches, n_freqs, kHW, kHW),
+    #                 dtype=tcomplex, device=device)
 
     # compute fourier coefficents of A for only the last two dimensions
     fA = fftshift(
         fftshift(fft2(A[:, :, :, :]), dim=-1), dim=-2) / (nH * nW)
 
     # compute zero-order harmonic
-    p0 = np.int32(np.floor(nH / 2))
-    q0 = np.int32(np.floor(nW / 2))
+    p0 = torch.floor(torch.tensor(nH / 2)).to(torch.int64)
+    q0 = torch.floor(torch.tensor(nW / 2)).to(torch.int64)
 
-    for qrow in range(Q):
-        for prow in range(P):
-            row = qrow * P + prow
+    rows = torch.arange(kHW, dtype = tint, device = device)
+    cols = torch.arange(kHW, dtype = tint, device = device)
 
-            for qcol in range(Q):
-                for pcol in range(P):
-                    col = qcol * P + pcol
+    rows, cols = torch.meshgrid(rows, cols, indexing = "ij")
 
-                    pf = p[prow] - p[pcol]
-                    qf = q[qrow] - q[qcol]
+    ms = torch.div(rows, Q, rounding_mode = 'floor').to(torch.int64)
+    prow_t = rows - ms * Q
+    js = torch.div(cols, Q, rounding_mode = 'floor').to(torch.int64)
+    pcol_t = cols - js * Q
+    qf_t = ms - js
+    pf_t = prow_t - pcol_t
 
-                    # negative sign convention
-                    C[:, :, row, col] = fA[:, :, p0 - pf, q0 - qf]
+    C = fA[:, :, p0 - pf_t, q0 - qf_t].to(tcomplex)
 
     return C
-
 
 def gen_toeplitz2d_normal(A: torch.Tensor,
                      P: int = 1,
@@ -276,39 +271,36 @@ def gen_toeplitz2d_normal(A: torch.Tensor,
     device = A.device
 
     # Computes indices of spatial harmonics
-    P = np.int32(P)
-    Q = np.int32(Q)
+    P = int(P)
+    Q = int(Q)
 
     kHW = P * Q
-    p = torch.arange(start=-np.floor(P / 2),
-                     end=np.floor(P / 2) + 1, dtype=tint)
-    q = torch.arange(start=-np.floor(Q / 2),
-                     end=np.floor(Q / 2) + 1, dtype=tint)
 
     # compute fourier coefficents of A for only the last two dimensions
     fA = fftshift(fftshift(fft2(A), dim=-1), dim=-2) / (nH * nW)
 
     # compute zero-order harmonic
-    p0 = np.int32(np.floor(nH / 2))
-    q0 = np.int32(np.floor(nW / 2))
+    p0 = torch.floor(torch.tensor(nH / 2)).to(torch.int64)
+    q0 = torch.floor(torch.tensor(nW / 2)).to(torch.int64)
 
-    # construct the convolution matrix
-    C = torch.zeros(size=(n_batches, kHW, kHW),
-                    dtype=tcomplex, device=device)
+    # # construct the convolution matrix
+    # C = torch.zeros(size=(n_batches, kHW, kHW),
+    #                 dtype=tcomplex, device=device)
 
-    for qrow in range(Q):
-        for prow in range(P):
-            row = qrow * P + prow
+    rows = torch.arange(kHW, dtype = tint, device = device)
+    cols = torch.arange(kHW, dtype = tint, device = device)
 
-            for qcol in range(Q):
-                for pcol in range(P):
-                    col = qcol * P + pcol
+    rows, cols = torch.meshgrid(rows, cols, indexing = "ij")
 
-                    pf = p[prow] - p[pcol]
-                    qf = q[qrow] - q[qcol]
+    ms = torch.div(rows, Q, rounding_mode = 'floor').to(torch.int64)
+    prow_t = rows - ms * Q
+    js = torch.div(cols, Q, rounding_mode = 'floor').to(torch.int64)
+    pcol_t = cols - js * Q
+    qf_t = ms - js
+    pf_t = prow_t - pcol_t
 
-                    # negative sign convention
-                    C[:, row, col] = fA[:, p0 - pf, q0 - qf]
+    C = fA[:, p0 - pf_t, q0 - qf_t].to(tcomplex)
+
 
     return C
 
