@@ -1,14 +1,13 @@
-import numpy as np
+""" This file defines some helper function. """
+from typing import Callable, Optional, Union, Any, Tuple
+from functools import partial, wraps
+
 import torch
 import skimage.draw as skdraw
 
 from torch.linalg import inv as tinv
 from torch.fft import fft2, fftshift
-from .materials import materials
-from typing import Optional, Tuple, Union
-
-from typing import Callable, Optional, Union, Any
-from functools import partial, wraps
+from .materials import MaterialClass
 
 # Function Type
 FuncType = Callable[..., Any]
@@ -25,10 +24,8 @@ def tensor_params_check(func: Optional[FuncType] = None, check_start_index: int 
         FuncType:
     """
 
-    assert(isinstance(check_start_index, int))
     if func is None:
-        if check_stop_index < check_start_index:
-            check_stop_index = check_start_index
+        check_stop_index = max(check_stop_index, check_start_index)
         return partial(tensor_params_check, check_start_index=check_start_index, check_stop_index=check_stop_index)
 
     @wraps(func)
@@ -37,78 +34,81 @@ def tensor_params_check(func: Optional[FuncType] = None, check_start_index: int 
         n_checked = 1 # ignore the first parameter [self]
         # Type Check
         # Positional parameters
-        for i ,x in enumerate(args):
-            if i > 0:
-                if (n_checked >= check_start_index and n_checked <= check_stop_index):
-                    if not isinstance(x, torch.Tensor):
-                        errstr = f"Input[{i}]: {x} is not a torch.Tensor type."
+        for index ,val in enumerate(args):
+            if index > 0:
+                if check_start_index <= n_checked <= check_stop_index:
+                    if not isinstance(val, torch.Tensor):
+                        errstr = f"Input[{index}]: {val} is not a torch.Tensor type."
                         raise TypeError(errstr)
                 n_checked += 1
         # Keywords parameters
-        for k, v in kwargs.items():       
-            if (n_checked >= check_start_index and n_checked <= check_stop_index):
-                if not isinstance(v, torch.Tensor):
-                    errstr = f"Input[{k}]: {k}={v} is not a torch.Tensor type."
+        for keys, val in kwargs.items():
+            if check_start_index <= n_checked <= check_stop_index:
+                if not isinstance(val, torch.Tensor):
+                    errstr = f"Input[{keys}]: {keys}={val} is not a torch.Tensor type."
                     raise TypeError(errstr)
             n_checked += 1
-                
+
         # Dimension Check, assert if the parameters match the batch size
         n_checked = 1 # ignore the first parameter [self]
         l_args = list(args)
-        for i ,x in enumerate(l_args):
-            if i > 0:
-                if (n_checked >= check_start_index and n_checked <= check_stop_index):
-                    if x.ndim == 0:
-                        l_args[i] = x.expand(batch_size)
-                    elif x.ndim == 1 and x.shape[0] == 1:
-                        l_args[i] = x.expand(batch_size)
-                    elif x.ndim == 1 and x.shape[0] != batch_size:
-                        errstr = f"The size of the input tensor {list(x.shape)} must match the batch size {[batch_size]} or [1]."
+        for index ,val in enumerate(l_args):
+            if index > 0:
+                if check_start_index <= n_checked <= check_stop_index:
+                    if val.ndim == 0:
+                        l_args[index] = val.expand(batch_size)
+                    elif val.ndim == 1 and val.shape[0] == 1:
+                        l_args[index] = val.expand(batch_size)
+                    elif val.ndim == 1 and val.shape[0] != batch_size:
+                        errstr = f"The size of the input tensor \
+                        {list(val.shape)} must match the batch size {[batch_size]} or [1]."
                         raise RuntimeError(errstr)
-                    elif x.ndim == 2 and x.shape[0] == 1:
-                        l_args[i] = x.expand(batch_size, x.shape[1])
-                    elif x.ndim == 2 and x.shape[0] != batch_size:
-                        errstr = f"The size of the input tensor {list(x.shape)} must match the batch size {[batch_size,]} or [1,]."
+                    elif val.ndim == 2 and val.shape[0] == 1:
+                        l_args[index] = val.expand(batch_size, val.shape[1])
+                    elif val.ndim == 2 and val.shape[0] != batch_size:
+                        errstr = f"The size of the input tensor \
+                        {list(val.shape)} must match the batch size {[batch_size,]} or [1,]."
                         raise RuntimeError(errstr)
-                    elif x.ndim > 2:
+                    elif val.ndim > 2:
                         errstr = f"The input tensor does not match the batch size."
                         raise RuntimeError(errstr)
                 n_checked += 1
 
-        for k, v in kwargs.items():
+        for keys, val in kwargs.items():
             if (n_checked >= check_start_index and n_checked <= check_stop_index):
-                if v.ndim == 0:
-                    kwargs[k] = v.expand(batch_size)
-                elif v.ndim == 1 and v.shape[0] == 1:
-                    kwargs[k] = v.expand(batch_size)
-                elif v.ndim == 1 and v.shape[0] != batch_size:
-                    errstr = f"The size of the input tensor {list(v.shape)} must match the batch size {[batch_size]} or [1]."
+                if val.ndim == 0:
+                    kwargs[keys] = val.expand(batch_size)
+                elif val.ndim == 1 and val.shape[0] == 1:
+                    kwargs[keys] = val.expand(batch_size)
+                elif val.ndim == 1 and val.shape[0] != batch_size:
+                    errstr = f"The size of the input tensor {list(val.shape)} must match the batch size {[batch_size]} or [1]."
                     raise RuntimeError(errstr)
-                elif v.ndim == 2 and v.shape[0] == 1:
-                    kwargs[k] = v.expand(batch_size, v.shape[1])
-                elif v.ndim == 2 and v.shape[0] != batch_size:
-                    errstr = f"The size of the input tensor {list(v.shape)} must match the batch size {[batch_size, ]} or [1, ]."
+                elif val.ndim == 2 and val.shape[0] == 1:
+                    kwargs[keys] = val.expand(batch_size, val.shape[1])
+                elif val.ndim == 2 and val.shape[0] != batch_size:
+                    errstr = f"The size of the input tensor \
+                    {list(val.shape)} must match the batch size {[batch_size, ]} or [1, ]."
                     raise RuntimeError(errstr)
-                elif v.ndim > 2:
-                    errstr = f"The input tensor does not match the batch size."
+                elif val.ndim > 2:
+                    errstr = "The input tensor does not match the batch size."
                     raise RuntimeError(errstr)
             n_checked += 1
-                
+
         return func(*tuple(l_args), **kwargs)
     return tensor_warpper
 
-class eig_complex(torch.autograd.Function):
-    """eig_complex.
+class EigComplex(torch.autograd.Function):
+    """EigComplex.
     This class are used for differentiable eigen-decomposition.
     Reference: https://doi.org/10.1038/s42005-021-00568-6
     """
 
 
     @staticmethod
-    def forward(ctx, A, eps=1E-6):
+    def forward(ctx, input_matrix, eps=1E-6):
         # Perform the eigendecomposition
-        eigenvalues, eigenvectors = torch.linalg.eig(A)
-        shape = torch.tensor(A.shape)
+        eigenvalues, eigenvectors = torch.linalg.eig(input_matrix)
+        shape = torch.tensor(input_matrix.shape)
         eps = torch.tensor(eps)
 
         ctx.save_for_backward(eigenvalues, eigenvectors, shape, eps)
@@ -116,35 +116,35 @@ class eig_complex(torch.autograd.Function):
         return eigenvalues, eigenvectors
 
     @staticmethod
-    def backward(ctx, grad_D, grad_U):
-        # D -> eigenvalues, U -> eigenvectors
-        D, U, shape, eps = ctx.saved_tensors
-        device = D.device
-        tcomplex = D.dtype
+    def backward(ctx, grad_matrix_d, grad_matrix_u):
+        # matrix_d -> eigenvalues, matrix_u -> eigenvectors
+        matrix_d, matrix_u, shape, eps = ctx.saved_tensors
+        device = matrix_d.device
+        tcomplex = matrix_d.dtype
 
         # Convert eigenvalues gradient
-        grad_D = grad_D.unsqueeze(-2) * torch.eye(
-            grad_D.shape[-1], dtype=tcomplex, device=device)
+        grad_matrix_d = grad_matrix_d.unsqueeze(-2) * torch.eye(
+            grad_matrix_d.shape[-1], dtype=tcomplex, device=device)
 
         # Calculate intermediate matrices
-        I = torch.eye(shape[-2], shape[-1],
+        identity_matrix = torch.eye(shape[-2], shape[-1],
                       dtype=tcomplex, device=device)
 
-        D = D.unsqueeze(-1)
+        matrix_d = matrix_d.unsqueeze(-1)
 
-        E = D.adjoint() - D
+        matrix_e = matrix_d.adjoint() - matrix_d
 
         # Lorentzian brodening
-        F = E / (E ** 2 + eps)
-        F = F - I * F
+        matrix_f = matrix_e / (matrix_e ** 2 + eps)
+        matrix_f = matrix_f - identity_matrix * matrix_f
 
-        # Compute the reverse mode gradient of the eigendecomposition of A
-        grad_A = torch.conj(F) * (U.adjoint() @ grad_U)
-        grad_A = grad_D + grad_A
-        grad_A = grad_A @ U.adjoint()
-        grad_A = torch.linalg.solve(U.adjoint(), grad_A)
+        # Compute the reverse mode gradient of the eigendecomposition of input_matrix
+        grad_matrix_a = torch.conj(matrix_f) * (matrix_u.adjoint() @ grad_matrix_u)
+        grad_matrix_a = grad_matrix_d + grad_matrix_a
+        grad_matrix_a = grad_matrix_a @ matrix_u.adjoint()
+        grad_matrix_a = torch.linalg.solve(matrix_u.adjoint(), grad_matrix_a)
 
-        return grad_A, None
+        return grad_matrix_a, None
 
 
 def create_material(
@@ -172,7 +172,7 @@ def create_material(
         data_unit (str): data_unit, unit of the frequency of wavelength
         max_poly_fit_order (int): max_poly_fit_order, max polynomial fitting order
     """
-    return materials(name=name,
+    return MaterialClass(name=name,
                      permittivity=permittivity,
                      permeability=permeability,
                      dielectric_dispersion=dielectric_dispersion,
@@ -196,113 +196,100 @@ def blockmat2x2(mlist: list):
                      -2)
 
 
-def gen_toeplitz2d_dispersive(A: torch.Tensor,
-                         P: int = 1,
-                         Q: int = 1,
-                         tcomplex: torch.dtype = torch.complex64,
-                         tint: torch.dtype = torch.int32) -> torch.Tensor:
+def gen_toeplitz2d_dispersive(input_matrix: torch.Tensor,
+                         nharmonic_1: int = 1,
+                         nharmonic_2: int = 1) -> torch.Tensor:
     """This function constructs Toeplitz matrices from
     a real-space 2D grid.
 
     Args:
-        A (torch.Tensor): Grid in real space: (n_batches, n_freqs, H, W)
-        P (int): Number of harmonics for the T1 direction.
-        Q (int): Number of harmonics for the T2 direction.
+        input_matrix (torch.Tensor): Grid in real space: (n_batches, n_freqs, H, W)
+        nharmonic_1 (int): Number of harmonics for the T1 direction.
+        nharmonic_2 (int): Number of harmonics for the T2 direction.
 
     Returns:
-        C (torch.Tensor): Toeplitz matrix: (n_batches, kHW, kHW)
+        toep_matrix (torch.Tensor): Toeplitz matrix: (n_batches, n_harmonics, n_harmonics)
     """
 
-    n_batches, n_freqs, nH, nW = A.size()
-    device = A.device
+    _, _, n_height, n_width = input_matrix.size()
+    device = input_matrix.device
 
     # Computes indices of spatial harmonics
-    P = int(P)
-    Q = int(Q)
+    nharmonic_1 = int(nharmonic_1)
+    nharmonic_2 = int(nharmonic_2)
 
-    kHW = P * Q
+    n_harmonics = nharmonic_1 * nharmonic_2
 
-    # # construct the convolution matrix
-    # C = torch.zeros(size=(n_batches, n_freqs, kHW, kHW),
-    #                 dtype=tcomplex, device=device)
-
-    # compute fourier coefficents of A for only the last two dimensions
-    fA = fftshift(
-        fftshift(fft2(A[:, :, :, :]), dim=-1), dim=-2) / (nH * nW)
+    # compute fourier coefficents of input_matrix for only the last two dimensions
+    finput_matrix = fftshift(
+        fftshift(fft2(input_matrix[:, :, :, :]), dim=-1), dim=-2) / (n_height * n_width)
 
     # compute zero-order harmonic
-    p0 = torch.floor(torch.tensor(nH / 2)).to(torch.int64)
-    q0 = torch.floor(torch.tensor(nW / 2)).to(torch.int64)
+    p_0 = torch.floor(torch.tensor(n_height / 2)).to(torch.int64)
+    q_0 = torch.floor(torch.tensor(n_width / 2)).to(torch.int64)
 
-    rows = torch.arange(kHW, dtype = tint, device = device)
-    cols = torch.arange(kHW, dtype = tint, device = device)
+    rows = torch.arange(n_harmonics, dtype = torch.int64, device = device)
+    cols = torch.arange(n_harmonics, dtype = torch.int64, device = device)
 
     rows, cols = torch.meshgrid(rows, cols, indexing = "ij")
 
-    ms = torch.div(rows, Q, rounding_mode = 'floor').to(torch.int64)
-    prow_t = rows - ms * Q
-    js = torch.div(cols, Q, rounding_mode = 'floor').to(torch.int64)
-    pcol_t = cols - js * Q
-    qf_t = ms - js
+    row_s = torch.div(rows, nharmonic_2, rounding_mode = 'floor')
+    prow_t = rows - row_s * nharmonic_2
+    col_s = torch.div(cols, nharmonic_2, rounding_mode = 'floor')
+    pcol_t = cols - col_s * nharmonic_2
+    qf_t = row_s - col_s
     pf_t = prow_t - pcol_t
 
-    C = fA[:, :, p0 - pf_t, q0 - qf_t].to(tcomplex)
+    toep_matrix = finput_matrix[:, :, p_0 - pf_t, q_0 - qf_t]
 
-    return C
+    return toep_matrix
 
-def gen_toeplitz2d_normal(A: torch.Tensor,
-                     P: int = 1,
-                     Q: int = 1,
-                     tcomplex: torch.dtype = torch.complex64,
-                     tint: torch.dtype = torch.int32) -> torch.Tensor:
+def gen_toeplitz2d_normal(input_matrix: torch.Tensor,
+                     nharmonic_1: int = 1,
+                     nharmonic_2: int = 1) -> torch.Tensor:
     """This function constructs Toeplitz matrices from
     a real-space 2D grid.
 
     Args:
-        A (torch.Tensor): Grid in real space: (n_batches, H, W)
-        P (int): Number of harmonics for the T1 direction.
-        Q (int): Number of harmonics for the T2 direction.
+        input_matrix (torch.Tensor): Grid in real space: (n_batches, H, W)
+        nharmonic_1 (int): Number of harmonics for the T1 direction.
+        nharmonic_2 (int): Number of harmonics for the T2 direction.
 
     Returns:
-        C (torch.Tensor): Toeplitz matrix: (n_batches, kHW, kHW)
+        toep_matrix (torch.Tensor): Toeplitz matrix: (n_batches, n_harmonics, n_harmonics)
     """
 
-    n_batches, nH, nW = A.size()
-    device = A.device
+    _, n_height, n_width = input_matrix.size()
+    device = input_matrix.device
 
     # Computes indices of spatial harmonics
-    P = int(P)
-    Q = int(Q)
+    nharmonic_1 = int(nharmonic_1)
+    nharmonic_2 = int(nharmonic_2)
 
-    kHW = P * Q
+    n_harmonics = nharmonic_1 * nharmonic_2
 
-    # compute fourier coefficents of A for only the last two dimensions
-    fA = fftshift(fftshift(fft2(A), dim=-1), dim=-2) / (nH * nW)
+    # compute fourier coefficents of input_matrix for only the last two dimensions
+    finput_matrix = fftshift(fftshift(fft2(input_matrix), dim=-1), dim=-2) / (n_height * n_width)
 
     # compute zero-order harmonic
-    p0 = torch.floor(torch.tensor(nH / 2)).to(torch.int64)
-    q0 = torch.floor(torch.tensor(nW / 2)).to(torch.int64)
+    p_0 = torch.floor(torch.tensor(n_height / 2)).to(torch.int64)
+    q_0 = torch.floor(torch.tensor(n_width / 2)).to(torch.int64)
 
-    # # construct the convolution matrix
-    # C = torch.zeros(size=(n_batches, kHW, kHW),
-    #                 dtype=tcomplex, device=device)
-
-    rows = torch.arange(kHW, dtype = tint, device = device)
-    cols = torch.arange(kHW, dtype = tint, device = device)
+    rows = torch.arange(n_harmonics, dtype = torch.int64, device = device)
+    cols = torch.arange(n_harmonics, dtype = torch.int64, device = device)
 
     rows, cols = torch.meshgrid(rows, cols, indexing = "ij")
 
-    ms = torch.div(rows, Q, rounding_mode = 'floor').to(torch.int64)
-    prow_t = rows - ms * Q
-    js = torch.div(cols, Q, rounding_mode = 'floor').to(torch.int64)
-    pcol_t = cols - js * Q
-    qf_t = ms - js
+    row_s = torch.div(rows, nharmonic_2, rounding_mode = 'floor')
+    prow_t = rows - row_s * nharmonic_2
+    col_s = torch.div(cols, nharmonic_2, rounding_mode = 'floor')
+    pcol_t = cols - col_s * nharmonic_2
+    qf_t = row_s - col_s
     pf_t = prow_t - pcol_t
 
-    C = fA[:, p0 - pf_t, q0 - qf_t].to(tcomplex)
+    toep_matrix = finput_matrix[:, p_0 - pf_t, q_0 - qf_t]
 
-
-    return C
+    return toep_matrix
 
 
 def init_smatrix(shape: Tuple, dtype: torch.dtype , device : Union[str, torch.device] ='cpu'):
@@ -314,7 +301,7 @@ def init_smatrix(shape: Tuple, dtype: torch.dtype , device : Union[str, torch.de
         dtype (torch.dtype): dtype
         device (Union[str, torch.device]): device
     """
-    smatrix = dict()
+    smatrix = {}
     smatrix['S11'] = torch.zeros(
         size=shape, dtype=dtype, device=device)
     smatrix['S12'] = torch.eye(shape[-2], shape[-1], dtype=dtype,
@@ -326,37 +313,37 @@ def init_smatrix(shape: Tuple, dtype: torch.dtype , device : Union[str, torch.de
     return smatrix
 
 
-def redhstar(SA: dict, SB: dict, tcomplex: torch.dtype = torch.complex64) -> dict:
+def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64) -> dict:
     """redhstar.
     This fucntion returns the Redheffer star product of two s-matrices.
 
     Args:
-        SA (dict): SA
-        SB (dict): SB
+        smat_a (dict): smat_a
+        smat_b (dict): smat_b
         tcomplex (torch.dtype): tcomplex
 
     Returns:
         dict:
     """
 
-    # Input dimensions (n_batches, n_freqs, kHW, kHW)
+    # Input dimensions (n_batches, n_freqs, n_harmonics, n_harmonics)
     # Construct identity matrix
-    _, _, m, n = SA['S11'].shape
-    device = SA['S11'].device
-    I = torch.eye(m, n, dtype=tcomplex, device=device)
+    _, _, harmonic_m, harmonic_n = smat_a['S11'].shape
+    device = smat_a['S11'].device
+    identity_mat = torch.eye(harmonic_m, harmonic_n, dtype=tcomplex, device=device)
 
     # Compute commom terms
-    D = SA['S12'] @ tinv(I - SB['S11'] @ SA['S22'])
-    F = SB['S21'] @ tinv(I - SA['S22'] @ SB['S11'])
+    mat_d = smat_a['S12'] @ tinv(identity_mat - smat_b['S11'] @ smat_a['S22'])
+    mat_f = smat_b['S21'] @ tinv(identity_mat - smat_a['S22'] @ smat_b['S11'])
 
     # Compute combined scattering matrix
-    SS = dict()
-    SS['S11'] = SA['S11'] + D @ SB['S11'] @ SA['S21']
-    SS['S12'] = D @ SB['S12']
-    SS['S21'] = F @ SA['S21']
-    SS['S22'] = SB['S22'] + F @ SA['S22'] @ SB['S12']
+    smatrix = {}
+    smatrix['S11'] = smat_a['S11'] + mat_d @ smat_b['S11'] @ smat_a['S21']
+    smatrix['S12'] = mat_d @ smat_b['S12']
+    smatrix['S21'] = mat_f @ smat_a['S21']
+    smatrix['S22'] = smat_b['S22'] + mat_f @ smat_a['S22'] @ smat_b['S12']
 
-    return SS
+    return smatrix
 
 def _create_blur_kernel(radius: int, device: torch.device = torch.device('cpu'), tfloat: torch.dtype = torch.float32):
     """_create_blur_kernel.
@@ -366,10 +353,10 @@ def _create_blur_kernel(radius: int, device: torch.device = torch.device('cpu'),
         device (torch.device): device
         tfloat (torch.dtype): tfloat
     """
-    rr, cc = skdraw.disk(center=(radius, radius), radius=radius+1)
+    row_ind, col_ind = skdraw.disk(center=(radius, radius), radius=radius+1)
     kernel = torch.zeros(size=(2*radius+1, 2*radius+1),
                          dtype=tfloat, device=device)
-    kernel[rr, cc] = 1
+    kernel[row_ind, col_ind] = 1
     return kernel / torch.sum(kernel)
 
 
@@ -432,7 +419,7 @@ def blur_filter(rho: torch.Tensor,
                 num_blur: int = 1,
                 beta: int = 100,
                 eta: float = 0.5,
-                num_proj: int = 1, 
+                num_proj: int = 1,
                 device: torch.device = torch.device('cpu'),
                 tfloat: torch.dtype = torch.float32):
     """blur_filter.

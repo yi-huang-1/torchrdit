@@ -1,11 +1,12 @@
-import numpy as np
+""" This file defines the material class to manage all materials. """
 import warnings
+import numpy as np
 import matplotlib.pyplot as plt
 
-from .constants import *
+from .constants import frequnit_dict, lengthunit_dict, C_0
 
 
-class materials():
+class MaterialClass():
     """Class of materials used in the RCWA solver
     """
 
@@ -27,35 +28,56 @@ class materials():
         self._data_unit = data_unit
         self._max_poly_order = max_poly_fit_order
 
-        if dielectric_dispersion == False:
+        self._fitted_data = {}
+
+        if dielectric_dispersion is False:
             self._isdiedispersive = False
             self._er = permittivity
         else:
             self._isdiedispersive = True
-            if user_dielectric_file == None:
-                raise ValueError(
-                    'File path of the dispersive data must be defined!')
-            else:
+            if user_dielectric_file is not None:
                 self._loadeder = np.loadtxt(user_dielectric_file)
                 self._er = None
+            else:
+                raise ValueError(
+                    'File path of the dispersive data must be defined!')
 
         self._ur = permeability
 
     @property
     def isdispersive_er(self):
+        """isdispersive_er.
+        returns whether material is dispersive.
+        """
         return self._isdiedispersive
 
     @property
     def er(self):
+        """er.
+        returns permittivity of the material.
+        """
         return self._er
 
     @property
     def ur(self):
+        """ur.
+        returns permeability of the meterial.
+        """
         return self._ur
 
     @property
     def name(self):
+        """name.
+        returns material name.
+        """
         return self._name
+
+    @property
+    def fitted_data(self):
+        """fitted_data.
+        returns fitted profile.
+        """
+        return self._fitted_data
 
     def _extract_laoded_data(self,
                              lengthunit: str = 'um',  # length unit used in the solver
@@ -127,7 +149,9 @@ class materials():
             raise ValueError(
                 f"Required frequencies of the material [{self.name}] are out of range!")
 
-        def wl_inds(x, array): return np.abs(array - x).argmin()
+        def wl_inds(ind_x, array):
+            return np.abs(array - ind_x).argmin()
+
         wl_ind1, wl_ind2 = tuple(
             map(wl_inds, (lam_min, lam_max), (wl_list, wl_list)))
         wl_ind2 = wl_ind2 + 1
@@ -147,7 +171,6 @@ class materials():
         pe2 = np.poly1d(ze2)
 
         # Save data
-        self._fitted_data = dict()
         self._fitted_data['wavelengths'] = wls
         self._fitted_data['data_eps1'] = data_eps1
         self._fitted_data['data_eps2'] = data_eps2
@@ -167,25 +190,28 @@ class materials():
             lengthunit (str): lengthunit
         """
 
-        if self._isdiedispersive == True:
+        ret = None
+
+        if self._isdiedispersive is True:
             disp_er_sorted = self._extract_laoded_data(lengthunit=lengthunit)
-            fig, ax = plt.subplots()
-            ln1 = ax.plot(disp_er_sorted[:, 0],
+            fig, fig_ax = plt.subplots()
+            ln1 = fig_ax.plot(disp_er_sorted[:, 0],
                           disp_er_sorted[:, 1], 'r-', label='e\'')
             # ax.legend(loc='best')
-            ax2 = ax.twinx()
-            ln2 = ax2.plot(disp_er_sorted[:, 0],
+            fig_ax2 = fig_ax.twinx()
+            ln2 = fig_ax2.plot(disp_er_sorted[:, 0],
                            disp_er_sorted[:, 2], 'g--', label='e\"')
             # ax2.legend(loc='best')
-            ax.set_title(f"Permittivity [{self._name}]")
-            ax.set_xlabel(f"Wavelength [{lengthunit}]")
-            ax.set_ylabel('Eps\' [Real Part]')
-            ax2.set_ylabel('Eps\" [Imag Part]')
+            fig_ax.set_title(f"Permittivity [{self._name}]")
+            fig_ax.set_xlabel(f"Wavelength [{lengthunit}]")
+            fig_ax.set_ylabel('Eps\' [Real Part]')
+            fig_ax2.set_ylabel('Eps\" [Imag Part]')
             lns = ln1 + ln2
             labs = [l.get_label() for l in lns]
-            ax.legend(lns, labs, loc='best')
+            fig_ax.legend(lns, labs, loc='best')
 
-            return fig, ax
+            ret = fig,fig_ax
         else:
             print(f"The material [{self._name}] has no dispersive attribute.")
-            return 0
+
+        return ret

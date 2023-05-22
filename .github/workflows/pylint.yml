@@ -20,4 +20,4 @@ jobs:
         pip install pylint
     - name: Analysing the code with pylint
       run: |
-        pylint --rcfile=pylint.conf $(git ls-files 'torchrdit/*.py')
+        pylint --rcfile=.pylintrc $(git ls-files 'torchrdit/*.py')

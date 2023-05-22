@@ -1,12 +1,13 @@
+""" This file defines classes for models to be simulated. """
+from typing import Callable, Tuple, Union, Any
+
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from typing import Callable, Tuple, Union, Any
-
-from .utils import gen_toeplitz2d_dispersive, gen_toeplitz2d_normal, tensor_params_check
-from .materials import materials
-from .constants import *
+from .utils import gen_toeplitz2d_dispersive, gen_toeplitz2d_normal, tensor_params_check, create_material
+from .materials import MaterialClass
+from .constants import lengthunit_dict
 from .logger import Logger
 from .layers import LayerManager
 from .viz import plot2d
@@ -14,7 +15,7 @@ from .viz import plot2d
 # Function Type
 FuncType = Callable[..., Any]
 
-class cell3d():
+class Cell3D():
     """ Base class of unit cell """
 
     n_kermat_gen = 0
@@ -23,20 +24,14 @@ class cell3d():
     def __init__(self,
                  batch_size: int,  # batch size of data set
                  lengthunit: str = 'um',  # length unit used in the solver
-                 rdim: list = [512, 512],  # dimensions in real space: (H, W)
-                 kdim: list = [3, 3],  # dimensions in k space: (kH, kW)
-                 materiallist: list = [],  # list of materials
-                 t1: list = [1.0, 0.0],  # lattice vector in real space
-                 t2: list = [0.0, 1.0],  # lattice vector in real space
+                 rdim: Union[list, None] = None,  # dimensions in real space: (H, W)
+                 kdim: Union[list, None] = None,  # dimensions in k space: (kH, kW)
+                 materiallist: Union[list, None] = None,  # list of materials
+                 t1: Union[list, None] = None,  # lattice vector in real space
+                 t2: Union[list, None] = None,  # lattice vector in real space
                  device: Union[str, torch.device] = 'cpu') -> None:
 
         self.device = device
-
-        # # Define floating points
-        # self.tcomplex = torch.complex128
-        # self.tfloat = torch.float64
-        # self.tint = torch.int64
-        # self.nfloat = np.float64
 
         # Define floating points
         self.tcomplex = torch.complex64
@@ -46,21 +41,36 @@ class cell3d():
 
         # Create a logger
         self.solver_logger = Logger()
-        
+
         self.n_batches = batch_size
 
-        self.rdim = rdim
-        self.kdim = kdim
+        if rdim is None:
+            self.rdim = [512, 512]
+        else:
+            self.rdim = rdim
 
-        self.t1 = self._add_lattice_vectors(t1)
-        self.t2 = self._add_lattice_vectors(t2) 
+        if kdim is None:
+            self.kdim = [3,3]
+        else:
+            self.kdim = kdim
+
+        if t1 is None:
+            self.lattice_t1 = self._add_lattice_vectors([1.0, 0.0])
+        else:
+            self.lattice_t1 = self._add_lattice_vectors(t1)
+
+        if t2 is None:
+            self.lattice_t2 = self._add_lattice_vectors([0.0, 1.0])
+        else:
+            self.lattice_t2 = self._add_lattice_vectors(t2)
 
         # Add materials to material_lib
-        self._matlib = dict()
-        self.add_materials(material_list=materiallist)
+        self._matlib = {}
+        if materiallist is not None:
+            self.add_materials(material_list=materiallist)
 
         # Add default material
-        _mat_air = materials(name='air')
+        _mat_air = create_material(name='air')
         self.add_materials(material_list=[_mat_air])
 
         self.layer_manager = LayerManager(n_batches=self.n_batches)
@@ -69,34 +79,36 @@ class cell3d():
 
 
         # build device
-        p = torch.linspace(-0.5, 0.5, rdim[0], dtype= self.tfloat, device=self.device)
-        q = torch.linspace(-0.5, 0.5, rdim[1], dtype= self.tfloat, device=self.device)
+        vec_p = torch.linspace(-0.5, 0.5, rdim[0], dtype= self.tfloat, device=self.device)
+        vec_q = torch.linspace(-0.5, 0.5, rdim[1], dtype= self.tfloat, device=self.device)
 
-        [Q, P] = torch.meshgrid(q, p, indexing='xy')
+        [mesh_q, mesh_p] = torch.meshgrid(vec_q, vec_p, indexing='xy')
 
-        Q = Q.unsqueeze(0).expand(self.n_batches, -1, -1)
-        P = P.unsqueeze(0).expand(self.n_batches, -1, -1)
+        mesh_q = mesh_q.unsqueeze(0).expand(self.n_batches, -1, -1)
+        mesh_p = mesh_p.unsqueeze(0).expand(self.n_batches, -1, -1)
 
-        self.XO = P * self.t1[:, 0].unsqueeze(-1).unsqueeze(-1) + Q * self.t2[:, 0].unsqueeze(-1).unsqueeze(-1)
-        self.YO = P * self.t1[:, 1].unsqueeze(-1).unsqueeze(-1) + Q * self.t2[:, 1].unsqueeze(-1).unsqueeze(-1)
+        self.XO = mesh_p * self.lattice_t1[:, 0].unsqueeze(-1).unsqueeze(-1) +\
+            mesh_q * self.lattice_t2[:, 0].unsqueeze(-1).unsqueeze(-1)
+        self.YO = mesh_p * self.lattice_t1[:, 1].unsqueeze(-1).unsqueeze(-1) +\
+            mesh_q * self.lattice_t2[:, 1].unsqueeze(-1).unsqueeze(-1)
 
 
         # scaling factor of lengths
         self._lenunit = lengthunit.lower()
         self._len_scale = lengthunit_dict[self._lenunit]
 
-    def add_materials(self, material_list: list = []):
+    def add_materials(self, material_list: Union[list, None] = None):
         """add_materials.
 
         Args:
             material_list (list): material_list
         """
-        if type(material_list) == list:
+        if isinstance(material_list, list):
             for imat in material_list:
-                if type(imat) == materials:
+                if isinstance(imat, MaterialClass):
                     self._matlib[imat.name] = imat
                 else:
-                    verr_str = "The element of the argument should be the [materials] type."
+                    verr_str = "The element of the argument should be the [MaterialClass] type."
                     self.solver_logger.error(f"ValueError: {verr_str}")
                     raise ValueError(verr_str)
         else:
@@ -138,7 +150,7 @@ class cell3d():
             str_rterr = f"No materials named [{material_name} exists in the material lib.]"
             self.solver_logger.error(str_rterr)
             raise RuntimeError(str_rterr)
-    
+
     @property
     def layers(self):
         """layers.
@@ -170,14 +182,17 @@ class cell3d():
             labels:
             title:
         """
-        if self.layer_manager.layers[layer_index].is_dispersive == False:
-            return plot2d(data=self.layer_manager.layers[layer_index].ermat[batch_index, :, :],
+        ret = None
+        if self.layer_manager.layers[layer_index].is_dispersive is False:
+            ret = plot2d(data=self.layer_manager.layers[layer_index].ermat[batch_index, :, :],
                           layout = self.get_layout(batch_index=batch_index),
                           func=func, fig_ax=fig_ax, cmap=cmap, labels=labels, title=title)
         else:
-            return plot2d(data=self.layer_manager.layers[layer_index].ermat[batch_index, frequency_index, :, :],
+            ret = plot2d(data=self.layer_manager.layers[layer_index].ermat[batch_index, frequency_index, :, :],
                           layout = self.get_layout(batch_index=batch_index),
                           func=func, fig_ax=fig_ax, cmap=cmap, labels=labels, title=title)
+
+        return ret
 
     @tensor_params_check()
     def _add_lattice_vectors(self, lattice_vec: torch.Tensor) -> torch.Tensor:
@@ -239,7 +254,7 @@ class cell3d():
         """
         # reflection layer
         print("------------------------------------")
-        print(f"layer # Reflection")
+        print("layer # Reflection")
         # print(f"\tmaterial name: {self._layerstruct._ref_mat_name}")
         print(f"\tmaterial name: {self.layer_manager.ref_material_name}")
         print(f"\tpermittivity: {self.er1}")
@@ -258,7 +273,7 @@ class cell3d():
             print("------------------------------------")
 
         # Transmission layers
-        print(f"layer # Transmission")
+        print("layer # Transmission")
         print(f"\tmaterial name: {self.layer_manager.trn_material_name}")
         print(f"\tpermittivity: {self.er2}")
         print(f"\tpermeability: {self.ur2}")
@@ -271,34 +286,34 @@ class cell3d():
         """
         # if True not in self._layerstruct._is_dispers:
         if True not in [self.layer_manager.layers[ii].is_dispersive for ii in range(self.layer_manager.nlayer)]:
-            print(f"No dispersive material loaded.")
+            print("No dispersive material loaded.")
         else:
             for imat in range(self.layer_manager.nlayer):
-                if self.layer_manager.layers[imat].is_dispersive == True:
-                    matname = self.layer_manager.layers[imat].material_name 
-                    wls = self._matlib[matname]._fitted_data['wavelengths']
-                    data_eps1 = self._matlib[matname]._fitted_data['data_eps1']
-                    data_eps2 = self._matlib[matname]._fitted_data['data_eps2']
-                    pe1 = self._matlib[matname]._fitted_data['fitted_crv1']
-                    pe2 = self._matlib[matname]._fitted_data['fitted_crv2']
-                    _, ax = plt.subplots()
-                    ln1data = ax.plot(wls,
+                if self.layer_manager.layers[imat].is_dispersive is True:
+                    matname = self.layer_manager.layers[imat].material_name
+                    wls = self._matlib[matname].fitted_data['wavelengths']
+                    data_eps1 = self._matlib[matname].fitted_data['data_eps1']
+                    data_eps2 = self._matlib[matname].fitted_data['data_eps2']
+                    pe1 = self._matlib[matname].fitted_data['fitted_crv1']
+                    pe2 = self._matlib[matname].fitted_data['fitted_crv2']
+                    _, fig_ax = plt.subplots()
+                    ln1data = fig_ax.plot(wls,
                                       data_eps1, 'r.', label='data e\'')
-                    ln1fit = ax.plot(self._lam0,
+                    ln1fit = fig_ax.plot(self._lam0,
                                      pe1(self._lam0), 'c^-', label='fitted e\'')
-                    ax2 = ax.twinx()
-                    ln2data = ax2.plot(wls,
+                    fig_ax2 = fig_ax.twinx()
+                    ln2data = fig_ax2.plot(wls,
                                        data_eps2, 'g*', label='data e\"')
-                    ln2fit = ax2.plot(self._lam0,
+                    ln2fit = fig_ax2.plot(self._lam0,
                                       pe2(self._lam0), 'm.-', label='fitted e\"')
                     # ax2.legend(loc='best')
-                    ax.set_title(f"Permittivity [{matname}]")
-                    ax.set_xlabel(f"Wavelength [{self._lenunit}]")
-                    ax.set_ylabel('Eps\' [Real Part]')
-                    ax2.set_ylabel('Eps\" [Imag Part]')
+                    fig_ax.set_title(f"Permittivity [{matname}]")
+                    fig_ax.set_xlabel(f"Wavelength [{self._lenunit}]")
+                    fig_ax.set_ylabel('Eps\' [Real Part]')
+                    fig_ax2.set_ylabel('Eps\" [Imag Part]')
                     lns = ln1data + ln1fit + ln2data + ln2fit
                     labs = [l.get_label() for l in lns]
-                    ax.legend(lns, labs, loc='best')
+                    fig_ax.legend(lns, labs, loc='best')
 
     def get_layout(self, batch_index: int = 0) -> Tuple[torch.Tensor, torch.Tensor]:
         """get_layout.
@@ -313,8 +328,8 @@ class cell3d():
         """
         return self.XO[batch_index, :, :], self.YO[batch_index, :, :]
 
-    def gen_Toeplitz_matrix(self, layer_index: int, param: str = 'er', is_dispersive: bool = False) -> torch.Tensor:
-        """gen_Toeplitz_matrix.
+    def gen_toeplitz_matrix(self, layer_index: int, param: str = 'er', is_dispersive: bool = False) -> torch.Tensor:
+        """gen_toeplitz_matrix.
 
         Generates the Toeplitz matrix.
 
@@ -333,52 +348,66 @@ class cell3d():
         # numbers of spatial harmonics
         # kHW = self.kdim[0] * self.kdim[1]
         if param == 'er':
-            if is_dispersive == True:
+            if is_dispersive is True:
                 kmatrix = gen_toeplitz2d_dispersive(
-                    self.layer_manager.layers[layer_index].ermat, self.kdim[0], self.kdim[1], tcomplex=self.tcomplex, tint=self.tint)
+                    self.layer_manager.layers[layer_index].ermat,
+                    self.kdim[0], self.kdim[1])
             else:
                 kmatrix = gen_toeplitz2d_normal(
-                    self.layer_manager.layers[layer_index].ermat, self.kdim[0], self.kdim[1], tcomplex=self.tcomplex, tint=self.tint)
+                    self.layer_manager.layers[layer_index].ermat,
+                    self.kdim[0], self.kdim[1])
             self.n_kermat_gen += 1
         elif param == 'ur':
             kmatrix = gen_toeplitz2d_normal(
-                self.layer_manager.layers[layer_index].urmat, self.kdim[0], self.kdim[1], tcomplex=self.tcomplex, tint=self.tint)
+                self.layer_manager.layers[layer_index].urmat, self.kdim[0], self.kdim[1])
             self.n_kurmat_gen += 1
 
         return kmatrix
 
     @property
     def lam0(self):
+        """lam0.
+        attribute.
+        """
         return self._lam0
 
     @lam0.setter
     def lam0(self, value):
-        if type(value) == self.nfloat or type(value) == float:
+        if isinstance(value, float):
             self._lam0 = np.array([value])
-        elif type(value) == np.ndarray:
+        elif isinstance(value, np.ndarray):
             self._lam0 = value
+        else:
+            raise ValueError(f"Wrong input type {type(value)}")
 
     @property
     def er1(self):
-        # return torch.tensor(self._layerstruct._er1, dtype=torch.complex128, device=self.device)
+        """er1.
+        attribute.
+        """
         return torch.tensor(self._matlib[self.layer_manager.ref_material_name].er,
                             dtype=self.tcomplex, device=self.device)
 
     @property
     def er2(self):
-        # return torch.tensor(self._layerstruct._er2, dtype=torch.complex128, device=self.device)
+        """er2.
+        attribute.
+        """
         return torch.tensor(self._matlib[self.layer_manager.trn_material_name].er,
                             dtype=self.tcomplex, device=self.device)
 
     @property
     def ur1(self):
-        # return torch.tensor(self._layerstruct._ur1, dtype=torch.complex128, device=self.device)
+        """ur1.
+        attribute.
+        """
         return torch.tensor(self._matlib[self.layer_manager.ref_material_name].ur,
                             dtype=self.tcomplex, device=self.device)
 
     @property
     def ur2(self):
-        # return torch.tensor(self._layerstruct._ur2, dtype=torch.complex128, device=self.device)
+        """ur2.
+        attribute.
+        """
         return torch.tensor(self._matlib[self.layer_manager.trn_material_name].ur,
                             dtype=self.tcomplex, device=self.device)
-
