@@ -36,7 +36,7 @@ class MaterialClass():
         else:
             self._isdiedispersive = True
             if user_dielectric_file is not None:
-                self._loadeder = np.loadtxt(user_dielectric_file)
+                self._loadeder = np.loadtxt(user_dielectric_file).astype(np.float32)
                 self._er = None
             else:
                 raise ValueError(

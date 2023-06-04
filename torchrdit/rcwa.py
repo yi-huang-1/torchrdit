@@ -131,23 +131,25 @@ class FourierBaseSover(Cell3D):
 
 
         # Add small perturbations to make sure matrices are inversable
-        kx_0 = kx_0 + 1.0e-13
-        ky_0 = ky_0 + 1.0e-13
+        if torch.any(kx_0 == 0.0):
+            kx_0 = kx_0 + 1.0e-13
+        if torch.any(ky_0 == 0.0):
+            ky_0 = ky_0 + 1.0e-13
 
 
         if self.layer_manager.is_ref_dispersive is False:
             kz_ref_0 = torch.conj(torch.sqrt(
-                torch.conj(self.ur1)*torch.conj(self.er1) - kx_0 ** 2 - ky_0 ** 2 + 0*1j))
+                torch.conj(self.ur1)*torch.conj(self.er1) - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
         else:
             kz_ref_0 = torch.conj(torch.sqrt(
-                (torch.conj(self.ur1)*torch.conj(self.er1)).unsqueeze(-1).unsqueeze(-2) - kx_0 ** 2 - ky_0 ** 2 + 0*1j))
+                (torch.conj(self.ur1)*torch.conj(self.er1)).unsqueeze(-1).unsqueeze(-2) - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
 
         if self.layer_manager.is_trn_dispersive is False:
             kz_trn_0 = torch.conj(torch.sqrt(
-                torch.conj(self.ur2)*torch.conj(self.er2) - kx_0 ** 2 - ky_0 ** 2 + 0*1j))
+                torch.conj(self.ur2)*torch.conj(self.er2) - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
         else:
             kz_trn_0 = torch.conj(torch.sqrt(
-                (torch.conj(self.ur2)*torch.conj(self.er2)).unsqueeze(-1).unsqueeze(-2) - kx_0 ** 2 - ky_0 ** 2 + 0*1j))
+                (torch.conj(self.ur2)*torch.conj(self.er2)).unsqueeze(-1).unsqueeze(-2) - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
 
 
         # Transform to diagnal matrices
@@ -170,10 +172,21 @@ class FourierBaseSover(Cell3D):
             size=(self.n_batches, self.n_freqs ,n_harmonics, n_harmonics), dtype=self.tcomplex, device=self.device)
 
         # Calculate eigen-modes of the gap medium
-        mat_kz = torch.conj(torch.sqrt(ident_mat - mat_kx @ mat_kx - mat_ky @ mat_ky))
 
-        q_mat = blockmat2x2([[mat_kx @ mat_ky, ident_mat - mat_kx @ mat_kx],
-                         [mat_ky @ mat_ky - ident_mat, -mat_kx @ mat_ky]])
+        mat_kx_ky = mat_kx @ mat_ky
+        mat_ky_kx = mat_ky @ mat_kx
+        mat_kx_kx = mat_kx @ mat_kx
+        mat_ky_ky = mat_ky @ mat_ky
+
+        mat_kz = torch.conj(torch.sqrt(ident_mat - mat_kx_kx - mat_ky_ky))
+
+        ident_mat_kx_ky = ident_mat - mat_kx_ky
+
+        # q_mat = blockmat2x2([[mat_kx @ mat_ky, ident_mat - mat_kx @ mat_kx],
+        #                  [mat_ky @ mat_ky - ident_mat, -mat_kx @ mat_ky]])
+        q_mat = blockmat2x2([[mat_kx_ky, ident_mat_kx_ky],
+                         [- ident_mat_kx_ky, - mat_kx_ky]])
+
         mat_w0 = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
 
         mat_lam = blockmat2x2([[1j*mat_kz, zero_mat], [zero_mat, 1j*mat_kz]])
@@ -210,15 +223,28 @@ class FourierBaseSover(Cell3D):
                     # Transform dimensions to (n_batches, n_freqs, n_harmonics, n_harmonics)
                     toeplitz_ur = self.expand_dims(self.layer_manager.layers[n_layer].kurmat)
 
-                    p_mat_i = blockmat2x2([[mat_kx @ tinv(toeplitz_er) @ mat_ky,
-                                       toeplitz_ur - mat_kx @ tinv(toeplitz_er) @ mat_kx],
-                                      [mat_ky @ tinv(toeplitz_er) @ mat_ky - toeplitz_ur,
-                                     - mat_ky @ tinv(toeplitz_er) @ mat_kx]])
+                    solve_ter_mky = tsolve(toeplitz_er, mat_ky)
+                    solve_ter_mkx = tsolve(toeplitz_er, mat_kx)
+                    solve_tur_mky = tsolve(toeplitz_ur, mat_ky)
+                    solve_tur_mkx = tsolve(toeplitz_ur, mat_kx)
 
-                    q_mat_i = blockmat2x2([[mat_kx @ tinv(toeplitz_ur) @ mat_ky,
-                                       toeplitz_er - mat_kx @ tinv(toeplitz_ur) @ mat_kx],
-                                      [mat_ky @ tinv(toeplitz_ur) @ mat_ky - toeplitz_er,
-                                     - mat_ky @ tinv(toeplitz_ur) @ mat_kx]])
+                    # p_mat_i = blockmat2x2([[mat_kx @ tinv(toeplitz_er) @ mat_ky,
+                    #                    toeplitz_ur - mat_kx @ tinv(toeplitz_er) @ mat_kx],
+                    #                   [mat_ky @ tinv(toeplitz_er) @ mat_ky - toeplitz_ur,
+                    #                  - mat_ky @ tinv(toeplitz_er) @ mat_kx]])
+                    p_mat_i = blockmat2x2([[mat_kx @ solve_ter_mky,
+                                       toeplitz_ur - mat_kx @ solve_ter_mkx],
+                                      [mat_ky @ solve_ter_mky - toeplitz_ur,
+                                     - mat_ky @ solve_ter_mkx]])
+
+                    # q_mat_i = blockmat2x2([[mat_kx @ tinv(toeplitz_ur) @ mat_ky,
+                    #                    toeplitz_er - mat_kx @ tinv(toeplitz_ur) @ mat_kx],
+                    #                   [mat_ky @ tinv(toeplitz_ur) @ mat_ky - toeplitz_er,
+                    #                  - mat_ky @ tinv(toeplitz_ur) @ mat_kx]])
+                    q_mat_i = blockmat2x2([[mat_kx @ solve_tur_mky,
+                                       toeplitz_er - mat_kx @ solve_tur_mkx],
+                                      [mat_ky @ solve_tur_mky - toeplitz_er,
+                                     - mat_ky @ solve_tur_mkx]])
 
                     smat_layer = self._solve_nonhomo_layer(layer_index=n_layer,
                                               p_mat_i=p_mat_i,
@@ -241,13 +267,20 @@ class FourierBaseSover(Cell3D):
                         toeplitz_ur = torch.tensor(
                             self._matlib[self.layer_manager.layers[n_layer].material_name].ur, device=self.device)
 
-                    q_mat_i = 1 / toeplitz_ur * blockmat2x2([[mat_kx @ mat_ky,
-                                                toeplitz_ur*toeplitz_er*ident_mat - mat_kx @  mat_kx],
-                                               [mat_ky @ mat_ky - toeplitz_ur*toeplitz_er*ident_mat,
-                                                - mat_ky @ mat_kx]])
+                    # q_mat_i = 1 / toeplitz_ur * blockmat2x2([[mat_kx @ mat_ky,
+                    #                             toeplitz_ur*toeplitz_er*ident_mat - mat_kx @  mat_kx],
+                    #                            [mat_ky @ mat_ky - toeplitz_ur*toeplitz_er*ident_mat,
+                    #                             - mat_ky @ mat_kx]])
+                    toep_ur_er = toeplitz_ur * toeplitz_er * ident_mat
+                    conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er) * ident_mat
+
+                    q_mat_i = 1 / toeplitz_ur * blockmat2x2([[mat_kx_ky,
+                                                toep_ur_er - mat_kx_kx],
+                                               [mat_ky_ky - toep_ur_er,
+                                                - mat_ky_kx]])
 
                     mat_kz_i = torch.conj(torch.sqrt(
-                        torch.conj(toeplitz_ur)*torch.conj(toeplitz_er)*ident_mat - \
+                        conj_toep_ur_er - \
                             mat_kx ** 2 - mat_ky ** 2 + 0*1j)).to(self.tcomplex)
 
                     dmat_lam_i = blockmat2x2(
@@ -266,11 +299,20 @@ class FourierBaseSover(Cell3D):
                     atvi = tsolve(mat_v_i, mat_v0)
                     mat_a_i = atwi + atvi
                     mat_b_i = atwi - atvi
-                    mat_d_i = mat_a_i - mat_x_i @ mat_b_i @ tinv(mat_a_i) @ mat_x_i @ mat_b_i
 
+                    solve_ai_xi = tsolve(mat_a_i, mat_x_i)
+
+                    mat_xi_bi = mat_x_i @ mat_b_i
+
+                    # mat_d_i = mat_a_i - mat_x_i @ mat_b_i @ tinv(mat_a_i) @ mat_x_i @ mat_b_i
+                    mat_d_i = mat_a_i - mat_xi_bi @ solve_ai_xi @ mat_b_i
+
+                    # smat_layer['S11'] = tsolve(
+                    #     mat_d_i, mat_x_i @ mat_b_i @ tinv(mat_a_i) @ mat_x_i @ mat_a_i - mat_b_i)
                     smat_layer['S11'] = tsolve(
-                        mat_d_i, mat_x_i @ mat_b_i @ tinv(mat_a_i) @ mat_x_i @ mat_a_i - mat_b_i)
-                    smat_layer['S12'] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tinv(mat_a_i) @ mat_b_i)
+                        mat_d_i, mat_xi_bi @ solve_ai_xi @ mat_a_i - mat_b_i)
+                    # smat_layer['S12'] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tinv(mat_a_i) @ mat_b_i)
+                    smat_layer['S12'] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tsolve(mat_a_i, mat_b_i))
                     smat_layer['S21'] = smat_layer['S12']
                     smat_layer['S22'] = smat_layer['S11']
 
@@ -285,15 +327,23 @@ class FourierBaseSover(Cell3D):
 
         # Connect to reflection region
         if self.layer_manager.is_ref_dispersive is False:
-            q_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx @ mat_ky,
-                                            self.ur1 * self.er1 * ident_mat - mat_kx @ mat_kx],
-                                            [mat_ky @ mat_ky - self.ur1 * self.er1 * ident_mat,
-                                            - mat_ky @ mat_kx]])
+            # q_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx @ mat_ky,
+            #                                 self.ur1 * self.er1 * ident_mat - mat_kx @ mat_kx],
+            #                                 [mat_ky @ mat_ky - self.ur1 * self.er1 * ident_mat,
+            #                                 - mat_ky @ mat_kx]])
+            q_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx_ky,
+                                            self.ur1 * self.er1 * ident_mat - mat_kx_kx],
+                                            [mat_ky_ky - self.ur1 * self.er1 * ident_mat,
+                                            - mat_ky_kx]])
         else:
-            q_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx @ mat_ky,
-                                            self.expand_dims(self.ur1 * self.er1) * ident_mat - mat_kx @ mat_kx],
-                                            [mat_ky @ mat_ky - self.expand_dims(self.ur1 * self.er1) * ident_mat,
-                                            - mat_ky @ mat_kx]])
+            # q_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx @ mat_ky,
+            #                                 self.expand_dims(self.ur1 * self.er1) * ident_mat - mat_kx @ mat_kx],
+            #                                 [mat_ky @ mat_ky - self.expand_dims(self.ur1 * self.er1) * ident_mat,
+            #                                 - mat_ky @ mat_kx]])
+            q_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx_ky,
+                                            self.expand_dims(self.ur1 * self.er1) * ident_mat - mat_kx_kx],
+                                            [mat_ky_ky - self.expand_dims(self.ur1 * self.er1) * ident_mat,
+                                            - mat_ky_kx]])
 
         mat_w_ref = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
         mat_lam_ref = blockmat2x2([[1j * mat_kz_ref, zero_mat], [zero_mat, 1j*mat_kz_ref]])
@@ -308,22 +358,31 @@ class FourierBaseSover(Cell3D):
         mat_b_1 = atw1 - atv1
         smat_ref['S11'] = - tsolve(mat_a_1, mat_b_1)
         smat_ref['S12'] = 2 * tinv(mat_a_1)
-        smat_ref['S21'] = 1/2 * (mat_a_1 - mat_b_1 @ tinv(mat_a_1) * mat_b_1)
+        # smat_ref['S21'] = 1/2 * (mat_a_1 - mat_b_1 @ tinv(mat_a_1) @ mat_b_1)
+        smat_ref['S21'] = 1/2 * (mat_a_1 - mat_b_1 @ tsolve(mat_a_1, mat_b_1))
         smat_ref['S22'] = mat_b_1 @ tinv(mat_a_1)
 
         smat_global = redhstar(smat_ref, smat_global)
 
         # Connect to transmission region
         if self.layer_manager.is_trn_dispersive is False:
-            q_mat_2 = (1/self.ur2) * blockmat2x2([[mat_kx @ mat_ky,
-                                            self.ur2 * self.er2 * ident_mat - mat_kx @ mat_kx],
-                                            [mat_ky @ mat_ky - self.ur2 * self.er2 * ident_mat,
-                                            - mat_ky @ mat_kx]])
+            # q_mat_2 = (1/self.ur2) * blockmat2x2([[mat_kx @ mat_ky,
+            #                                 self.ur2 * self.er2 * ident_mat - mat_kx @ mat_kx],
+            #                                 [mat_ky @ mat_ky - self.ur2 * self.er2 * ident_mat,
+            #                                 - mat_ky @ mat_kx]])
+            q_mat_2 = (1/self.ur2) * blockmat2x2([[mat_kx_ky,
+                                            self.ur2 * self.er2 * ident_mat - mat_kx_kx],
+                                            [mat_ky_ky - self.ur2 * self.er2 * ident_mat,
+                                            - mat_ky_kx]])
         else:
-            q_mat_2 = (1/self.ur2) * blockmat2x2([[mat_kx @ mat_ky,
-                                              self.expand_dims(self.ur2 * self.er2) * ident_mat - mat_kx @ mat_kx],
-                                             [mat_ky @ mat_ky - self.expand_dims(self.ur2 * self.er2) * ident_mat,
-                                              - mat_ky @ mat_kx]])
+            # q_mat_2 = (1/self.ur2) * blockmat2x2([[mat_kx @ mat_ky,
+            #                                   self.expand_dims(self.ur2 * self.er2) * ident_mat - mat_kx @ mat_kx],
+            #                                  [mat_ky @ mat_ky - self.expand_dims(self.ur2 * self.er2) * ident_mat,
+            #                                   - mat_ky @ mat_kx]])
+            q_mat_2 = (1/self.ur2) * blockmat2x2([[mat_kx_ky,
+                                              self.expand_dims(self.ur2 * self.er2) * ident_mat - mat_kx_kx],
+                                             [mat_ky_ky - self.expand_dims(self.ur2 * self.er2) * ident_mat,
+                                              - mat_ky_kx]])
 
         # mat_w_trn = blockmat2x2([[I, zero_mat], [zero_mat, I]])
         mat_w_trn = mat_w_ref
@@ -336,7 +395,8 @@ class FourierBaseSover(Cell3D):
         mat_a_2 = atw2 + atv2
         mat_b_2 = atw2 - atv2
         smat_trn['S11'] = mat_b_2 @ tinv(mat_a_2)
-        smat_trn['S12'] = 1/2 * (mat_a_2 - mat_b_2 @ tinv(mat_a_2) * mat_b_2)
+        # smat_trn['S12'] = 1/2 * (mat_a_2 - mat_b_2 @ tinv(mat_a_2) @ mat_b_2)
+        smat_trn['S12'] = 1/2 * (mat_a_2 - mat_b_2 @ tsolve(mat_a_2, mat_b_2))
         smat_trn['S21'] = 2 * tinv(mat_a_2)
         smat_trn['S22'] = - tsolve(mat_a_2, mat_b_2)
 
@@ -381,16 +441,20 @@ class FourierBaseSover(Cell3D):
         ref_field_x = eref[:, :, 0: n_harmonics, :]
         ref_field_y = eref[:, :, n_harmonics: 2*n_harmonics, :]
 
-        ref_field_z = - (mat_kx @ tinv(mat_kz_ref)) @ ref_field_x \
-             - (mat_ky @ tinv(mat_kz_ref)) @ ref_field_y
+        # ref_field_z = - (mat_kx @ tinv(mat_kz_ref)) @ ref_field_x \
+        #      - (mat_ky @ tinv(mat_kz_ref)) @ ref_field_y
+        ref_field_z = - mat_kx @ tsolve(mat_kz_ref, ref_field_x) \
+             - mat_ky @ tsolve(mat_kz_ref, ref_field_y)
 
         # Calculate transmitted fields
         ctrn = smat_global['S21'] @ csrc
         etrn = mat_w_trn @ ctrn
         trn_field_x = etrn[:, :, 0: n_harmonics, :]
         trn_field_y = etrn[:, :, n_harmonics: 2*n_harmonics, :]
-        trn_field_z = - (mat_kx @ tinv(mat_kz_trn)) @ trn_field_x \
-             - (mat_ky @ tinv(mat_kz_trn)) @ trn_field_y
+        # trn_field_z = - (mat_kx @ tinv(mat_kz_trn)) @ trn_field_x \
+        #      - (mat_ky @ tinv(mat_kz_trn)) @ trn_field_y
+        trn_field_z = - mat_kx @ tsolve(mat_kz_trn, trn_field_x) \
+             - mat_ky @ tsolve(mat_kz_trn, trn_field_y)
 
         # Calculate diffraction efficiences
         ref_diff_efficiency = torch.reshape(torch.real(self.ur2/self.ur1*mat_kz_ref / \
@@ -558,7 +622,6 @@ class FourierBaseSover(Cell3D):
             None:
         """
 
-
         n_batches, ndim1, ndim2 = mask.size()
         if n_batches != self.n_batches:
             raise ValueError(
@@ -585,16 +648,21 @@ class FourierBaseSover(Cell3D):
 
         if set_grad is True:
             self.layer_manager.layers[layer_index].ermat.requires_grad = True
-        self.layer_manager.layers[layer_index].kermat = self.gen_toeplitz_matrix(
-            layer_index=layer_index, param='er', is_dispersive=self.layer_manager.layers[layer_index].is_dispersive)
+        # self.layer_manager.layers[layer_index].kermat = self.gen_toeplitz_matrix(
+        #     layer_index=layer_index, param='er', is_dispersive=self.layer_manager.layers[layer_index].is_dispersive)
+        self.layer_manager.gen_toeplitz_matrix(
+            layer_index=layer_index, n_harmonic1=self.kdim[0], n_harmonic2=self.kdim[1], param='er')
 
         # permeability always 1.0 for current version
         # currently no support for magnetic materials
         if self.n_solve == 0:
             self.layer_manager.layers[layer_index].urmat = self._get_bg(
                 layer_index=layer_index, param='ur')
-            self.layer_manager.layers[layer_index].kurmat = self.gen_toeplitz_matrix(
-                layer_index=layer_index, param='ur', is_dispersive=False)
+            # self.layer_manager.layers[layer_index].kurmat = self.gen_toeplitz_matrix(
+            #     layer_index=layer_index, param='ur', is_dispersive=False)
+            self.layer_manager.gen_toeplitz_matrix(
+                layer_index=layer_index, n_harmonic1=self.kdim[0], n_harmonic2=self.kdim[1], param='ur')
+
 
     def update_layer_thickness(self,
                                layer_index: int,
@@ -633,7 +701,7 @@ class FourierBaseSover(Cell3D):
                     ret_mat = torch.tensor(self._matlib[material_name].er)\
                     .unsqueeze(0).repeat(self.n_batches, 1).unsqueeze(2)\
                     .unsqueeze(2).repeat(1, 1, self.rdim[0], self.rdim[1])\
-                    .to(self.device)
+                    .to(self.device).to(self.tcomplex)
                 elif param == 'ur':
                     param_val = self._matlib[material_name].ur
                     ret_mat = param_val * torch.ones(size=(self.n_batches, self.rdim[0], self.rdim[1]),
@@ -764,11 +832,17 @@ class RCWASolver(FourierBaseSover):
         # Calculate Layer Scattering Matrix
         mat_a_i = tsolve(mat_w_i, mat_w0) + tsolve(mat_v_i, mat_v0)
         mat_b_i = tsolve(mat_w_i, mat_w0) - tsolve(mat_v_i, mat_v0)
-        mat_d_i = mat_a_i - mat_x_i @ mat_b_i @ tinv(mat_a_i) @ mat_x_i @ mat_b_i
+        # mat_d_i = mat_a_i - mat_x_i @ mat_b_i @ tinv(mat_a_i) @ mat_x_i @ mat_b_i
 
+        mat_xb_i = mat_x_i @ mat_b_i
+        mat_d_i = mat_a_i - mat_xb_i @ tsolve(mat_a_i, mat_x_i) @ mat_b_i
+
+        # smat_layer['S11'] = tsolve(
+        #     mat_d_i, mat_x_i @ mat_b_i @ tinv(mat_a_i) @ mat_x_i @ mat_a_i - mat_b_i)
         smat_layer['S11'] = tsolve(
-            mat_d_i, mat_x_i @ mat_b_i @ tinv(mat_a_i) @ mat_x_i @ mat_a_i - mat_b_i)
-        smat_layer['S12'] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tinv(mat_a_i) @ mat_b_i)
+            mat_d_i, mat_xb_i @ tsolve(mat_a_i, mat_x_i) @ mat_a_i - mat_b_i)
+        # smat_layer['S12'] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tinv(mat_a_i) @ mat_b_i)
+        smat_layer['S12'] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tsolve(mat_a_i, mat_b_i))
         smat_layer['S21'] = smat_layer['S12']
         smat_layer['S22'] = smat_layer['S11']
 

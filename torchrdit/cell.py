@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from .utils import gen_toeplitz2d_dispersive, gen_toeplitz2d_normal, tensor_params_check, create_material
+from .utils import tensor_params_check, create_material
 from .materials import MaterialClass
 from .constants import lengthunit_dict
 from .logger import Logger

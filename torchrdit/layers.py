@@ -2,83 +2,16 @@
 from abc import ABCMeta, abstractmethod
 from .utils import tensor_params_check
 
+from torch.fft import fft2, fftshift
+import torch
+
 class Layer(metaclass=ABCMeta):
     """Layer.
     This is the base class of Layer objects. This class is abstract.
     """
 
     @abstractmethod
-    def __init__(self) -> None:
-        pass
-
-    @abstractmethod
-    def __str__(self) -> None:
-        pass
-
-class LayerBuilder(metaclass=ABCMeta):
-    """LayerBuilder.
-    This is the base class of the layer builder. This class is abstract.
-    """
-
-    @abstractmethod
-    def __init__(self) -> None:
-        pass
-
-    @abstractmethod
-    def create_layer(self):
-        """create_layer.
-        abstractmethod of creating layer.
-        """
-
-    @abstractmethod
-    def update_thickness(self, thickness):
-        """update_thickness.
-        abstractmethod of updating layer thickness.
-
-        Args:
-            thickness:
-        """
-
-    @abstractmethod
-    def update_material_name(self, material_name):
-        """update_material_name.
-        abstractmethod of updating material type.
-
-        Args:
-            material_name:
-        """
-
-    @abstractmethod
-    def set_optimize(self, is_optimize):
-        """set_optimize.
-        abstractmethod of setting layer to be optimized.
-
-        Args:
-            is_optimize:
-        """
-
-    # read-only property
-    @abstractmethod
-    def get_layer_instance(self):
-        """get_layer_instance.
-        abstractmethod of getting layer object.
-        """
-
-    @abstractmethod
-    def set_dispersive(self, is_dispersive):
-        """set_dispersive.
-        abstractmethod of set meterial dispersive.
-
-        Args:
-            is_dispersive:
-        """
-
-class HomogeneousLayer(Layer):
-    """HomogeneousLayer.
-    This class defines homogeneous layer.
-    """
-
-    def __init__(self, thickness = 0.0, material_name = '', is_optimize = False) -> None:
+    def __init__(self, thickness = 0.0, material_name = '', is_optimize = False, **kwargs) -> None:
         self._thickness = thickness
         self._material_name = material_name
         self._is_homogeneous = True
@@ -91,8 +24,9 @@ class HomogeneousLayer(Layer):
         self.kermat = None
         self.kurmat = None
 
-    def __str__(self) -> str:
-        return "HomogeneousLayer"
+    @abstractmethod
+    def __str__(self) -> None:
+        pass
 
     @property
     def thickness(self):
@@ -188,6 +122,76 @@ class HomogeneousLayer(Layer):
         """
         self._is_solved = is_solved
 
+class LayerBuilder(metaclass=ABCMeta):
+    """LayerBuilder.
+    This is the base class of the layer builder. This class is abstract.
+    """
+
+    @abstractmethod
+    def __init__(self) -> None:
+        self.layer = None
+
+    @abstractmethod
+    def create_layer(self):
+        """create_layer.
+        abstractmethod of creating layer.
+        """
+        pass
+
+    def update_thickness(self, thickness):
+        """update_thickness.
+        abstractmethod of updating layer thickness.
+
+        Args:
+            thickness:
+        """
+        self.layer.thickness = thickness
+
+    def update_material_name(self, material_name):
+        """update_material_name.
+        abstractmethod of updating material type.
+
+        Args:
+            material_name:
+        """
+        self.layer.material_name = material_name
+
+    def set_optimize(self, is_optimize):
+        """set_optimize.
+        abstractmethod of setting layer to be optimized.
+
+        Args:
+            is_optimize:
+        """
+        self.layer.is_optimize = is_optimize
+
+    # read-only property
+    def get_layer_instance(self):
+        """get_layer_instance.
+        abstractmethod of getting layer object.
+        """
+        return self.layer
+
+    def set_dispersive(self, is_dispersive):
+        """set_dispersive.
+        abstractmethod of set meterial dispersive.
+
+        Args:
+            is_dispersive:
+        """
+        self.layer.is_dispersive = is_dispersive
+
+class HomogeneousLayer(Layer):
+    """HomogeneousLayer.
+    This class defines homogeneous layer.
+    """
+
+    def __init__(self, thickness = 0.0, material_name = '', is_optimize = False) -> None:
+        super().__init__(thickness=thickness, material_name=material_name, is_optimize=is_optimize)
+
+    def __str__(self) -> str:
+        return "HomogeneousLayer"
+
 class GratingLayer(HomogeneousLayer):
     """GratingLayer.
 
@@ -208,26 +212,9 @@ class HomogeneousLayerBuilder(LayerBuilder):
 
     def __init__(self) -> None:
         super().__init__()
-        self.layer = None
 
     def create_layer(self):
         self.layer = HomogeneousLayer()
-
-    # @tensor_params_check
-    def update_thickness(self, thickness):
-        self.layer.thickness = thickness
-
-    def update_material_name(self, material_name):
-        self.layer.material_name = material_name
-
-    def set_optimize(self, is_optimize = False):
-        self.layer.is_optimize = is_optimize
-
-    def get_layer_instance(self):
-        return self.layer
-
-    def set_dispersive(self, is_dispersive):
-        self.layer.is_dispersive = is_dispersive
 
 class GratingLayerBuilder(HomogeneousLayerBuilder):
     """GratingLayerBuilder.
@@ -287,13 +274,161 @@ class LayerManager:
         self.n_batches = n_batches
         self.layers = []
         self.layer_director = LayerDirector()
-
+        
         # semi-infinite layer
         self._ref_material_name = 'air'
         self._trn_material_name = 'air'
 
         self._is_ref_dispers = False
         self._is_trn_dispers = False
+
+    def gen_toeplitz_matrix(self, layer_index: int,
+                            n_harmonic1: int,
+                            n_harmonic2: int,
+                            param: str = 'er'):
+        # The dimensions of ermat/urmat is (n_batches, n_layers, H, W)
+        # The dimensions of kermat/kurmat is (n_batches, n_layers, kH, kW)
+
+        if param == 'er':
+            if self.layers[layer_index].ermat is None:
+                raise ValueError(f"Permittivity distribution of specified layer {layer_index} not found!")
+
+            if self.layers[layer_index].is_dispersive is True:
+                self.layers[layer_index].kermat = self._gen_toeplitz2d_dispersive(
+                    self.layers[layer_index].ermat,
+                    n_harmonic1, n_harmonic2)
+            else:
+                self.layers[layer_index].kermat = self._gen_toeplitz2d_normal(
+                    self.layers[layer_index].ermat,
+                    n_harmonic1, n_harmonic2)
+        elif param == 'ur':
+            if self.layers[layer_index].urmat is None:
+                raise ValueError(f"Permeability distribution of specified layer {layer_index} not found!")
+
+            self.layers[layer_index].kurmat = self._gen_toeplitz2d_normal(
+                self.layers[layer_index].urmat, n_harmonic1, n_harmonic2)
+
+
+    def _gen_toeplitz2d_normal(self,input_matrix: torch.Tensor,
+                         nharmonic_1: int = 1,
+                         nharmonic_2: int = 1) -> torch.Tensor:
+        """This function constructs Toeplitz matrices from
+        a real-space 2D grid.
+
+        Args:
+            input_matrix (torch.Tensor): Grid in real space: (n_batches, H, W)
+            nharmonic_1 (int): Number of harmonics for the T1 direction.
+            nharmonic_2 (int): Number of harmonics for the T2 direction.
+
+        Returns:
+            toep_matrix (torch.Tensor): Toeplitz matrix: (n_batches, n_harmonics, n_harmonics)
+        """
+
+        _, n_height, n_width = input_matrix.size()
+
+
+        # compute fourier coefficents of input_matrix for only the last two dimensions
+        finput_matrix = fftshift(fftshift(fft2(input_matrix), dim=-1), dim=-2)\
+            / (n_height * n_width)
+
+        toep_matrix = self._extract_normal(input_matrix=finput_matrix,
+                                                nharmonic_1=nharmonic_1,
+                                                nharmonic_2=nharmonic_2,
+                                                n_height=n_height,
+                                                n_width=n_width)
+
+        return toep_matrix
+
+    def _gen_toeplitz2d_dispersive(self,input_matrix: torch.Tensor,
+                             nharmonic_1: int = 1,
+                             nharmonic_2: int = 1) -> torch.Tensor:
+        """This function constructs Toeplitz matrices from
+        a real-space 2D grid.
+
+        Args:
+            input_matrix (torch.Tensor): Grid in real space: (n_batches, n_freqs, H, W)
+            nharmonic_1 (int): Number of harmonics for the T1 direction.
+            nharmonic_2 (int): Number of harmonics for the T2 direction.
+
+        Returns:
+            toep_matrix (torch.Tensor): Toeplitz matrix: (n_batches, n_harmonics, n_harmonics)
+        """
+
+        _, _, n_height, n_width = input_matrix.size()
+
+        # compute fourier coefficents of input_matrix for only the last two dimensions
+        finput_matrix = fftshift(
+            fftshift(fft2(input_matrix[:, :, :, :]), dim=-1), dim=-2) / (n_height * n_width)
+
+        #
+        # toep_matrix = finput_matrix[:, :, p_0 - pf_t, q_0 - qf_t]
+        toep_matrix = self._extract_dispersive(input_matrix=finput_matrix,
+                                                nharmonic_1=nharmonic_1,
+                                                nharmonic_2=nharmonic_2,
+                                                n_height=n_height,
+                                                n_width=n_width)
+
+        return toep_matrix
+
+    def _extract_dispersive(self,input_matrix: torch.Tensor,
+                                  nharmonic_1: int,
+                                  nharmonic_2: int,
+                                  n_height: int,
+                                  n_width: int):
+        # Computes indices of spatial harmonics
+        nharmonic_1 = int(nharmonic_1)
+        nharmonic_2 = int(nharmonic_2)
+
+        n_harmonics = nharmonic_1 * nharmonic_2
+
+        # compute zero-order harmonic
+        p_0 = torch.floor(torch.tensor(n_height / 2)).to(torch.int64)
+        q_0 = torch.floor(torch.tensor(n_width / 2)).to(torch.int64)
+
+        rows = torch.arange(n_harmonics, dtype = torch.int64, device = input_matrix.device)
+        cols = torch.arange(n_harmonics, dtype = torch.int64, device = input_matrix.device)
+
+        rows, cols = torch.meshgrid(rows, cols, indexing = "ij")
+
+        row_s = torch.div(rows, nharmonic_2, rounding_mode = 'floor')
+        prow_t = rows - row_s * nharmonic_2
+        col_s = torch.div(cols, nharmonic_2, rounding_mode = 'floor')
+        pcol_t = cols - col_s * nharmonic_2
+        qf_t = row_s - col_s
+        pf_t = prow_t - pcol_t
+
+        return input_matrix[:, :, p_0 - pf_t, q_0 - qf_t]
+
+    def _extract_normal(self,input_matrix: torch.Tensor,
+                                  nharmonic_1: int,
+                                  nharmonic_2: int,
+                                  n_height: int,
+                                  n_width: int):
+        # Computes indices of spatial harmonics
+        nharmonic_1 = int(nharmonic_1)
+        nharmonic_2 = int(nharmonic_2)
+
+        n_harmonics = nharmonic_1 * nharmonic_2
+
+        # compute zero-order harmonic
+        p_0 = torch.floor(torch.tensor(n_height / 2)).to(torch.int64)
+        q_0 = torch.floor(torch.tensor(n_width / 2)).to(torch.int64)
+
+        rows = torch.arange(n_harmonics, dtype = torch.int64, device = input_matrix.device)
+        cols = torch.arange(n_harmonics, dtype = torch.int64, device = input_matrix.device)
+
+        rows, cols = torch.meshgrid(rows, cols, indexing = "ij")
+
+        row_s = torch.div(rows, nharmonic_2, rounding_mode = 'floor')
+        prow_t = rows - row_s * nharmonic_2
+        col_s = torch.div(cols, nharmonic_2, rounding_mode = 'floor')
+        pcol_t = cols - col_s * nharmonic_2
+        qf_t = row_s - col_s
+        pf_t = prow_t - pcol_t
+
+        return input_matrix[:, p_0 - pf_t, q_0 - qf_t]
+    
+    
 
     @tensor_params_check(check_start_index=2, check_stop_index=2)
     def add_layer(self, layer_type, thickness, material_name, is_optimize = False, is_dispersive = False):
