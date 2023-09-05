@@ -1,14 +1,14 @@
 """Helper functions for plotting and visualization."""
 
-from typing import Union
+from typing import Any
 
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
 
 
-def plot2d(data: Union[torch.Tensor, np.ndarray],
-           layout: Union[torch.Tensor, np.ndarray],
+def plot2d(data: Any,
+           layout: Any,
            func='abs',
            outline = None,
            fig_ax=None,

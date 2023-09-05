@@ -4,12 +4,12 @@ from typing import Union, Optional
 import numpy as np
 import torch
 # import datetime
+import matplotlib.pyplot as plt
 
 from torch.linalg import inv as tinv
 from torch.linalg import solve as tsolve
 from .cell import Cell3D
 from .utils import blockmat2x2, redhstar, EigComplex, init_smatrix
-
 
 
 class FourierBaseSover(Cell3D):
@@ -20,11 +20,11 @@ class FourierBaseSover(Cell3D):
                  # wavelengths (frequencies) to be solved
                  lam0: np.ndarray = np.array([1.0]),
                  lengthunit: str = 'um',  # length unit used in the solver
-                 rdim: Union[list, None] = None,  # dimensions in real space: (H, W)
-                 kdim: Union[list, None] = None,  # dimensions in k space: (kH, kW)
-                 materiallist: Union[list, None] = None,  # list of materials
-                 t1: Union[list, None] = None,  # lattice vector in real space
-                 t2: Union[list, None] = None,  # lattice vector in real space
+                 rdim: list = [512, 512],  # dimensions in real space: (H, W)
+                 kdim: list = [3,3],  # dimensions in k space: (kH, kW)
+                 materiallist: list = [],  # list of materials
+                 t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
+                 t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
                  device: Union[str, torch.device] = 'cpu') -> None:
         super().__init__(batch_size, lengthunit, rdim,
                          kdim, materiallist, t1, t2, device)
@@ -49,9 +49,6 @@ class FourierBaseSover(Cell3D):
         self.mesh_fp = None
         self.mesh_fq = None
 
-        # Initialize materials, will fit the dispersive profile if applicable
-        self._init_dispersive_materials()
-
         self.n_solve = 0
         self.smat_layers = {}
 
@@ -60,11 +57,27 @@ class FourierBaseSover(Cell3D):
 
         # self.solver_logger.info(f"Solver has been initialized.")
 
+    @property
+    def lam0(self):
+        """lam0.
+        attribute.
+        """
+        return self._lam0
+
+    @lam0.setter
+    def lam0(self, value):
+        if isinstance(value, float):
+            self._lam0 = np.array([value])
+        elif isinstance(value, np.ndarray):
+            self._lam0 = value
+        else:
+            raise ValueError(f"Wrong input type {type(value)}")
+
     def add_source(self,
-                   theta: Union[np.float32, np.float64],
-                   phi: Union[np.float32, np.float64],
-                   pte: Union[np.float32, np.float64],
-                   ptm: Union[np.float32, np.float64],
+                   theta: float,
+                   phi: float,
+                   pte: float,
+                   ptm: float,
                    norm_te_dir: str = 'y') -> dict:
         """add_source.
 
@@ -112,6 +125,42 @@ class FourierBaseSover(Cell3D):
         """
         raise NotImplementedError("self._solve not implemented.")
 
+    def display_fitted_permittivity(self):
+        """display_fitted_permittivity.
+
+        Displays information about the dispersive permittivity.
+        """
+        # if True not in self._layerstruct._is_dispers:
+        if True not in [self.layer_manager.layers[ii].is_dispersive for ii in range(self.layer_manager.nlayer)]:
+            print("No dispersive material loaded.")
+        else:
+            for imat in range(self.layer_manager.nlayer):
+                if self.layer_manager.layers[imat].is_dispersive is True:
+                    matname = self.layer_manager.layers[imat].material_name
+                    wls = self._matlib[matname].fitted_data['wavelengths']
+                    data_eps1 = self._matlib[matname].fitted_data['data_eps1']
+                    data_eps2 = self._matlib[matname].fitted_data['data_eps2']
+                    pe1 = self._matlib[matname].fitted_data['fitted_crv1']
+                    pe2 = self._matlib[matname].fitted_data['fitted_crv2']
+                    _, fig_ax = plt.subplots()
+                    ln1data = fig_ax.plot(wls,
+                                      data_eps1, 'r.', label='data e\'')
+                    ln1fit = fig_ax.plot(self._lam0,
+                                     pe1(self._lam0), 'c^-', label='fitted e\'')
+                    fig_ax2 = fig_ax.twinx()
+                    ln2data = fig_ax2.plot(wls,
+                                       data_eps2, 'g*', label='data e\"')
+                    ln2fit = fig_ax2.plot(self._lam0,
+                                      pe2(self._lam0), 'm.-', label='fitted e\"')
+                    # ax2.legend(loc='best')
+                    fig_ax.set_title(f"Permittivity [{matname}]")
+                    fig_ax.set_xlabel(f"Wavelength [{self._lenunit}]")
+                    fig_ax.set_ylabel('Eps\' [Real Part]')
+                    fig_ax2.set_ylabel('Eps\" [Imag Part]')
+                    lns = ln1data + ln1fit + ln2data + ln2fit
+                    labs = [l.get_label() for l in lns]
+                    fig_ax.legend(lns, labs, loc='best')
+
     def _solve(self) -> dict:
 
 
@@ -132,9 +181,11 @@ class FourierBaseSover(Cell3D):
 
         # Add small perturbations to make sure matrices are inversable
         if torch.any(kx_0 == 0.0):
-            kx_0 = kx_0 + 1.0e-13
+            ind = torch.nonzero(kx_0 == 0.0)
+            kx_0[ind[:, 0], ind[:, 1]] = kx_0[ind[:, 0], ind[:, 1]] + 1e-6 
         if torch.any(ky_0 == 0.0):
-            ky_0 = ky_0 + 1.0e-13
+            ind = torch.nonzero(ky_0 == 0.0)
+            ky_0[ind[:, 0], ind[:, 1]] = ky_0[ind[:, 0], ind[:, 1]] + 1e-6 
 
 
         if self.layer_manager.is_ref_dispersive is False:
@@ -192,7 +243,6 @@ class FourierBaseSover(Cell3D):
         mat_lam = blockmat2x2([[1j*mat_kz, zero_mat], [zero_mat, 1j*mat_kz]])
 
         mat_v0 = q_mat @ tinv(mat_lam)
-
 
         # Initialize global scattering matrix
         smat_global = init_smatrix(shape=(self.n_batches, self.n_freqs,
@@ -366,19 +416,11 @@ class FourierBaseSover(Cell3D):
 
         # Connect to transmission region
         if self.layer_manager.is_trn_dispersive is False:
-            # q_mat_2 = (1/self.ur2) * blockmat2x2([[mat_kx @ mat_ky,
-            #                                 self.ur2 * self.er2 * ident_mat - mat_kx @ mat_kx],
-            #                                 [mat_ky @ mat_ky - self.ur2 * self.er2 * ident_mat,
-            #                                 - mat_ky @ mat_kx]])
             q_mat_2 = (1/self.ur2) * blockmat2x2([[mat_kx_ky,
                                             self.ur2 * self.er2 * ident_mat - mat_kx_kx],
                                             [mat_ky_ky - self.ur2 * self.er2 * ident_mat,
                                             - mat_ky_kx]])
         else:
-            # q_mat_2 = (1/self.ur2) * blockmat2x2([[mat_kx @ mat_ky,
-            #                                   self.expand_dims(self.ur2 * self.er2) * ident_mat - mat_kx @ mat_kx],
-            #                                  [mat_ky @ mat_ky - self.expand_dims(self.ur2 * self.er2) * ident_mat,
-            #                                   - mat_ky @ mat_kx]])
             q_mat_2 = (1/self.ur2) * blockmat2x2([[mat_kx_ky,
                                               self.expand_dims(self.ur2 * self.er2) * ident_mat - mat_kx_kx],
                                              [mat_ky_ky - self.expand_dims(self.ur2 * self.er2) * ident_mat,
@@ -392,6 +434,7 @@ class FourierBaseSover(Cell3D):
         smat_trn = {}
         atw2 = tsolve(mat_w0, mat_w_trn)
         atv2 = tsolve(mat_v0, mat_v_trn)
+
         mat_a_2 = atw2 + atv2
         mat_b_2 = atw2 - atv2
         smat_trn['S11'] = mat_b_2 @ tinv(mat_a_2)
@@ -570,9 +613,9 @@ class FourierBaseSover(Cell3D):
         self.k_0 = 2 * torch.pi / self.tlam0  # k0 with dimensions: n_freqs
 
         f_p = torch.arange(start=-np.floor(self.kdim[0] / 2), end=np.floor(
-            self.kdim[0] / 2) + 1, dtype=torch.int32, device=self.device)
+            self.kdim[0] / 2) + 1, dtype=self.tint, device=self.device)
         f_q = torch.arange(start=-np.floor(self.kdim[1] / 2), end=np.floor(
-            self.kdim[1] / 2) + 1, dtype=torch.int32, device=self.device)
+            self.kdim[1] / 2) + 1, dtype=self.tint, device=self.device)
         [self.mesh_fq, self.mesh_fp] = torch.meshgrid(f_q, f_p, indexing='xy')
 
         # check if options are set correctly
@@ -725,23 +768,6 @@ class FourierBaseSover(Cell3D):
 
         return ret_mat
 
-    def _init_dispersive_materials(self) -> None:
-        """_init_dispersive_materials.
-        
-        Initialize the dispersive profile of materials.
-
-        Args:
-
-        Returns:
-            None:
-        """
-        for imat in self._matlib.values():
-            if imat.isdispersive_er is True:
-                # if type(imat.er) == type(None):
-                # if isinstance(imat.er, NoneType):
-                if imat.er is None:
-                    imat.load_dispersive_er(
-                        self._lam0, self._lenunit)
 
     def expand_dims(self, mat: torch.Tensor) -> Optional[torch.Tensor]:
         """Function that expands the input matrix to a standard output dimension without layer information:
@@ -778,6 +804,8 @@ class FourierBaseSover(Cell3D):
 
         return ret
 
+
+
 class RCWASolver(FourierBaseSover):
     """RCWASolver.
 
@@ -787,11 +815,11 @@ class RCWASolver(FourierBaseSover):
                  batch_size: int = 1,
                  lam0: np.ndarray = np.ndarray([]),
                  lengthunit: str = 'um',
-                 rdim: Union[list, None] = None,
-                 kdim: Union[list, None] = None,
-                 materiallist: Union[list, None] = None,
-                 t1: Union[list, None] = None,
-                 t2: Union[list, None] = None,
+                 rdim: list = [512, 512],  # dimensions in real space: (H, W)
+                 kdim: list = [3,3],  # dimensions in k space: (kH, kW)
+                 materiallist: list = [],  # list of materials
+                 t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
+                 t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
                  device: Union[str, torch.device] = 'cpu') -> None:
         super().__init__(batch_size, lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
 
@@ -848,6 +876,28 @@ class RCWASolver(FourierBaseSover):
 
         return smat_layer
 
+class RCWASolverDouble(RCWASolver):
+    """RCWASolver.
+
+    This is the implemented solver class for RCWA.
+    """
+    def __init__(self,
+                 batch_size: int = 1,
+                 lam0: np.ndarray = np.ndarray([]),
+                 lengthunit: str = 'um',
+                 rdim: list = [512, 512],  # dimensions in real space: (H, W)
+                 kdim: list = [3,3],  # dimensions in k space: (kH, kW)
+                 materiallist: list = [],  # list of materials
+                 t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
+                 t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
+                 device: Union[str, torch.device] = 'cpu') -> None:
+
+        self.tcomplex = torch.complex128
+        self.tfloat = torch.float64
+        self.tint = torch.int64
+        self.nfloat = np.float64
+
+        super().__init__(batch_size, lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
 
 class RDITSolver(FourierBaseSover):
     """RDITSolver.
@@ -860,11 +910,11 @@ class RDITSolver(FourierBaseSover):
                  batch_size: int = 1,
                  lam0: np.ndarray = np.ndarray([]),
                  lengthunit: str = 'um',
-                 rdim: Union[list, None] = None,
-                 kdim: Union[list, None] = None,
-                 materiallist: Union[list, None] = None,
-                 t1: Union[list, None] = None,
-                 t2: Union[list, None] = None,
+                 rdim: list = [512, 512],  # dimensions in real space: (H, W)
+                 kdim: list = [3,3],  # dimensions in k space: (kH, kW)
+                 materiallist: list = [],  # list of materials
+                 t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
+                 t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
                  device: Union[str, torch.device] = 'cpu') -> None:
         super().__init__(batch_size, lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
         self._rdit_orders = 10
@@ -954,3 +1004,26 @@ class RDITSolver(FourierBaseSover):
             None:
         """
         self._rdit_orders = rdit_order
+
+class RDITSolverDouble(RDITSolver):
+    """RDITSolver.
+
+    This is the implemented solver class for R-DIT.
+    """
+    def __init__(self,
+                 batch_size: int = 1,
+                 lam0: np.ndarray = np.ndarray([]),
+                 lengthunit: str = 'um',
+                 rdim: list = [512, 512],  # dimensions in real space: (H, W)
+                 kdim: list = [3,3],  # dimensions in k space: (kH, kW)
+                 materiallist: list = [],  # list of materials
+                 t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
+                 t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
+                 device: Union[str, torch.device] = 'cpu') -> None:
+
+        self.tcomplex = torch.complex128
+        self.tfloat = torch.float64
+        self.tint = torch.int64
+        self.nfloat = np.float64
+
+        super().__init__(batch_size, lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)

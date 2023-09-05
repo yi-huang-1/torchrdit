@@ -427,8 +427,6 @@ class LayerManager:
         pf_t = prow_t - pcol_t
 
         return input_matrix[:, p_0 - pf_t, q_0 - qf_t]
-    
-    
 
     @tensor_params_check(check_start_index=2, check_stop_index=2)
     def add_layer(self, layer_type, thickness, material_name, is_optimize = False, is_dispersive = False):

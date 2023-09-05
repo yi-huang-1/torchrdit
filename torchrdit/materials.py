@@ -17,7 +17,7 @@ class MaterialClass():
                  # true or false if the permittivity of material is dispersive
                  dielectric_dispersion: bool = False,
                  # path of the user-defined dispersive dielectric data,
-                 user_dielectric_file: str = None,
+                 user_dielectric_file: str = '',
                  data_format: str = 'freq-eps',  # format of the user-difined data
                  data_unit: str = 'thz',  # unit of frequency or wavelength
                  max_poly_fit_order: int = 10,  # max polynomial fit order
