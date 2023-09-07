@@ -343,3 +343,40 @@ def blur_filter(rho: torch.Tensor,
     rho = operator_proj(rho, beta=beta, eta=eta, num_proj=num_proj)
 
     return rho
+
+# Moore-Neighbor Tracing Algorithm
+def moore_neighbor_tracing(binary_matrix):
+    directions = [(-1, 0), (0, 1), (1, 0), (0, -1)]
+    start = None
+    for x in range(binary_matrix.shape[0]):
+        for y in range(binary_matrix.shape[1]):
+            if binary_matrix[x, y] == 1:
+                start = (x, y)
+                break
+        if start is not None:
+            break
+
+    if start is None:
+        return None
+
+    boundary = [start]
+    current = start
+    prev_direction = 0
+
+    while True:
+        for i in range(4):
+            direction = (prev_direction + i) % 4
+            dx, dy = directions[direction]
+            next_point = (current[0] + dx, current[1] + dy)
+
+            if 0 <= next_point[0] < binary_matrix.shape[0] and \
+               0 <= next_point[1] < binary_matrix.shape[1] and \
+               binary_matrix[next_point] == 1:
+                prev_direction = (direction - 1) % 4
+                if next_point != start:
+                    boundary.append(next_point)
+                    current = next_point
+                else:
+                    return boundary
+                break
+

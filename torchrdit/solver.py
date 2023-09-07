@@ -1,15 +1,17 @@
 """ This file defines all operations related to solver computations."""
+from os.path import isdir
 from typing import Union, Optional
 
 import numpy as np
 import torch
 # import datetime
 import matplotlib.pyplot as plt
+import os
 
 from torch.linalg import inv as tinv
 from torch.linalg import solve as tsolve
 from .cell import Cell3D
-from .utils import blockmat2x2, redhstar, EigComplex, init_smatrix
+from .utils import blockmat2x2, redhstar, EigComplex, init_smatrix, moore_neighbor_tracing
 
 
 class FourierBaseSover(Cell3D):
@@ -803,6 +805,80 @@ class FourierBaseSover(Cell3D):
             raise RuntimeError("Not Listed in the Case")
 
         return ret
+
+
+    def export_mask_to_gds(self, mask: torch.Tensor, layout: tuple, cell_name: str, file_path: str):
+        """export mask matrix to GDSII file.
+
+        Args:
+            mask (torch.Tensor): input tensor matrix
+            layout (tuple): layout, or meshgrid matrices X and Y of the mask
+            cell_name (str): cell name in GDSII file
+            file_path (str): file path of the generated gds file
+        """
+
+        from cv2 import floodFill
+
+        if '~' in file_path:
+            file_path = os.path.expanduser(file_path)
+
+        if os.path.isdir(file_path):
+            dir_path = file_path
+            file_path = os.path.join(dir_path, 'top.gds')
+        else:
+            dir_path = os.path.dirname(file_path)
+
+        if os.path.exists(dir_path) is False:
+            os.makedirs(dir_path)
+
+        boundary_list = []
+        binary_matrix = np.copy(mask.numpy())
+
+        # Binarize the matrix
+        binary_matrix = np.int32((binary_matrix >= 0.5))
+
+        # Extract the boundary using Moore-Neighbor Tracing
+        while np.all(binary_matrix == 0) == False:
+
+            boundary = moore_neighbor_tracing(binary_matrix)
+            
+            if boundary is not None:
+                boundary_list.append(boundary)
+                # Erase the interior points. You could choose any point that you know is inside the shape.
+                # For simplicity, we use the first point in the boundary list and assume it's part of a closed shape.
+                floodFill(binary_matrix, None, (boundary[0][1], boundary[0][0]), 0)
+
+        self._gds_export(boundary_list=boundary_list, layout=layout, cell_name=cell_name, file_path=file_path)
+
+    @staticmethod
+    def _gds_export(boundary_list: list, layout: tuple, cell_name: str = "COMPLEX_SHAPE", file_path:str = "meta_lens.gds"):
+        """export boundary list to GDSII file.
+
+        Args:
+            boundary_list (list): a list of boundary points
+            layout (tuple): layout, or meshgrid matrices X and Y of the mask
+            cell_name (str): cell name in GDSII file
+            file_path (str): file path of the generated gds file
+        """
+        import gdspy
+        # Initialize GDSII Library
+        gds_lib = gdspy.GdsLibrary()
+
+        X0, Y0 = layout
+
+        # Create a new cell
+        cell = gds_lib.new_cell(cell_name)
+
+        for bound in boundary_list:
+            # Convert to format compatible with gdspy and add to cell
+            boundary = [(X0[x, y].item(), Y0[x, y].item()) for x, y in bound]
+            polygon = gdspy.Polygon(boundary, layer=0)
+            cell.add(polygon)
+
+        # Save the GDSII file
+        gds_lib.write_gds(file_path)
+        gdspy.current_library = gdspy.GdsLibrary()
+        
 
 
 

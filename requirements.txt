@@ -3,4 +3,7 @@ torchvision
 numpy
 tensorboard
 matplotlib
-tqdm
+pytest
+pytest-xdist
+scikit-image
+opencv
