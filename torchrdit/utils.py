@@ -30,17 +30,15 @@ def tensor_params_check(func: Optional[FuncType] = None, check_start_index: int 
 
     @wraps(func)
     def tensor_warpper(*args: Optional[Any], **kwargs: Optional[Any]) -> Optional[Any]:
-        batch_size = args[0].n_batches
-        n_checked = 1 # ignore the first parameter [self]
+        n_checked = 0 # ignore the first parameter [self]
         # Type Check
         # Positional parameters
         for index ,val in enumerate(args):
-            if index > 0:
-                if check_start_index <= n_checked <= check_stop_index:
-                    if not isinstance(val, torch.Tensor):
-                        errstr = f"Input[{index}]: {val} is not a torch.Tensor type."
-                        raise TypeError(errstr)
-                n_checked += 1
+            if check_start_index <= n_checked <= check_stop_index:
+                if not isinstance(val, torch.Tensor):
+                    errstr = f"Input[{index}]: {val} is not a torch.Tensor type."
+                    raise TypeError(errstr)
+            n_checked += 1
         # Keywords parameters
         for keys, val in kwargs.items():
             if check_start_index <= n_checked <= check_stop_index:
@@ -49,50 +47,49 @@ def tensor_params_check(func: Optional[FuncType] = None, check_start_index: int 
                     raise TypeError(errstr)
             n_checked += 1
 
-        # Dimension Check, assert if the parameters match the batch size
-        n_checked = 1 # ignore the first parameter [self]
+        # # Dimension Check, assert if the parameters match the batch size
+        # n_checked = 0 # ignore the first parameter [self]
         l_args = list(args)
-        for index ,val in enumerate(l_args):
-            if index > 0:
-                if check_start_index <= n_checked <= check_stop_index:
-                    if val.ndim == 0:
-                        l_args[index] = val.expand(batch_size)
-                    elif val.ndim == 1 and val.shape[0] == 1:
-                        l_args[index] = val.expand(batch_size)
-                    elif val.ndim == 1 and val.shape[0] != batch_size:
-                        errstr = f"The size of the input tensor \
-                        {list(val.shape)} must match the batch size {[batch_size]} or [1]."
-                        raise RuntimeError(errstr)
-                    elif val.ndim == 2 and val.shape[0] == 1:
-                        l_args[index] = val.expand(batch_size, val.shape[1])
-                    elif val.ndim == 2 and val.shape[0] != batch_size:
-                        errstr = f"The size of the input tensor \
-                        {list(val.shape)} must match the batch size {[batch_size,]} or [1,]."
-                        raise RuntimeError(errstr)
-                    elif val.ndim > 2:
-                        errstr = f"The input tensor does not match the batch size."
-                        raise RuntimeError(errstr)
-                n_checked += 1
-
-        for keys, val in kwargs.items():
-            if (n_checked >= check_start_index and n_checked <= check_stop_index):
-                if val.ndim == 0:
-                    kwargs[keys] = val.expand(batch_size)
-                elif val.ndim == 1 and val.shape[0] == 1:
-                    kwargs[keys] = val.expand(batch_size)
-                elif val.ndim == 1 and val.shape[0] != batch_size:
-                    errstr = f"The size of the input tensor {list(val.shape)} must match the batch size {[batch_size]} or [1]."
-                    raise RuntimeError(errstr)
-                elif val.ndim == 2 and val.shape[0] == 1:
-                    kwargs[keys] = val.expand(batch_size, val.shape[1])
-                elif val.ndim == 2 and val.shape[0] != batch_size:
-                    errstr = f"The size of the input tensor \
-                    {list(val.shape)} must match the batch size {[batch_size, ]} or [1, ]."
-                    raise RuntimeError(errstr)
-                elif val.ndim > 2:
-                    errstr = "The input tensor does not match the batch size."
-                    raise RuntimeError(errstr)
-            n_checked += 1
+        # for index ,val in enumerate(l_args):
+        #     if check_start_index <= n_checked <= check_stop_index:
+        #         if val.ndim == 0:
+        #             l_args[index] = val.expand(batch_size)
+        #         elif val.ndim == 1 and val.shape[0] == 1:
+        #             l_args[index] = val.expand(batch_size)
+        #         elif val.ndim == 1 and val.shape[0] != batch_size:
+        #             errstr = f"The size of the input tensor \
+        #             {list(val.shape)} must match the batch size {[batch_size]} or [1]."
+        #             raise RuntimeError(errstr)
+        #         elif val.ndim == 2 and val.shape[0] == 1:
+        #             l_args[index] = val.expand(batch_size, val.shape[1])
+        #         elif val.ndim == 2 and val.shape[0] != batch_size:
+        #             errstr = f"The size of the input tensor \
+        #             {list(val.shape)} must match the batch size {[batch_size,]} or [1,]."
+        #             raise RuntimeError(errstr)
+        #         elif val.ndim > 2:
+        #             errstr = f"The input tensor does not match the batch size."
+        #             raise RuntimeError(errstr)
+        #     n_checked += 1
+        #
+        # for keys, val in kwargs.items():
+        #     if (n_checked >= check_start_index and n_checked <= check_stop_index):
+        #         if val.ndim == 0:
+        #             kwargs[keys] = val.expand(batch_size)
+        #         elif val.ndim == 1 and val.shape[0] == 1:
+        #             kwargs[keys] = val.expand(batch_size)
+        #         elif val.ndim == 1 and val.shape[0] != batch_size:
+        #             errstr = f"The size of the input tensor {list(val.shape)} must match the batch size {[batch_size]} or [1]."
+        #             raise RuntimeError(errstr)
+        #         elif val.ndim == 2 and val.shape[0] == 1:
+        #             kwargs[keys] = val.expand(batch_size, val.shape[1])
+        #         elif val.ndim == 2 and val.shape[0] != batch_size:
+        #             errstr = f"The size of the input tensor \
+        #             {list(val.shape)} must match the batch size {[batch_size, ]} or [1, ]."
+        #             raise RuntimeError(errstr)
+        #         elif val.ndim > 2:
+        #             errstr = "The input tensor does not match the batch size."
+        #             raise RuntimeError(errstr)
+        #     n_checked += 1
 
         return func(*tuple(l_args), **kwargs)
     return tensor_warpper
@@ -208,9 +205,9 @@ def init_smatrix(shape: Tuple, dtype: torch.dtype , device : Union[str, torch.de
     smatrix['S11'] = torch.zeros(
         size=shape, dtype=dtype, device=device)
     smatrix['S12'] = torch.eye(shape[-2], shape[-1], dtype=dtype,
-                               device=device).unsqueeze(0).unsqueeze(0).repeat(shape[0], shape[1], 1, 1)
+                               device=device).unsqueeze(0).repeat(shape[0], 1, 1)
     smatrix['S21'] = torch.eye(shape[-2], shape[-1], dtype=dtype,
-                               device=device).unsqueeze(0).unsqueeze(0).repeat(shape[0], shape[1], 1, 1)
+                               device=device).unsqueeze(0).repeat(shape[0], 1, 1)
     smatrix['S22'] = torch.zeros(
         size=shape, dtype=dtype, device=device)
     return smatrix
@@ -231,7 +228,7 @@ def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64
 
     # Input dimensions (n_batches, n_freqs, n_harmonics, n_harmonics)
     # Construct identity matrix
-    _, _, harmonic_m, harmonic_n = smat_a['S11'].shape
+    _, harmonic_m, harmonic_n = smat_a['S11'].shape
     device = smat_a['S11'].device
     identity_mat = torch.eye(harmonic_m, harmonic_n, dtype=tcomplex, device=device)
 
@@ -343,40 +340,4 @@ def blur_filter(rho: torch.Tensor,
     rho = operator_proj(rho, beta=beta, eta=eta, num_proj=num_proj)
 
     return rho
-
-# Moore-Neighbor Tracing Algorithm
-def moore_neighbor_tracing(binary_matrix):
-    directions = [(-1, 0), (0, 1), (1, 0), (0, -1)]
-    start = None
-    for x in range(binary_matrix.shape[0]):
-        for y in range(binary_matrix.shape[1]):
-            if binary_matrix[x, y] == 1:
-                start = (x, y)
-                break
-        if start is not None:
-            break
-
-    if start is None:
-        return None
-
-    boundary = [start]
-    current = start
-    prev_direction = 0
-
-    while True:
-        for i in range(4):
-            direction = (prev_direction + i) % 4
-            dx, dy = directions[direction]
-            next_point = (current[0] + dx, current[1] + dy)
-
-            if 0 <= next_point[0] < binary_matrix.shape[0] and \
-               0 <= next_point[1] < binary_matrix.shape[1] and \
-               binary_matrix[next_point] == 1:
-                prev_direction = (direction - 1) % 4
-                if next_point != start:
-                    boundary.append(next_point)
-                    current = next_point
-                else:
-                    return boundary
-                break
 

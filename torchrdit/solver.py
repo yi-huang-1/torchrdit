@@ -1,24 +1,19 @@
 """ This file defines all operations related to solver computations."""
-from os.path import isdir
 from typing import Union, Optional
 
 import numpy as np
 import torch
-# import datetime
-import matplotlib.pyplot as plt
-import os
 
 from torch.linalg import inv as tinv
 from torch.linalg import solve as tsolve
 from .cell import Cell3D
-from .utils import blockmat2x2, redhstar, EigComplex, init_smatrix, moore_neighbor_tracing
+from .utils import blockmat2x2, redhstar, EigComplex, init_smatrix
 
 
 class FourierBaseSover(Cell3D):
     """Base Class of Fourier Domain Solver"""
 
     def __init__(self,
-                 batch_size: int = 1,  # batch size of data set
                  # wavelengths (frequencies) to be solved
                  lam0: np.ndarray = np.array([1.0]),
                  lengthunit: str = 'um',  # length unit used in the solver
@@ -28,7 +23,7 @@ class FourierBaseSover(Cell3D):
                  t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
                  t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
                  device: Union[str, torch.device] = 'cpu') -> None:
-        super().__init__(batch_size, lengthunit, rdim,
+        super().__init__(lengthunit, rdim,
                          kdim, materiallist, t1, t2, device)
 
         # Create a task time stamp
@@ -41,7 +36,7 @@ class FourierBaseSover(Cell3D):
             self._lam0 = lam0
 
         self.n_freqs = len(self._lam0)
-        self.kinc = 0
+        self.kinc = torch.zeros((1, 3))
         self.k_0 = 0
 
         self.src = None
@@ -127,67 +122,33 @@ class FourierBaseSover(Cell3D):
         """
         raise NotImplementedError("self._solve not implemented.")
 
-    def display_fitted_permittivity(self):
-        """display_fitted_permittivity.
-
-        Displays information about the dispersive permittivity.
-        """
-        # if True not in self._layerstruct._is_dispers:
-        if True not in [self.layer_manager.layers[ii].is_dispersive for ii in range(self.layer_manager.nlayer)]:
-            print("No dispersive material loaded.")
-        else:
-            for imat in range(self.layer_manager.nlayer):
-                if self.layer_manager.layers[imat].is_dispersive is True:
-                    matname = self.layer_manager.layers[imat].material_name
-                    wls = self._matlib[matname].fitted_data['wavelengths']
-                    data_eps1 = self._matlib[matname].fitted_data['data_eps1']
-                    data_eps2 = self._matlib[matname].fitted_data['data_eps2']
-                    pe1 = self._matlib[matname].fitted_data['fitted_crv1']
-                    pe2 = self._matlib[matname].fitted_data['fitted_crv2']
-                    _, fig_ax = plt.subplots()
-                    ln1data = fig_ax.plot(wls,
-                                      data_eps1, 'r.', label='data e\'')
-                    ln1fit = fig_ax.plot(self._lam0,
-                                     pe1(self._lam0), 'c^-', label='fitted e\'')
-                    fig_ax2 = fig_ax.twinx()
-                    ln2data = fig_ax2.plot(wls,
-                                       data_eps2, 'g*', label='data e\"')
-                    ln2fit = fig_ax2.plot(self._lam0,
-                                      pe2(self._lam0), 'm.-', label='fitted e\"')
-                    # ax2.legend(loc='best')
-                    fig_ax.set_title(f"Permittivity [{matname}]")
-                    fig_ax.set_xlabel(f"Wavelength [{self._lenunit}]")
-                    fig_ax.set_ylabel('Eps\' [Real Part]')
-                    fig_ax2.set_ylabel('Eps\" [Imag Part]')
-                    lns = ln1data + ln1fit + ln2data + ln2fit
-                    labs = [l.get_label() for l in lns]
-                    fig_ax.legend(lns, labs, loc='best')
 
     def _solve(self) -> dict:
 
+        # kx_0, ky_0: (n_freqs, n_harmonics, kHw)
+        kx_0 = self.kinc[:, 0].unsqueeze(-1).unsqueeze(-1) - \
+            (self.mesh_fp.unsqueeze(0) * \
+                self.reci_t1[:, 0].unsqueeze(-1).unsqueeze(-1) + \
+                self.mesh_fq.unsqueeze(0) * \
+                    self.reci_t2[:, 0].unsqueeze(-1).unsqueeze(-1)) / \
+                self.k_0.unsqueeze(-1).unsqueeze(-2) + 0*1j
 
-        # kx_0, ky_0: (n_batches, n_freqs, n_harmonics, kHw)
-        kx_0 = self.kinc[:, 0].unsqueeze(0).unsqueeze(-1).unsqueeze(-1) - \
-            (self.mesh_fp.unsqueeze(0).unsqueeze(0) * \
-                self.reci_t1[:, 0].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) + \
-                self.mesh_fq.unsqueeze(0).unsqueeze(0) * \
-                    self.reci_t2[:, 0].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)) / \
-                self.k_0.unsqueeze(0).unsqueeze(-1).unsqueeze(-2) + 0*1j
         ky_0 = self.kinc[:, 1].unsqueeze(-1).unsqueeze(-2) - \
-            (self.mesh_fp.unsqueeze(0).unsqueeze(0) * \
-                self.reci_t1[:, 1].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) + \
-                self.mesh_fq.unsqueeze(0).unsqueeze(0) * \
-                    self.reci_t2[:, 1].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)) / \
-                self.k_0.unsqueeze(0).unsqueeze(-1).unsqueeze(-2) + 0*1j
+            (self.mesh_fp.unsqueeze(0) * \
+                self.reci_t1[:, 1].unsqueeze(-1).unsqueeze(-1) + \
+                self.mesh_fq.unsqueeze(0) * \
+                    self.reci_t2[:, 1].unsqueeze(-1).unsqueeze(-1)) / \
+                self.k_0.unsqueeze(-1).unsqueeze(-2) + 0*1j
 
 
         # Add small perturbations to make sure matrices are inversable
+        # if self.tfloat == torch.float32:
         if torch.any(kx_0 == 0.0):
             ind = torch.nonzero(kx_0 == 0.0)
-            kx_0[ind[:, 0], ind[:, 1]] = kx_0[ind[:, 0], ind[:, 1]] + 1e-6 
+            kx_0[ind[:, 0], ind[:, 1]] = kx_0[ind[:, 0], ind[:, 1]] + 1e-6
         if torch.any(ky_0 == 0.0):
             ind = torch.nonzero(ky_0 == 0.0)
-            ky_0[ind[:, 0], ind[:, 1]] = ky_0[ind[:, 0], ind[:, 1]] + 1e-6 
+            ky_0[ind[:, 0], ind[:, 1]] = ky_0[ind[:, 0], ind[:, 1]] + 1e-6
 
 
         if self.layer_manager.is_ref_dispersive is False:
@@ -220,9 +181,10 @@ class FourierBaseSover(Cell3D):
             dim0=-2, dim1=-1).flatten(start_dim=-2).unsqueeze(-2) * ident_mat_k
 
 
-        ident_mat = ident_mat_k.unsqueeze(0).unsqueeze(0).expand(self.n_batches, self.n_freqs, -1, -1)
+        ident_mat = ident_mat_k.unsqueeze(0).expand(self.n_freqs, -1, -1)
         zero_mat = torch.zeros(
-            size=(self.n_batches, self.n_freqs ,n_harmonics, n_harmonics), dtype=self.tcomplex, device=self.device)
+            size=(self.n_freqs ,n_harmonics, n_harmonics), dtype=self.tcomplex, device=self.device)
+
 
         # Calculate eigen-modes of the gap medium
 
@@ -233,12 +195,15 @@ class FourierBaseSover(Cell3D):
 
         mat_kz = torch.conj(torch.sqrt(ident_mat - mat_kx_kx - mat_ky_ky))
 
-        ident_mat_kx_ky = ident_mat - mat_kx_ky
+        # ident_mat_kx_ky = ident_mat - mat_kx_ky
+        ident_mat_kx_kx = ident_mat - mat_kx_kx
+        ident_mat_ky_ky = ident_mat - mat_ky_ky
 
-        # q_mat = blockmat2x2([[mat_kx @ mat_ky, ident_mat - mat_kx @ mat_kx],
-        #                  [mat_ky @ mat_ky - ident_mat, -mat_kx @ mat_ky]])
-        q_mat = blockmat2x2([[mat_kx_ky, ident_mat_kx_ky],
-                         [- ident_mat_kx_ky, - mat_kx_ky]])
+
+        # q_mat = blockmat2x2([[mat_kx_ky + 1e-6, ident_mat_kx_kx],
+        #                  [- ident_mat_ky_ky, - mat_kx_ky - 1e-6]])
+        q_mat = blockmat2x2([[mat_kx_ky, ident_mat_kx_kx],
+                         [- ident_mat_ky_ky, - mat_kx_ky]])
 
         mat_w0 = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
 
@@ -246,8 +211,13 @@ class FourierBaseSover(Cell3D):
 
         mat_v0 = q_mat @ tinv(mat_lam)
 
+        # p_mat = blockmat2x2([[mat_kx_ky + 1e-6, ident_mat_kx_kx],
+        #                  [- ident_mat_ky_ky, - mat_kx_ky - 1e-6]])
+        #
+        # mat_v0 = tinv(p_mat) @ mat_lam
+
         # Initialize global scattering matrix
-        smat_global = init_smatrix(shape=(self.n_batches, self.n_freqs,
+        smat_global = init_smatrix(shape=(self.n_freqs,
                           2*n_harmonics, 2*n_harmonics), dtype=self.tcomplex, device=self.device)
         smat_layer = {}
 
@@ -343,8 +313,7 @@ class FourierBaseSover(Cell3D):
 
                     mat_x_i = torch.linalg.matrix_exp(- dmat_lam_i * \
                         self.expand_dims(self.k_0) \
-                        * self.expand_dims(self.layer_manager.layers[n_layer]\
-                                           .thickness.to(self.device))).to(self.tcomplex)
+                        * self.layer_manager.layers[n_layer].thickness.to(self.device)).to(self.tcomplex)
 
                     # Calculate Layer Scattering Matrix
                     atwi = tsolve(mat_w_i, mat_w0)
@@ -387,6 +356,10 @@ class FourierBaseSover(Cell3D):
                                             self.ur1 * self.er1 * ident_mat - mat_kx_kx],
                                             [mat_ky_ky - self.ur1 * self.er1 * ident_mat,
                                             - mat_ky_kx]])
+            # p_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx_ky + 1e-6,
+            #                                 self.ur1 * self.er1 * ident_mat - mat_kx_kx],
+            #                                 [mat_ky_ky - self.ur1 * self.er1 * ident_mat,
+            #                                 - mat_ky_kx - 1e-6]])
         else:
             # q_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx @ mat_ky,
             #                                 self.expand_dims(self.ur1 * self.er1) * ident_mat - mat_kx @ mat_kx],
@@ -396,16 +369,24 @@ class FourierBaseSover(Cell3D):
                                             self.expand_dims(self.ur1 * self.er1) * ident_mat - mat_kx_kx],
                                             [mat_ky_ky - self.expand_dims(self.ur1 * self.er1) * ident_mat,
                                             - mat_ky_kx]])
+            # p_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx_ky + 1e-6,
+            #                                 self.expand_dims(self.ur1 * self.er1) * ident_mat - mat_kx_kx],
+            #                                 [mat_ky_ky - self.expand_dims(self.ur1 * self.er1) * ident_mat,
+            #                                 - mat_ky_kx - 1e-6]])
 
         mat_w_ref = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
         mat_lam_ref = blockmat2x2([[1j * mat_kz_ref, zero_mat], [zero_mat, 1j*mat_kz_ref]])
 
 
         mat_v_ref = q_mat_1 @ tinv(mat_lam_ref)
+        # mat_v_ref = tinv(p_mat_1) @ mat_lam_ref
 
         smat_ref = {}
         atw1 = tsolve(mat_w0, mat_w_ref)
         atv1 = tsolve(mat_v0, mat_v_ref)
+        # atv1 = mat_lam @ tinv(q_mat) @ mat_v_ref
+
+
         mat_a_1 = atw1 + atv1
         mat_b_1 = atw1 - atv1
         smat_ref['S11'] = - tsolve(mat_a_1, mat_b_1)
@@ -447,6 +428,7 @@ class FourierBaseSover(Cell3D):
 
         smat_global = redhstar(smat_global, smat_trn)
 
+
         # Compute polarization vector
         norm_vec = torch.tensor(
             [0.0, 0.0, 1.0], dtype=self.tcomplex, device=self.device)
@@ -477,14 +459,14 @@ class FourierBaseSover(Cell3D):
                          pol_vec[:, 1].unsqueeze(-1) * delta), dim=1)
 
         # Calculate source vectors
-        csrc = tsolve(mat_w_ref, esrc.unsqueeze(0).unsqueeze(-1))
+        csrc = tsolve(mat_w_ref, esrc.unsqueeze(-1))
 
         # Calculate reflected fields
         cref = smat_global['S11'] @ csrc
         eref = mat_w_ref @ cref
 
-        ref_field_x = eref[:, :, 0: n_harmonics, :]
-        ref_field_y = eref[:, :, n_harmonics: 2*n_harmonics, :]
+        ref_field_x = eref[:, 0: n_harmonics, :]
+        ref_field_y = eref[:, n_harmonics: 2*n_harmonics, :]
 
         # ref_field_z = - (mat_kx @ tinv(mat_kz_ref)) @ ref_field_x \
         #      - (mat_ky @ tinv(mat_kz_ref)) @ ref_field_y
@@ -494,8 +476,8 @@ class FourierBaseSover(Cell3D):
         # Calculate transmitted fields
         ctrn = smat_global['S21'] @ csrc
         etrn = mat_w_trn @ ctrn
-        trn_field_x = etrn[:, :, 0: n_harmonics, :]
-        trn_field_y = etrn[:, :, n_harmonics: 2*n_harmonics, :]
+        trn_field_x = etrn[:, 0: n_harmonics, :]
+        trn_field_y = etrn[:, n_harmonics: 2*n_harmonics, :]
         # trn_field_z = - (mat_kx @ tinv(mat_kz_trn)) @ trn_field_x \
         #      - (mat_ky @ tinv(mat_kz_trn)) @ trn_field_y
         trn_field_z = - mat_kx @ tsolve(mat_kz_trn, trn_field_x) \
@@ -503,24 +485,23 @@ class FourierBaseSover(Cell3D):
 
         # Calculate diffraction efficiences
         ref_diff_efficiency = torch.reshape(torch.real(self.ur2/self.ur1*mat_kz_ref / \
-            self.kinc[:, 2].unsqueeze(0).unsqueeze(-1).unsqueeze(-1)) @
+            self.kinc[:, 2].unsqueeze(-1).unsqueeze(-1)) @
                             (torch.real(ref_field_x) ** 2 + torch.imag(ref_field_x) ** 2 +
                              torch.real(ref_field_y) ** 2 + torch.imag(ref_field_y) ** 2 +
                              + torch.real(ref_field_z) ** 2 + torch.imag(ref_field_z) ** 2),
-                            shape=(self.n_batches,
-                                   self.n_freqs,
+                            shape=(self.n_freqs,
                                    self.kdim[0],
                                    self.kdim[1])).transpose(dim0=-2, dim1=-1)
 
         trn_diff_efficiency = torch.reshape(torch.real(self.ur1/self.ur2*mat_kz_trn / \
-            self.kinc[:, 2].unsqueeze(0).unsqueeze(-1).unsqueeze(-1)) @
+            self.kinc[:, 2].unsqueeze(-1).unsqueeze(-1)) @
                             (torch.real(trn_field_x) ** 2 + torch.imag(trn_field_x) ** 2 +
                              torch.real(trn_field_y) ** 2 + torch.imag(trn_field_y) ** 2 +
                              + torch.real(trn_field_z) ** 2 + torch.imag(trn_field_z) ** 2),
-                            shape=(self.n_batches,
-                                   self.n_freqs,
+                            shape=(self.n_freqs,
                                    self.kdim[0],
                                    self.kdim[1])).transpose(dim0=-2, dim1=-1)
+
 
         # Calculate overall reflectance & Transmittance
         total_ref_efficiency = torch.sum(ref_diff_efficiency, dim=(-1, -2))
@@ -529,17 +510,17 @@ class FourierBaseSover(Cell3D):
         # Store output data
         data = {}
         data['rx'] = torch.reshape(ref_field_x, shape=(
-            self.n_batches, self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
+            self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
         data['ry'] = torch.reshape(ref_field_y, shape=(
-            self.n_batches, self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
+            self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
         data['rz'] = torch.reshape(ref_field_z, shape=(
-            self.n_batches, self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
+            self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
         data['tx'] = torch.reshape(trn_field_x, shape=(
-            self.n_batches, self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
+            self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
         data['ty'] = torch.reshape(trn_field_y, shape=(
-            self.n_batches, self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
+            self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
         data['tz'] = torch.reshape(trn_field_z, shape=(
-            self.n_batches, self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
+            self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
         data['RDE'] = ref_diff_efficiency
         data['TDE'] = trn_diff_efficiency
         data['REF'] = total_ref_efficiency
@@ -667,10 +648,7 @@ class FourierBaseSover(Cell3D):
             None:
         """
 
-        n_batches, ndim1, ndim2 = mask.size()
-        if n_batches != self.n_batches:
-            raise ValueError(
-                f"Input batch size {n_batches} doesn't match the existing size {self.n_batches}!")
+        ndim1, ndim2 = mask.size()
         if (ndim1 != self.rdim[0]) or (ndim2 != self.rdim[1]):
             raise ValueError("Mask dims don't match!")
 
@@ -688,7 +666,7 @@ class FourierBaseSover(Cell3D):
         if bg_material == 'air':
             self.layer_manager.layers[layer_index].ermat = 1 + (er_bg - 1) * mask_format
         else:
-            self.layer_manager.layers[layer_index].ermat = self._matlib[bg_material].er * (1 - mask_format) + \
+            self.layer_manager.layers[layer_index].ermat = torch.tensor(self._matlib[bg_material].er, device=self.device).unsqueeze(0).unsqueeze(-1).unsqueeze(-1) * (1 - mask_format) + \
                 (er_bg - 1) * mask_format
 
         if set_grad is True:
@@ -743,13 +721,11 @@ class FourierBaseSover(Cell3D):
             if self.layer_manager.layers[layer_index].is_dispersive is True:
                 material_name = self.layer_manager.layers[layer_index].material_name
                 if param == 'er':
-                    ret_mat = torch.tensor(self._matlib[material_name].er)\
-                    .unsqueeze(0).repeat(self.n_batches, 1).unsqueeze(2)\
-                    .unsqueeze(2).repeat(1, 1, self.rdim[0], self.rdim[1])\
-                    .to(self.device).to(self.tcomplex)
+                    ret_mat = torch.tensor(self._matlib[material_name].er).unsqueeze(1)\
+                    .unsqueeze(1).repeat(1, self.rdim[0], self.rdim[1]).to(self.device).to(self.tcomplex)
                 elif param == 'ur':
                     param_val = self._matlib[material_name].ur
-                    ret_mat = param_val * torch.ones(size=(self.n_batches, self.rdim[0], self.rdim[1]),
+                    ret_mat = param_val * torch.ones(size=(self.rdim[0], self.rdim[1]),
                                                   dtype=self.tcomplex, device=self.device)
                 else:
                     raise ValueError(f"Input parameter [{param}] is illeagal.")
@@ -763,7 +739,7 @@ class FourierBaseSover(Cell3D):
                 else:
                     raise ValueError(f"Input parameter [{param}] is illeagal.")
 
-                ret_mat = param_val * torch.ones(size=(self.n_batches, self.rdim[0], self.rdim[1]),
+                ret_mat = param_val * torch.ones(size=(self.rdim[0], self.rdim[1]),
                                               dtype=self.tcomplex, device=self.device)
         else:
             raise ValueError("The index exceeds the max layer number.")
@@ -773,7 +749,7 @@ class FourierBaseSover(Cell3D):
 
     def expand_dims(self, mat: torch.Tensor) -> Optional[torch.Tensor]:
         """Function that expands the input matrix to a standard output dimension without layer information:
-            (n_batches, n_freqs, n_harmonics, n_harmonics)
+            (n_freqs, n_harmonics, n_harmonics)
 
         Args:
             mat (torch.Tensor): input tensor matrxi
@@ -783,103 +759,17 @@ class FourierBaseSover(Cell3D):
 
         if mat.ndim == 1 and mat.shape[0] == self.n_freqs:
             # The input tensor with dimension (n_freqs)
-            ret = mat.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
-        elif mat.ndim == 1 and mat.shape[0] == self.n_batches:
-            ret = mat.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+            ret = mat.unsqueeze(-1).unsqueeze(-1)
         elif mat.ndim == 2:
             # The input matrix with dimension (n_harmonics, n_harmonics)
-            ret = mat.unsqueeze(0).unsqueeze(0).repeat(1, self.n_freqs, 1, 1)
+            ret = mat.unsqueeze(0).repeat(self.n_freqs, 1, 1)
         elif mat.ndim == 3 and mat.shape[0] == self.n_freqs:
             # The input matrix with dimension (n_freq, n_harmonics, n_harmonics)
-            ret = mat.unsqueeze(0)
-        elif mat.ndim == 3:
-            # The input matrix with dimension (n_batches, n_harmonics, n_harmonics)
-            if mat.shape[0] == 1:
-                ret = mat.unsqueeze(1).repeat(self.n_batches, self.n_freqs, 1, 1)
-            elif mat.shape[0] == self.n_batches:
-                ret = mat.unsqueeze(1).repeat(1, self.n_freqs, 1, 1)
-        elif mat.ndim == 4 and mat.shape[1] == self.n_freqs and mat.shape[0] == 1:
-            # The input matrix with dimension (n_batches, n_freqs, n_harmonics, n_harmonics)
-            ret = mat.repeat(self.n_batches, 1, 1, 1)
+            ret = mat
         else:
             raise RuntimeError("Not Listed in the Case")
 
         return ret
-
-
-    def export_mask_to_gds(self, mask: torch.Tensor, layout: tuple, cell_name: str, file_path: str):
-        """export mask matrix to GDSII file.
-
-        Args:
-            mask (torch.Tensor): input tensor matrix
-            layout (tuple): layout, or meshgrid matrices X and Y of the mask
-            cell_name (str): cell name in GDSII file
-            file_path (str): file path of the generated gds file
-        """
-
-        from cv2 import floodFill
-
-        if '~' in file_path:
-            file_path = os.path.expanduser(file_path)
-
-        if os.path.isdir(file_path):
-            dir_path = file_path
-            file_path = os.path.join(dir_path, 'top.gds')
-        else:
-            dir_path = os.path.dirname(file_path)
-
-        if os.path.exists(dir_path) is False:
-            os.makedirs(dir_path)
-
-        boundary_list = []
-        binary_matrix = np.copy(mask.numpy())
-
-        # Binarize the matrix
-        binary_matrix = np.int32((binary_matrix >= 0.5))
-
-        # Extract the boundary using Moore-Neighbor Tracing
-        while np.all(binary_matrix == 0) == False:
-
-            boundary = moore_neighbor_tracing(binary_matrix)
-            
-            if boundary is not None:
-                boundary_list.append(boundary)
-                # Erase the interior points. You could choose any point that you know is inside the shape.
-                # For simplicity, we use the first point in the boundary list and assume it's part of a closed shape.
-                floodFill(binary_matrix, None, (boundary[0][1], boundary[0][0]), 0)
-
-        self._gds_export(boundary_list=boundary_list, layout=layout, cell_name=cell_name, file_path=file_path)
-
-    @staticmethod
-    def _gds_export(boundary_list: list, layout: tuple, cell_name: str = "COMPLEX_SHAPE", file_path:str = "meta_lens.gds"):
-        """export boundary list to GDSII file.
-
-        Args:
-            boundary_list (list): a list of boundary points
-            layout (tuple): layout, or meshgrid matrices X and Y of the mask
-            cell_name (str): cell name in GDSII file
-            file_path (str): file path of the generated gds file
-        """
-        import gdspy
-        # Initialize GDSII Library
-        gds_lib = gdspy.GdsLibrary()
-
-        X0, Y0 = layout
-
-        # Create a new cell
-        cell = gds_lib.new_cell(cell_name)
-
-        for bound in boundary_list:
-            # Convert to format compatible with gdspy and add to cell
-            boundary = [(X0[x, y].item(), Y0[x, y].item()) for x, y in bound]
-            polygon = gdspy.Polygon(boundary, layer=0)
-            cell.add(polygon)
-
-        # Save the GDSII file
-        gds_lib.write_gds(file_path)
-        gdspy.current_library = gdspy.GdsLibrary()
-        
-
 
 
 class RCWASolver(FourierBaseSover):
@@ -888,7 +778,6 @@ class RCWASolver(FourierBaseSover):
     This is the implemented solver class for RCWA.
     """
     def __init__(self,
-                 batch_size: int = 1,
                  lam0: np.ndarray = np.ndarray([]),
                  lengthunit: str = 'um',
                  rdim: list = [512, 512],  # dimensions in real space: (H, W)
@@ -897,7 +786,7 @@ class RCWASolver(FourierBaseSover):
                  t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
                  t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
                  device: Union[str, torch.device] = 'cpu') -> None:
-        super().__init__(batch_size, lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
+        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
 
     def _solve_nonhomo_layer(self,
                              layer_index: int,
@@ -930,8 +819,7 @@ class RCWASolver(FourierBaseSover):
 
         mat_v_i = q_mat_i @ mat_w_i @ tinv(dmat_lam_i)
         mat_x_i = torch.linalg.matrix_exp(- dmat_lam_i * self.expand_dims(self.k_0)\
-                                     * self.expand_dims(self.layer_manager.layers[layer_index]\
-                                                        .thickness.to(self.device))).to(self.tcomplex)
+                                     * self.layer_manager.layers[layer_index].thickness.to(self.device)).to(self.tcomplex)
 
         # Calculate Layer Scattering Matrix
         mat_a_i = tsolve(mat_w_i, mat_w0) + tsolve(mat_v_i, mat_v0)
@@ -952,13 +840,12 @@ class RCWASolver(FourierBaseSover):
 
         return smat_layer
 
-class RCWASolverDouble(RCWASolver):
+class RCWARolverFloat(RCWASolver):
     """RCWASolver.
 
     This is the implemented solver class for RCWA.
     """
     def __init__(self,
-                 batch_size: int = 1,
                  lam0: np.ndarray = np.ndarray([]),
                  lengthunit: str = 'um',
                  rdim: list = [512, 512],  # dimensions in real space: (H, W)
@@ -968,12 +855,12 @@ class RCWASolverDouble(RCWASolver):
                  t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
                  device: Union[str, torch.device] = 'cpu') -> None:
 
-        self.tcomplex = torch.complex128
-        self.tfloat = torch.float64
-        self.tint = torch.int64
-        self.nfloat = np.float64
+        self.tcomplex = torch.complex64
+        self.tfloat = torch.float32
+        self.tint = torch.int32
+        self.nfloat = np.float32
 
-        super().__init__(batch_size, lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
+        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
 
 class RDITSolver(FourierBaseSover):
     """RDITSolver.
@@ -983,7 +870,6 @@ class RDITSolver(FourierBaseSover):
 
 
     def __init__(self,
-                 batch_size: int = 1,
                  lam0: np.ndarray = np.ndarray([]),
                  lengthunit: str = 'um',
                  rdim: list = [512, 512],  # dimensions in real space: (H, W)
@@ -992,7 +878,7 @@ class RDITSolver(FourierBaseSover):
                  t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
                  t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
                  device: Union[str, torch.device] = 'cpu') -> None:
-        super().__init__(batch_size, lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
+        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
         self._rdit_orders = 10
 
     def _solve_nonhomo_layer(self,
@@ -1020,22 +906,20 @@ class RDITSolver(FourierBaseSover):
         smat_layer = {}
 
         # Construct T matrix
-        delta_h = self.expand_dims(self.k_0) * \
-            self.expand_dims(self.layer_manager.layers[layer_index]\
-                             .thickness.to(self.device)) / 2.0
+        delta_h = self.expand_dims(self.k_0) * self.layer_manager.layers[layer_index].thickness.to(self.device) / 2.0
         tmat_a_i = torch.eye(2*n_harmonics, 2*n_harmonics, dtype=self.tcomplex,
-                        device=self.device).unsqueeze(0).unsqueeze(0).repeat(self.n_batches, self.n_freqs, 1, 1)
-        tmat_b_i = torch.zeros(size=(self.n_batches, self.n_freqs, 2*n_harmonics, 2*n_harmonics), dtype=self.tcomplex,
+                        device=self.device).unsqueeze(0).repeat(self.n_freqs, 1, 1)
+        tmat_b_i = torch.zeros(size=(self.n_freqs, 2*n_harmonics, 2*n_harmonics), dtype=self.tcomplex,
                           device=self.device)
-        tmat_c_i = torch.zeros(size=(self.n_batches, self.n_freqs, 2*n_harmonics, 2*n_harmonics), dtype=self.tcomplex,
+        tmat_c_i = torch.zeros(size=(self.n_freqs, 2*n_harmonics, 2*n_harmonics), dtype=self.tcomplex,
                           device=self.device)
         tmat_d_i = torch.eye(2*n_harmonics, 2*n_harmonics, dtype=self.tcomplex,
-                        device=self.device).unsqueeze(0).unsqueeze(0).repeat(self.n_batches, self.n_freqs, 1, 1)
+                        device=self.device).unsqueeze(0).repeat(self.n_freqs, 1, 1)
 
         p_fcoef = torch.eye(2*n_harmonics, 2*n_harmonics, dtype=self.tcomplex,
-                            device=self.device).unsqueeze(0).unsqueeze(0).repeat(self.n_batches, self.n_freqs, 1, 1)
+                            device=self.device).unsqueeze(0).repeat(self.n_freqs, 1, 1)
         q_fcoef = torch.eye(2*n_harmonics, 2*n_harmonics, dtype=self.tcomplex,
-                            device=self.device).unsqueeze(0).unsqueeze(0).repeat(self.n_batches, self.n_freqs, 1, 1)
+                            device=self.device).unsqueeze(0).repeat(self.n_freqs, 1, 1)
 
         for irdit_order in range(1, self._rdit_orders + 1):
             if (irdit_order % 2) == 0:  # even orders
@@ -1081,13 +965,12 @@ class RDITSolver(FourierBaseSover):
         """
         self._rdit_orders = rdit_order
 
-class RDITSolverDouble(RDITSolver):
+class RDITSolverFloat(RDITSolver):
     """RDITSolver.
 
     This is the implemented solver class for R-DIT.
     """
     def __init__(self,
-                 batch_size: int = 1,
                  lam0: np.ndarray = np.ndarray([]),
                  lengthunit: str = 'um',
                  rdim: list = [512, 512],  # dimensions in real space: (H, W)
@@ -1097,9 +980,9 @@ class RDITSolverDouble(RDITSolver):
                  t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
                  device: Union[str, torch.device] = 'cpu') -> None:
 
-        self.tcomplex = torch.complex128
-        self.tfloat = torch.float64
-        self.tint = torch.int64
-        self.nfloat = np.float64
+        self.tcomplex = torch.complex64
+        self.tfloat = torch.float32
+        self.tint = torch.int32
+        self.nfloat = np.float32
 
-        super().__init__(batch_size, lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
+        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)

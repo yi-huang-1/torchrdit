@@ -1,7 +1,6 @@
 """ This file defines the material class to manage all materials. """
 import warnings
 import numpy as np
-import matplotlib.pyplot as plt
 
 from .constants import frequnit_dict, lengthunit_dict, C_0
 
@@ -32,6 +31,7 @@ class MaterialClass():
 
         if dielectric_dispersion is False:
             self._isdiedispersive = False
+            self._loadeder = None
             self._er = permittivity
         else:
             self._isdiedispersive = True
@@ -89,36 +89,58 @@ class MaterialClass():
         Args:
             lengthunit (str): lengthunit
         """
+        if self._loadeder is None:
+            return None
+
         disp_er = self._loadeder.copy()
+        calculated_er = np.zeros((disp_er.shape[0], 3))
 
         if self._data_format == 'freq-eps':
-            disp_er[:, 0] = C_0 / (disp_er[:, 0] *
+            calculated_er[:, 0] = C_0 / (disp_er[:, 0] *
                                    frequnit_dict[self._data_unit]) / lengthunit_dict[lengthunit]
+            calculated_er[:, 1] = disp_er[:, 1]
+            if disp_er.shape[1] > 2:
+                calculated_er[:, 2] = disp_er[:, 2]
+            else:
+                calculated_er[:, 2] = np.zeros_like(disp_er[:, 0])
         elif self._data_format == 'wl-eps':
-            disp_er[:, 0] = disp_er[:, 0] * \
+            calculated_er[:, 0] = disp_er[:, 0] * \
                 lengthunit_dict[self._data_unit] / lengthunit_dict[lengthunit]
+            calculated_er[:, 1] = disp_er[:, 1]
+            if disp_er.shape[1] > 2:
+                calculated_er[:, 2] = disp_er[:, 2]
+            else:
+                calculated_er[:, 2] = np.zeros_like(disp_er[:, 0])
         elif self._data_format == 'freq-nk':
-            disp_er[:, 0] = C_0 / (disp_er[:, 0] *
+            calculated_er[:, 0] = C_0 / (disp_er[:, 0] *
                                    frequnit_dict[self._data_unit]) / lengthunit_dict[lengthunit]
             data_n = disp_er[:, 1]
-            data_k = disp_er[:, 2]
+            if disp_er.shape[1] > 2:
+                data_k = disp_er[:, 2]
+            else:
+                data_k = np.zeros_like(disp_er[:, 0])
+
             complex_permittivity = (data_n + 1j*data_k) ** 2
-            disp_er[:, 1] = np.real(complex_permittivity)
-            disp_er[:, 2] = np.imag(complex_permittivity)
+            calculated_er[:, 1] = np.real(complex_permittivity)
+            calculated_er[:, 2] = np.imag(complex_permittivity)
         elif self._data_format == 'wl-nk':
-            disp_er[:, 0] = disp_er[:, 0] * \
+            calculated_er[:, 0] = disp_er[:, 0] * \
                 lengthunit_dict[self._data_unit] / lengthunit_dict[lengthunit]
             data_n = disp_er[:, 1]
-            data_k = disp_er[:, 2]
+            if disp_er.shape[1] > 2:
+                data_k = disp_er[:, 2]
+            else:
+                data_k = np.zeros_like(disp_er[:, 0])
+
             complex_permittivity = (data_n + 1j*data_k) ** 2
-            disp_er[:, 1] = np.real(complex_permittivity)
-            disp_er[:, 2] = np.imag(complex_permittivity)
+            calculated_er[:, 1] = np.real(complex_permittivity)
+            calculated_er[:, 2] = np.imag(complex_permittivity)
 
         # Sort the wavelengths
-        if (disp_er[0, 0] > disp_er[-1, 0]):
-            disp_er_sorted = disp_er[::-1, :]
+        if (calculated_er[0, 0] > calculated_er[-1, 0]):
+            disp_er_sorted = calculated_er[::-1, :]
         else:
-            disp_er_sorted = disp_er
+            disp_er_sorted =calculated_er 
 
         return disp_er_sorted
 
@@ -179,39 +201,3 @@ class MaterialClass():
 
         self._er = pe1(lam0) - 1j*pe2(lam0)
 
-    def display_dispersive_profile(self,
-                                   lengthunit: str = 'um',  # length unit used in the solver
-                                   ):
-        """display_dispersive_profile.
-
-        Plot the original and fitted dispersive profile.
-
-        Args:
-            lengthunit (str): lengthunit
-        """
-
-        ret = None
-
-        if self._isdiedispersive is True:
-            disp_er_sorted = self._extract_laoded_data(lengthunit=lengthunit)
-            fig, fig_ax = plt.subplots()
-            ln1 = fig_ax.plot(disp_er_sorted[:, 0],
-                          disp_er_sorted[:, 1], 'r-', label='e\'')
-            # ax.legend(loc='best')
-            fig_ax2 = fig_ax.twinx()
-            ln2 = fig_ax2.plot(disp_er_sorted[:, 0],
-                           disp_er_sorted[:, 2], 'g--', label='e\"')
-            # ax2.legend(loc='best')
-            fig_ax.set_title(f"Permittivity [{self._name}]")
-            fig_ax.set_xlabel(f"Wavelength [{lengthunit}]")
-            fig_ax.set_ylabel('Eps\' [Real Part]')
-            fig_ax2.set_ylabel('Eps\" [Imag Part]')
-            lns = ln1 + ln2
-            labs = [l.get_label() for l in lns]
-            fig_ax.legend(lns, labs, loc='best')
-
-            ret = fig,fig_ax
-        else:
-            print(f"The material [{self._name}] has no dispersive attribute.")
-
-        return ret

@@ -9,7 +9,6 @@ from .materials import MaterialClass
 from .constants import lengthunit_dict
 from .logger import Logger
 from .layers import LayerManager
-from .viz import plot2d
 
 # Function Type
 FuncType = Callable[..., Any]
@@ -22,13 +21,16 @@ class Cell3D():
     n_kurmat_gen = 0
 
     # Define floating points
-    tcomplex = torch.complex64
-    tfloat = torch.float32
-    tint = torch.int32
-    nfloat = np.float32
+    # tcomplex = torch.complex64
+    # tfloat = torch.float32
+    # tint = torch.int32
+    # nfloat = np.float32
+    tcomplex = torch.complex128
+    tfloat = torch.float64
+    tint = torch.int64
+    nfloat = np.float64
 
     def __init__(self,
-                 batch_size: int,  # batch size of data set
                  lengthunit: str = 'um',  # length unit used in the solver
                  rdim: list = [512, 512],  # dimensions in real space: (H, W)
                  kdim: list = [3,3],  # dimensions in k space: (kH, kW)
@@ -41,8 +43,6 @@ class Cell3D():
 
         # Create a logger
         self.solver_logger = Logger()
-
-        self.n_batches = batch_size
 
         if isinstance(rdim, list) is False or len(rdim) != 2:
             raise ValueError(f"Invalid input rdim [{rdim}]")
@@ -72,7 +72,7 @@ class Cell3D():
         _mat_air = create_material(name='air')
         self.add_materials(material_list=[_mat_air])
 
-        self.layer_manager = LayerManager(n_batches=self.n_batches)
+        self.layer_manager = LayerManager()
         self.update_trn_material(trn_material='air')
         self.update_ref_material(ref_material='air')
 
@@ -83,14 +83,10 @@ class Cell3D():
 
         [mesh_q, mesh_p] = torch.meshgrid(vec_q, vec_p, indexing='xy')
 
-        mesh_q = mesh_q.unsqueeze(0).expand(self.n_batches, -1, -1)
-        mesh_p = mesh_p.unsqueeze(0).expand(self.n_batches, -1, -1)
-
-        self.XO = mesh_p * self.lattice_t1[:, 0].unsqueeze(-1).unsqueeze(-1) +\
-            mesh_q * self.lattice_t2[:, 0].unsqueeze(-1).unsqueeze(-1)
-        self.YO = mesh_p * self.lattice_t1[:, 1].unsqueeze(-1).unsqueeze(-1) +\
-            mesh_q * self.lattice_t2[:, 1].unsqueeze(-1).unsqueeze(-1)
-
+        self.XO = mesh_p * self.lattice_t1[:, 0] +\
+            mesh_q * self.lattice_t2[:, 0]
+        self.YO = mesh_p * self.lattice_t1[:, 1] +\
+            mesh_q * self.lattice_t2[:, 1]
 
         # scaling factor of lengths
         self._lenunit = lengthunit.lower()
@@ -182,40 +178,6 @@ class Cell3D():
         """
         return self.layer_manager.layers
 
-    def plot_layer(self,
-                   layer_index: int = 0,
-                   batch_index: int = 0,
-                   frequency_index: int = 0,
-                   fig_ax = None,
-                   func = 'real',
-                   cmap = 'BuGn',
-                   labels=('x', 'y'),
-                   title=''):
-        """plot_layer.
-
-        Plot the pattern of the specified layer.
-
-        Args:
-            layer_index (int): layer_index
-            batch_index (int): batch_index
-            frequency_index (int): frequency_index
-            fig_ax:
-            func:
-            cmap:
-            labels:
-            title:
-        """
-        ret = None
-        if self.layer_manager.layers[layer_index].is_dispersive is False:
-            ret = plot2d(data=self.layer_manager.layers[layer_index].ermat[batch_index, :, :],
-                          layout = self.get_layout(batch_index=batch_index),
-                          func=func, fig_ax=fig_ax, cmap=cmap, labels=labels, title=title)
-        else:
-            ret = plot2d(data=self.layer_manager.layers[layer_index].ermat[batch_index, frequency_index, :, :],
-                          layout = self.get_layout(batch_index=batch_index),
-                          func=func, fig_ax=fig_ax, cmap=cmap, labels=labels, title=title)
-
-        return ret
 
     @tensor_params_check()
     def _add_lattice_vectors(self, lattice_vec: torch.Tensor) -> torch.Tensor:
@@ -314,18 +276,17 @@ class Cell3D():
         print(f"\tpermeability: {self.ur2}")
         print("------------------------------------")
 
-    def get_layout(self, batch_index: int = 0) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_layout(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """get_layout.
 
         Returns the layout matrices of the cell.
 
         Args:
-            batch_index (int): batch_index
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]:
         """
-        return self.XO[batch_index, :, :], self.YO[batch_index, :, :]
+        return self.XO, self.YO
 
     @property
     def er1(self):

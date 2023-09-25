@@ -270,8 +270,7 @@ class LayerManager:
     A class to manage layer instances.
     """
 
-    def __init__(self, n_batches) -> None:
-        self.n_batches = n_batches
+    def __init__(self) -> None:
         self.layers = []
         self.layer_director = LayerDirector()
         
@@ -286,8 +285,8 @@ class LayerManager:
                             n_harmonic1: int,
                             n_harmonic2: int,
                             param: str = 'er'):
-        # The dimensions of ermat/urmat is (n_batches, n_layers, H, W)
-        # The dimensions of kermat/kurmat is (n_batches, n_layers, kH, kW)
+        # The dimensions of ermat/urmat is (n_layers, H, W)
+        # The dimensions of kermat/kurmat is (n_layers, kH, kW)
 
         if param == 'er':
             if self.layers[layer_index].ermat is None:
@@ -316,15 +315,15 @@ class LayerManager:
         a real-space 2D grid.
 
         Args:
-            input_matrix (torch.Tensor): Grid in real space: (n_batches, H, W)
+            input_matrix (torch.Tensor): Grid in real space: (H, W)
             nharmonic_1 (int): Number of harmonics for the T1 direction.
             nharmonic_2 (int): Number of harmonics for the T2 direction.
 
         Returns:
-            toep_matrix (torch.Tensor): Toeplitz matrix: (n_batches, n_harmonics, n_harmonics)
+            toep_matrix (torch.Tensor): Toeplitz matrix: (n_harmonics, n_harmonics)
         """
 
-        _, n_height, n_width = input_matrix.size()
+        n_height, n_width = input_matrix.size()
 
 
         # compute fourier coefficents of input_matrix for only the last two dimensions
@@ -346,19 +345,19 @@ class LayerManager:
         a real-space 2D grid.
 
         Args:
-            input_matrix (torch.Tensor): Grid in real space: (n_batches, n_freqs, H, W)
+            input_matrix (torch.Tensor): Grid in real space: (n_freqs, H, W)
             nharmonic_1 (int): Number of harmonics for the T1 direction.
             nharmonic_2 (int): Number of harmonics for the T2 direction.
 
         Returns:
-            toep_matrix (torch.Tensor): Toeplitz matrix: (n_batches, n_harmonics, n_harmonics)
+            toep_matrix (torch.Tensor): Toeplitz matrix: (n_harmonics, n_harmonics)
         """
 
-        _, _, n_height, n_width = input_matrix.size()
+        _, n_height, n_width = input_matrix.size()
 
         # compute fourier coefficents of input_matrix for only the last two dimensions
         finput_matrix = fftshift(
-            fftshift(fft2(input_matrix[:, :, :, :]), dim=-1), dim=-2) / (n_height * n_width)
+            fftshift(fft2(input_matrix[:, :, :]), dim=-1), dim=-2) / (n_height * n_width)
 
         #
         # toep_matrix = finput_matrix[:, :, p_0 - pf_t, q_0 - qf_t]
@@ -397,7 +396,7 @@ class LayerManager:
         qf_t = row_s - col_s
         pf_t = prow_t - pcol_t
 
-        return input_matrix[:, :, p_0 - pf_t, q_0 - qf_t]
+        return input_matrix[:, p_0 - pf_t, q_0 - qf_t]
 
     def _extract_normal(self,input_matrix: torch.Tensor,
                                   nharmonic_1: int,
@@ -426,7 +425,7 @@ class LayerManager:
         qf_t = row_s - col_s
         pf_t = prow_t - pcol_t
 
-        return input_matrix[:, p_0 - pf_t, q_0 - qf_t]
+        return input_matrix[p_0 - pf_t, q_0 - qf_t]
 
     @tensor_params_check(check_start_index=2, check_stop_index=2)
     def add_layer(self, layer_type, thickness, material_name, is_optimize = False, is_dispersive = False):
