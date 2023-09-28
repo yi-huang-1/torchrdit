@@ -54,12 +54,12 @@ class Cell3D():
             self.kdim = kdim
 
         if t1 is None:
-            self.lattice_t1 = self._add_lattice_vectors(torch.tensor([[1.0, 0.0]]))
+            self.lattice_t1 = self._add_lattice_vectors(torch.tensor([1.0, 0.0]))
         else:
             self.lattice_t1 = self._add_lattice_vectors(t1)
 
         if t2 is None:
-            self.lattice_t2 = self._add_lattice_vectors(torch.tensor([[0.0, 1.0]]))
+            self.lattice_t2 = self._add_lattice_vectors(torch.tensor([0.0, 1.0]))
         else:
             self.lattice_t2 = self._add_lattice_vectors(t2)
 
@@ -83,10 +83,10 @@ class Cell3D():
 
         [mesh_q, mesh_p] = torch.meshgrid(vec_q, vec_p, indexing='xy')
 
-        self.XO = mesh_p * self.lattice_t1[:, 0] +\
-            mesh_q * self.lattice_t2[:, 0]
-        self.YO = mesh_p * self.lattice_t1[:, 1] +\
-            mesh_q * self.lattice_t2[:, 1]
+        self.XO = mesh_p * self.lattice_t1[0] +\
+            mesh_q * self.lattice_t2[0]
+        self.YO = mesh_p * self.lattice_t1[1] +\
+            mesh_q * self.lattice_t2[1]
 
         # scaling factor of lengths
         self._lenunit = lengthunit.lower()
@@ -198,7 +198,7 @@ class Cell3D():
                 terr_str = f"The element of the argument should be the [{self.tfloat}] type."
                 self.solver_logger.error(f"TypeError: {terr_str}")
                 raise TypeError(terr_str)
-        return lattice_vec.to(self.device)
+        return lattice_vec.squeeze().to(self.device)
 
     def update_trn_material(self, trn_material: Any) -> None:
         """update_trn_material.
