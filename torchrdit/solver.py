@@ -8,7 +8,7 @@ from torch.linalg import inv as tinv
 from torch.linalg import solve as tsolve
 from .cell import Cell3D
 from .utils import blockmat2x2, redhstar, EigComplex, init_smatrix
-
+import time
 
 class FourierBaseSover(Cell3D):
     """Base Class of Fourier Domain Solver"""
@@ -214,7 +214,6 @@ class FourierBaseSover(Cell3D):
         # Main Loop
         # ============================================================================
         # Build Eigen Value Problem
-
         for n_layer in range(self.layer_manager.nlayer):
             # Transform dimensions to (n_batches, n_freqs, n_harmonics, n_harmonics)
             if (self.layer_manager.layers[n_layer].is_solved is False) \
@@ -256,7 +255,6 @@ class FourierBaseSover(Cell3D):
                                        toeplitz_er - mat_kx_diag @ solve_tur_mkx],
                                       [mat_ky_diag @ solve_tur_mky - toeplitz_er,
                                      - mat_ky_diag @ solve_tur_mkx]])
-
                     smat_layer = self._solve_nonhomo_layer(layer_index=n_layer,
                                               p_mat_i=p_mat_i,
                                               q_mat_i=q_mat_i,
@@ -316,20 +314,24 @@ class FourierBaseSover(Cell3D):
 
                         # ===========================================================
 
-                    mat_w_i = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
+                    # mat_w_i = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
+                    # print(mat_w_i.shape)
                     # mat_v_i = q_mat_i @ tinv(dmat_lam_i)
 
                     mat_x_i = - 1j*mat_kz_i * self.k_0[:, None] \
                         * self.layer_manager.layers[n_layer].thickness.to(self.device).to(self.tcomplex)
-                    mat_x_i = torch.linalg.matrix_exp(self.to_diag(torch.concat([mat_x_i, mat_x_i], dim=1)))
+                    mat_x_i_diag = torch.concat([mat_x_i, mat_x_i], dim=1)
+                    mat_x_i = self.to_diag(torch.exp(mat_x_i_diag))
+                    # mat_x_i = torch.linalg.matrix_exp(self.to_diag(torch.concat([mat_x_i, mat_x_i], dim=1)))
 
                     # Calculate Layer Scattering Matrix
-                    atwi = tsolve(mat_w_i, mat_w0)
+                    # atwi = tsolve(mat_w_i, mat_w0)
+                    atwi = mat_w0
                     atvi = tsolve(mat_v_i, mat_v0)
                     mat_a_i = atwi + atvi
                     mat_b_i = atwi - atvi
 
-                    solve_ai_xi = tsolve(mat_a_i, mat_x_i)
+                    solve_ai_xi = tsolve(mat_a_i, mat_x_i)           
 
                     mat_xi_bi = mat_x_i @ mat_b_i
 
@@ -349,7 +351,6 @@ class FourierBaseSover(Cell3D):
 
             # Update global scattering matrix
             smat_global = redhstar(smat_global, self.smat_layers[n_layer])
-
         # ============================================================================
         # End Main Loop
         # ============================================================================
@@ -533,7 +534,6 @@ class FourierBaseSover(Cell3D):
         data['kinc'] = self.kinc
         data['kx'] = torch.squeeze(kx_0)
         data['ky'] = torch.squeeze(ky_0)
-
         return data
 
     def solve(self,
@@ -920,6 +920,7 @@ class RDITSolver(FourierBaseSover):
         Returns:
             dict:
         """
+        t1 = time.perf_counter()
         n_harmonics = self.kdim[0] * self.kdim[1]
 
         smat_layer = {}
@@ -939,7 +940,7 @@ class RDITSolver(FourierBaseSover):
                             device=self.device).unsqueeze(0).repeat(self.n_freqs, 1, 1)
         q_fcoef = torch.eye(2*n_harmonics, 2*n_harmonics, dtype=self.tcomplex,
                             device=self.device).unsqueeze(0).repeat(self.n_freqs, 1, 1)
-
+        # TODO optimization
         for irdit_order in range(1, self._rdit_orders + 1):
             if (irdit_order % 2) == 0:  # even orders
                 p_fcoef = p_fcoef @ q_mat_i
@@ -953,13 +954,21 @@ class RDITSolver(FourierBaseSover):
                 fac = (delta_h.to(self.tfloat)**irdit_order / np.math.factorial(irdit_order))
                 tmat_b_i = tmat_b_i + fac * p_fcoef
                 tmat_c_i = tmat_c_i + fac * q_fcoef
-
         # Construct some helper functions
-        mat_g1 = tmat_a_i @ mat_w0 + tmat_b_i @ mat_v0
-        mat_g2 = - tmat_c_i @ mat_w0 - tmat_d_i @ mat_v0
+        a_i_w0 = tmat_a_i @ mat_w0
+        b_i_v0 = tmat_b_i @ mat_v0
+        c_i_w0 = tmat_c_i @ mat_w0
+        d_i_v0 = tmat_d_i @ mat_v0
 
-        mat_xx1 = tsolve(mat_g2, tmat_c_i @ mat_w0 - tmat_d_i @ mat_v0)
-        mat_xx2 = tsolve(mat_g1, tmat_a_i @ mat_w0 - tmat_b_i @ mat_v0)
+        mat_g1 = a_i_w0 + b_i_v0
+        mat_g2 = -c_i_w0 - d_i_v0
+        # mat_g1 = tmat_a_i @ mat_w0 + tmat_b_i @ mat_v0
+        # mat_g2 = - tmat_c_i @ mat_w0 - tmat_d_i @ mat_v0
+
+        mat_xx1 = tsolve(mat_g2, c_i_w0 - d_i_v0)
+        mat_xx2 = tsolve(mat_g1, a_i_w0 - b_i_v0)
+        # mat_xx1 = tsolve(mat_g2, tmat_c_i @ mat_w0 - tmat_d_i @ mat_v0)
+        # mat_xx2 = tsolve(mat_g1, tmat_a_i @ mat_w0 - tmat_b_i @ mat_v0)
 
         mat_yyi = mat_xx1 - mat_xx2
         mat_zzi = mat_xx1 + mat_xx2
@@ -968,7 +977,6 @@ class RDITSolver(FourierBaseSover):
         smat_layer['S12'] = mat_zzi / 2.0
         smat_layer['S21'] = smat_layer['S12']
         smat_layer['S22'] = smat_layer['S11']
-
         return smat_layer
 
     def set_rdit_order(self, rdit_order: int) -> None:
