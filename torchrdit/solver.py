@@ -13,6 +13,14 @@ from .utils import blockmat2x2, redhstar, EigComplex, init_smatrix
 class FourierBaseSover(Cell3D):
     """Base Class of Fourier Domain Solver"""
 
+    mesh_fp = torch.empty((3,3))
+    mesh_fq = torch.empty((3,3)) 
+
+    reci_t1 = torch.empty((2,)) 
+    reci_t2 = torch.empty((2,)) 
+    tlam0 = torch.empty((1,)) 
+    k_0 = torch.empty((1,))
+
     def __init__(self,
                  # wavelengths (frequencies) to be solved
                  lam0: np.ndarray = np.array([1.0]),
@@ -37,14 +45,8 @@ class FourierBaseSover(Cell3D):
 
         self.n_freqs = len(self._lam0)
         self.kinc = torch.zeros((1, 3))
-        self.k_0 = 0
 
-        self.src = None
-        self.reci_t1 = None
-        self.reci_t2 = None
-        self.tlam0 = None
-        self.mesh_fp = None
-        self.mesh_fq = None
+        self.src = {}
 
         self.n_solve = 0
         self.smat_layers = {}
@@ -125,24 +127,16 @@ class FourierBaseSover(Cell3D):
 
     def _solve(self) -> dict:
 
-        # kx_0, ky_0: (n_freqs, n_harmonics, kHw)
-        kx_0 = self.kinc[:, 0].unsqueeze(-1).unsqueeze(-1) - \
-            (self.mesh_fp.unsqueeze(0) * \
-                self.reci_t1[:, 0].unsqueeze(-1).unsqueeze(-1) + \
-                self.mesh_fq.unsqueeze(0) * \
-                    self.reci_t2[:, 0].unsqueeze(-1).unsqueeze(-1)) / \
-                self.k_0.unsqueeze(-1).unsqueeze(-2) + 0*1j
+        # kx_0, ky_0: (n_freqs, kdim[0], kdim[1])
+        kx_0 = self.kinc[:, 0, None, None] - \
+            (self.mesh_fp[None, :, :] * self.reci_t1[0, None, None] + \
+                self.mesh_fq[None, :, :] * self.reci_t2[0, None, None]) / self.k_0[:, None, None] + 0*1j
 
-        ky_0 = self.kinc[:, 1].unsqueeze(-1).unsqueeze(-2) - \
-            (self.mesh_fp.unsqueeze(0) * \
-                self.reci_t1[:, 1].unsqueeze(-1).unsqueeze(-1) + \
-                self.mesh_fq.unsqueeze(0) * \
-                    self.reci_t2[:, 1].unsqueeze(-1).unsqueeze(-1)) / \
-                self.k_0.unsqueeze(-1).unsqueeze(-2) + 0*1j
+        ky_0 = self.kinc[:, 1, None, None] - \
+            (self.mesh_fp[None, :, :] * self.reci_t1[1, None, None] + \
+                self.mesh_fq[None, :, :] * self.reci_t2[1, None, None]) / self.k_0[:, None, None] + 0*1j
 
-
-        # Add small perturbations to make sure matrices are inversable
-        # if self.tfloat == torch.float32:
+        # Add relaxition
         if torch.any(kx_0 == 0.0):
             ind = torch.nonzero(kx_0 == 0.0)
             kx_0[ind[:, 0], ind[:, 1]] = kx_0[ind[:, 0], ind[:, 1]] + 1e-6
@@ -156,82 +150,60 @@ class FourierBaseSover(Cell3D):
                 torch.conj(self.ur1)*torch.conj(self.er1) - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
         else:
             kz_ref_0 = torch.conj(torch.sqrt(
-                (torch.conj(self.ur1)*torch.conj(self.er1)).unsqueeze(-1).unsqueeze(-2) - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
+                (torch.conj(self.ur1)*torch.conj(self.er1))[:, None, None] - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
 
         if self.layer_manager.is_trn_dispersive is False:
             kz_trn_0 = torch.conj(torch.sqrt(
                 torch.conj(self.ur2)*torch.conj(self.er2) - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
         else:
             kz_trn_0 = torch.conj(torch.sqrt(
-                (torch.conj(self.ur2)*torch.conj(self.er2)).unsqueeze(-1).unsqueeze(-2) - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
+                (torch.conj(self.ur2)*torch.conj(self.er2))[:, None, None] - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
 
 
         # Transform to diagnal matrices
         n_harmonics = self.kdim[0] * self.kdim[1]
 
-        ident_mat_k = torch.eye(n_harmonics, dtype=self.tcomplex, device=self.device)
+        self.ident_mat_k = torch.eye(n_harmonics, dtype=self.tcomplex, device=self.device)
+        self.ident_mat_k2 = torch.eye(2 * n_harmonics, dtype=self.tcomplex, device=self.device)
 
         mat_kx = kx_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
         mat_ky = ky_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
         mat_kz_ref = kz_ref_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
         mat_kz_trn = kz_trn_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
 
-        # print(mat_kx.shape)
-        # mat_kx = kx_0.transpose(
-        #     dim0=-2, dim1=-1).flatten(start_dim=-2).unsqueeze(-2) * ident_mat_k
-        # mat_ky = ky_0.transpose(
-        #     dim0=-2, dim1=-1).flatten(start_dim=-2).unsqueeze(-2) * ident_mat_k
-        # mat_kz_ref = kz_ref_0.transpose(
-        #     dim0=-2, dim1=-1).flatten(start_dim=-2).unsqueeze(-2) * ident_mat_k
-        # mat_kz_trn = kz_trn_0.transpose(
-        #     dim0=-2, dim1=-1).flatten(start_dim=-2).unsqueeze(-2) * ident_mat_k
-        print(ident_mat_k.shape)
-        print(mat_kx.shape)
-        print(mat_ky.shape)
 
-        # ident_mat = ident_mat_k.unsqueeze(0).expand(self.n_freqs, -1, -1)
+        ident_mat = self.ident_mat_k[None, :, :].expand(self.n_freqs, -1, -1)
         zero_mat = torch.zeros(
             size=(self.n_freqs ,n_harmonics, n_harmonics), dtype=self.tcomplex, device=self.device)
         
         # Calculate eigen-modes of the gap medium
+
+        mat_kx_ky = mat_kx * mat_ky
+        mat_ky_kx = mat_ky * mat_kx
         mat_kx_kx = mat_kx * mat_kx
         mat_ky_ky = mat_ky * mat_ky
-        mat_kx_ky = mat_ky_kx = mat_kx * mat_ky
 
-        # mat_kx_ky = mat_kx @ mat_ky
-        # mat_ky_kx = mat_ky @ mat_kx
-        # mat_kx_kx = mat_kx @ mat_kx
-        # mat_ky_ky = mat_ky @ mat_ky
-        ident_mat = torch.ones_like(mat_kx)
+        mat_kx_diag = self.to_diag(mat_kx)
+        mat_ky_diag = self.to_diag(mat_ky)
 
         # mat_kz = torch.conj(torch.sqrt(ident_mat - mat_kx_kx - mat_ky_ky))
-        mat_kz = torch.conj(torch.sqrt(ident_mat - mat_kx_kx - mat_ky_ky))
+        mat_kz = torch.conj(torch.sqrt(1.0 - mat_kx_kx - mat_ky_ky))
 
-        # ident_mat_kx_ky = ident_mat - mat_kx_ky
-        ident_mat_kx_kx = ident_mat - mat_kx_kx
-        ident_mat_ky_ky = ident_mat - mat_ky_ky
 
-        print(ident_mat_kx_kx.shape)
-        print(ident_mat_ky_ky.shape) # 200 x 121
+        ident_mat_kx_kx = 1.0 - mat_kx_kx
+        ident_mat_ky_ky = 1.0 - mat_ky_ky
 
         # q_mat = blockmat2x2([[mat_kx_ky, ident_mat_kx_kx],
-                        #  [- ident_mat_ky_ky, - mat_kx_ky]])
-        
-        mat_w0 = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
-        mat_lam = 1j * mat_kz
-        # mat_lam = blockmat2x2([[1j*mat_kz, zero_mat], [zero_mat, 1j*mat_kz]])
-        # mat_v0 = q_mat @ tinv(mat_lam)
-        # mat_v0_00 = mat_kx_ky / mat_lam
-        # mat_v0_01 = ident_mat_kx_kx / mat_lam
-        # mat_v0_10 = - ident_mat_ky_ky / mat_lam
-        # mat_v0_11 = - mat_kx_ky / mat_lam
-        mat_v0 = blockmat2x2([[mat_kx_ky / mat_lam, ident_mat_kx_kx / mat_lam],
-                            [- ident_mat_ky_ky / mat_lam, - mat_kx_ky / mat_lam]])
+        #                  [- ident_mat_ky_ky, - mat_kx_ky]])
 
-        # p_mat = blockmat2x2([[mat_kx_ky + 1e-6, ident_mat_kx_kx],
-        #                  [- ident_mat_ky_ky, - mat_kx_ky - 1e-6]])
-        #
-        # mat_v0 = tinv(p_mat) @ mat_lam
+        mat_w0 = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
+
+        # mat_lam = blockmat2x2([[1j*mat_kz, zero_mat], [zero_mat, 1j*mat_kz]])
+        inv_mat_lam = 1 / (1j*mat_kz)
+        
+        # mat_v0 = q_mat @ tinv(mat_lam)
+        mat_v0 = blockmat2x2([[self.to_diag(mat_kx_ky * inv_mat_lam), self.to_diag(ident_mat_kx_kx * inv_mat_lam)],
+                  [self.to_diag(- ident_mat_ky_ky * inv_mat_lam), self.to_diag(- mat_kx_ky * inv_mat_lam)]])
 
         # Initialize global scattering matrix
         smat_global = init_smatrix(shape=(self.n_freqs,
@@ -259,31 +231,31 @@ class FourierBaseSover(Cell3D):
                         toeplitz_er = self.layer_manager.layers[n_layer].kermat
 
                     # permeability always non-dispersive
-                    # Transform dimensions to (n_batches, n_freqs, n_harmonics, n_harmonics)
+                    # Transform dimensions to (n_freqs, n_harmonics, n_harmonics)
                     toeplitz_ur = self.expand_dims(self.layer_manager.layers[n_layer].kurmat)
 
-                    solve_ter_mky = tsolve(toeplitz_er, mat_ky)
-                    solve_ter_mkx = tsolve(toeplitz_er, mat_kx)
-                    solve_tur_mky = tsolve(toeplitz_ur, mat_ky)
-                    solve_tur_mkx = tsolve(toeplitz_ur, mat_kx)
+                    solve_ter_mky = tsolve(toeplitz_er, mat_ky_diag)
+                    solve_ter_mkx = tsolve(toeplitz_er, mat_kx_diag)
+                    solve_tur_mky = tsolve(toeplitz_ur, mat_ky_diag)
+                    solve_tur_mkx = tsolve(toeplitz_ur, mat_kx_diag)
 
                     # p_mat_i = blockmat2x2([[mat_kx @ tinv(toeplitz_er) @ mat_ky,
                     #                    toeplitz_ur - mat_kx @ tinv(toeplitz_er) @ mat_kx],
                     #                   [mat_ky @ tinv(toeplitz_er) @ mat_ky - toeplitz_ur,
                     #                  - mat_ky @ tinv(toeplitz_er) @ mat_kx]])
-                    p_mat_i = blockmat2x2([[mat_kx @ solve_ter_mky,
-                                       toeplitz_ur - mat_kx @ solve_ter_mkx],
-                                      [mat_ky @ solve_ter_mky - toeplitz_ur,
-                                     - mat_ky @ solve_ter_mkx]])
+                    p_mat_i = blockmat2x2([[mat_kx_diag @ solve_ter_mky,
+                                       toeplitz_ur - mat_kx_diag @ solve_ter_mkx],
+                                      [mat_ky_diag @ solve_ter_mky - toeplitz_ur,
+                                     - mat_ky_diag @ solve_ter_mkx]])
 
                     # q_mat_i = blockmat2x2([[mat_kx @ tinv(toeplitz_ur) @ mat_ky,
                     #                    toeplitz_er - mat_kx @ tinv(toeplitz_ur) @ mat_kx],
                     #                   [mat_ky @ tinv(toeplitz_ur) @ mat_ky - toeplitz_er,
                     #                  - mat_ky @ tinv(toeplitz_ur) @ mat_kx]])
-                    q_mat_i = blockmat2x2([[mat_kx @ solve_tur_mky,
-                                       toeplitz_er - mat_kx @ solve_tur_mkx],
-                                      [mat_ky @ solve_tur_mky - toeplitz_er,
-                                     - mat_ky @ solve_tur_mkx]])
+                    q_mat_i = blockmat2x2([[mat_kx_diag @ solve_tur_mky,
+                                       toeplitz_er - mat_kx_diag @ solve_tur_mkx],
+                                      [mat_ky_diag @ solve_tur_mky - toeplitz_er,
+                                     - mat_ky_diag @ solve_tur_mkx]])
 
                     smat_layer = self._solve_nonhomo_layer(layer_index=n_layer,
                                               p_mat_i=p_mat_i,
@@ -293,44 +265,63 @@ class FourierBaseSover(Cell3D):
 
                 elif self.layer_manager.layers[n_layer].is_homogeneous is True:
                     if self.layer_manager.layers[n_layer].is_dispersive is True:
-                        toeplitz_er = self.expand_dims(torch.tensor(
+                        toeplitz_er = torch.tensor(
                             self._matlib[self.layer_manager.layers[n_layer].material_name].er,
-                            device=self.device)).to(self.tcomplex)
+                            device=self.device).to(self.tcomplex)
                         toeplitz_ur = torch.tensor(
                             self._matlib[self.layer_manager.layers[n_layer].material_name].ur,
                             device=self.device).to(self.tcomplex)
 
+                        # ===========================================================
+                        toep_ur_er = toeplitz_ur * toeplitz_er
+                        conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er)
+
+                        mat_kz_i = torch.conj(torch.sqrt(
+                            conj_toep_ur_er[:, None] - mat_kx ** 2 - mat_ky ** 2) + 0*1j).to(self.tcomplex)
+
+                        inv_dmat_lam_i = 1 / (1j*mat_kz_i)
+                        # q_mat_i = 1 / toeplitz_ur * blockmat2x2([[mat_kx_ky_diag,
+                        #                                           self.to_diag(toep_ur_er[:, None] - mat_kx_kx)],
+                        #                                          [self.to_diag(mat_ky_ky - toep_ur_er[:, None]),
+                        #                                           - mat_ky_kx_diag]])
+                        mat_v_i = 1 / toeplitz_ur * blockmat2x2([[self.to_diag(mat_kx_ky * inv_dmat_lam_i),
+                                                                  self.to_diag((toep_ur_er[:, None] - mat_kx_kx) * inv_dmat_lam_i)],
+                                                                 [self.to_diag((mat_ky_ky - toep_ur_er[:, None]) * inv_dmat_lam_i),
+                                                                  - self.to_diag(mat_ky_kx * inv_dmat_lam_i)]])
+
+
+                        # ===========================================================
                     else:
                         toeplitz_er = torch.tensor(
                             self._matlib[self.layer_manager.layers[n_layer].material_name].er, device=self.device)
                         toeplitz_ur = torch.tensor(
                             self._matlib[self.layer_manager.layers[n_layer].material_name].ur, device=self.device)
+                        # ===========================================================
+                        toep_ur_er = toeplitz_ur * toeplitz_er
+                        conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er)
 
-                    # q_mat_i = 1 / toeplitz_ur * blockmat2x2([[mat_kx @ mat_ky,
-                    #                             toeplitz_ur*toeplitz_er*ident_mat - mat_kx @  mat_kx],
-                    #                            [mat_ky @ mat_ky - toeplitz_ur*toeplitz_er*ident_mat,
-                    #                             - mat_ky @ mat_kx]])
-                    toep_ur_er = toeplitz_ur * toeplitz_er * ident_mat
-                    conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er) * ident_mat
+                        mat_kz_i = torch.conj(torch.sqrt(
+                            conj_toep_ur_er - mat_kx ** 2 - mat_ky ** 2) + 0*1j).to(self.tcomplex)
 
-                    q_mat_i = 1 / toeplitz_ur * blockmat2x2([[mat_kx_ky,
-                                                toep_ur_er - mat_kx_kx],
-                                               [mat_ky_ky - toep_ur_er,
-                                                - mat_ky_kx]])
+                        inv_dmat_lam_i = 1 / (1j*mat_kz_i)
+                        # q_mat_i = 1 / toeplitz_ur * blockmat2x2([[mat_kx_ky_diag,
+                        #                                           self.to_diag(toep_ur_er - mat_kx_kx)],
+                        #                                          [self.to_diag(mat_ky_ky - toep_ur_er),
+                        #                                           - mat_ky_kx_diag]])
+                        mat_v_i = 1 / toeplitz_ur * blockmat2x2([[self.to_diag(mat_kx_ky * inv_dmat_lam_i),
+                                                                  self.to_diag((toep_ur_er - mat_kx_kx) * inv_dmat_lam_i)],
+                                                                 [self.to_diag((mat_ky_ky - toep_ur_er) * inv_dmat_lam_i),
+                                                                  - self.to_diag(mat_ky_kx * inv_dmat_lam_i)]])
 
-                    mat_kz_i = torch.conj(torch.sqrt(
-                        conj_toep_ur_er - \
-                            mat_kx ** 2 - mat_ky ** 2 + 0*1j)).to(self.tcomplex)
 
-                    dmat_lam_i = blockmat2x2(
-                        [[1j*mat_kz_i, zero_mat], [zero_mat, 1j*mat_kz_i]])
+                        # ===========================================================
 
                     mat_w_i = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
-                    mat_v_i = q_mat_i @ tinv(dmat_lam_i)
+                    # mat_v_i = q_mat_i @ tinv(dmat_lam_i)
 
-                    mat_x_i = torch.linalg.matrix_exp(- dmat_lam_i * \
-                        self.expand_dims(self.k_0) \
-                        * self.layer_manager.layers[n_layer].thickness.to(self.device)).to(self.tcomplex)
+                    mat_x_i = - 1j*mat_kz_i * self.k_0[:, None] \
+                        * self.layer_manager.layers[n_layer].thickness.to(self.device).to(self.tcomplex)
+                    mat_x_i = torch.linalg.matrix_exp(self.to_diag(torch.concat([mat_x_i, mat_x_i], dim=1)))
 
                     # Calculate Layer Scattering Matrix
                     atwi = tsolve(mat_w_i, mat_w0)
@@ -364,72 +355,67 @@ class FourierBaseSover(Cell3D):
         # ============================================================================
 
         # Connect to reflection region
+        inv_mat_lam_ref = 1 / (1j * mat_kz_ref)
+
         if self.layer_manager.is_ref_dispersive is False:
             # q_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx @ mat_ky,
             #                                 self.ur1 * self.er1 * ident_mat - mat_kx @ mat_kx],
             #                                 [mat_ky @ mat_ky - self.ur1 * self.er1 * ident_mat,
             #                                 - mat_ky @ mat_kx]])
-            q_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx_ky,
-                                            self.ur1 * self.er1 * ident_mat - mat_kx_kx],
-                                            [mat_ky_ky - self.ur1 * self.er1 * ident_mat,
-                                            - mat_ky_kx]])
-            # p_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx_ky + 1e-6,
-            #                                 self.ur1 * self.er1 * ident_mat - mat_kx_kx],
-            #                                 [mat_ky_ky - self.ur1 * self.er1 * ident_mat,
-            #                                 - mat_ky_kx - 1e-6]])
+            mat_v_ref = (1/self.ur1) * blockmat2x2([[self.to_diag(mat_kx_ky * inv_mat_lam_ref),
+                                             self.to_diag((self.ur1 * self.er1 - mat_kx_kx) * inv_mat_lam_ref)],
+                                            [self.to_diag((mat_ky_ky - self.ur1 * self.er1) * inv_mat_lam_ref),
+                                            - self.to_diag(mat_ky_kx * inv_mat_lam_ref)]])
         else:
             # q_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx @ mat_ky,
             #                                 self.expand_dims(self.ur1 * self.er1) * ident_mat - mat_kx @ mat_kx],
             #                                 [mat_ky @ mat_ky - self.expand_dims(self.ur1 * self.er1) * ident_mat,
             #                                 - mat_ky @ mat_kx]])
-            q_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx_ky,
-                                            self.expand_dims(self.ur1 * self.er1) * ident_mat - mat_kx_kx],
-                                            [mat_ky_ky - self.expand_dims(self.ur1 * self.er1) * ident_mat,
-                                            - mat_ky_kx]])
-            # p_mat_1 = (1/self.ur1) * blockmat2x2([[mat_kx_ky + 1e-6,
-            #                                 self.expand_dims(self.ur1 * self.er1) * ident_mat - mat_kx_kx],
-            #                                 [mat_ky_ky - self.expand_dims(self.ur1 * self.er1) * ident_mat,
-            #                                 - mat_ky_kx - 1e-6]])
+            mat_v_ref = (1/self.ur1) * blockmat2x2([[self.to_diag(mat_kx_ky * inv_mat_lam_ref),
+                                             self.to_diag(((self.ur1 * self.er1)[:, None] - mat_kx_kx) * inv_mat_lam_ref)],
+                                            [self.to_diag((mat_ky_ky - (self.ur1 * self.er1)[:, None]) * inv_mat_lam_ref),
+                                            - self.to_diag(mat_ky_kx * inv_mat_lam_ref)]])
 
-        mat_w_ref = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
-        mat_lam_ref = blockmat2x2([[1j * mat_kz_ref, zero_mat], [zero_mat, 1j*mat_kz_ref]])
-
-
-        mat_v_ref = q_mat_1 @ tinv(mat_lam_ref)
-        # mat_v_ref = tinv(p_mat_1) @ mat_lam_ref
+        # mat_w_ref = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
+        mat_w_ref = self.ident_mat_k2[None, :, :].expand(self.n_freqs, -1, -1)
 
         smat_ref = {}
         atw1 = tsolve(mat_w0, mat_w_ref)
         atv1 = tsolve(mat_v0, mat_v_ref)
-        # atv1 = mat_lam @ tinv(q_mat) @ mat_v_ref
 
 
         mat_a_1 = atw1 + atv1
         mat_b_1 = atw1 - atv1
         smat_ref['S11'] = - tsolve(mat_a_1, mat_b_1)
         smat_ref['S12'] = 2 * tinv(mat_a_1)
-        # smat_ref['S21'] = 1/2 * (mat_a_1 - mat_b_1 @ tinv(mat_a_1) @ mat_b_1)
         smat_ref['S21'] = 1/2 * (mat_a_1 - mat_b_1 @ tsolve(mat_a_1, mat_b_1))
         smat_ref['S22'] = mat_b_1 @ tinv(mat_a_1)
 
         smat_global = redhstar(smat_ref, smat_global)
 
         # Connect to transmission region
-        if self.layer_manager.is_trn_dispersive is False:
-            q_mat_2 = (1/self.ur2) * blockmat2x2([[mat_kx_ky,
-                                            self.ur2 * self.er2 * ident_mat - mat_kx_kx],
-                                            [mat_ky_ky - self.ur2 * self.er2 * ident_mat,
-                                            - mat_ky_kx]])
-        else:
-            q_mat_2 = (1/self.ur2) * blockmat2x2([[mat_kx_ky,
-                                              self.expand_dims(self.ur2 * self.er2) * ident_mat - mat_kx_kx],
-                                             [mat_ky_ky - self.expand_dims(self.ur2 * self.er2) * ident_mat,
-                                              - mat_ky_kx]])
+        inv_mat_lam_trn = 1 / (1j * mat_kz_trn) 
 
-        # mat_w_trn = blockmat2x2([[I, zero_mat], [zero_mat, I]])
+        if self.layer_manager.is_trn_dispersive is False:
+            # q_mat_2 = (1/self.ur2) * blockmat2x2([[mat_kx_ky_diag,
+            #                                 self.to_diag(self.ur2 * self.er2 - mat_kx_kx)],
+            #                                 [self.to_diag(mat_ky_ky - self.ur2 * self.er2),
+            #                                 - mat_ky_kx_diag]])
+            mat_v_trn = (1/self.ur2) * blockmat2x2([[self.to_diag(mat_kx_ky * inv_mat_lam_trn),
+                                            self.to_diag((self.ur2 * self.er2 - mat_kx_kx) * inv_mat_lam_trn)],
+                                            [self.to_diag((mat_ky_ky - self.ur2 * self.er2) * inv_mat_lam_trn),
+                                            - self.to_diag(mat_ky_kx * inv_mat_lam_trn)]])
+        else:
+            # q_mat_2 = (1/self.ur2) * blockmat2x2([[mat_kx_ky_diag,
+            #                                        self.to_diag((self.ur2 * self.er2)[:, None] - mat_kx_kx)],
+            #                                  [self.to_diag(mat_ky_ky - (self.ur2 * self.er2)[:, None]),
+            #                                   - mat_ky_kx_diag]])
+            mat_v_trn = (1/self.ur2) * blockmat2x2([[self.to_diag(mat_kx_ky * inv_mat_lam_trn),
+                                                     self.to_diag(((self.ur2 * self.er2)[:, None] - mat_kx_kx) * inv_mat_lam_trn)],
+                                                    [self.to_diag((mat_ky_ky - (self.ur2 * self.er2)[:, None]) * inv_mat_lam_trn),
+                                            - self.to_diag(mat_ky_kx * inv_mat_lam_trn)]])
+
         mat_w_trn = mat_w_ref
-        mat_lam_trn = blockmat2x2([[1j * mat_kz_trn, zero_mat], [zero_mat, 1j*mat_kz_trn]])
-        mat_v_trn = q_mat_2 @ tinv(mat_lam_trn)
 
         smat_trn = {}
         atw2 = tsolve(mat_w0, mat_w_trn)
@@ -438,7 +424,6 @@ class FourierBaseSover(Cell3D):
         mat_a_2 = atw2 + atv2
         mat_b_2 = atw2 - atv2
         smat_trn['S11'] = mat_b_2 @ tinv(mat_a_2)
-        # smat_trn['S12'] = 1/2 * (mat_a_2 - mat_b_2 @ tinv(mat_a_2) @ mat_b_2)
         smat_trn['S12'] = 1/2 * (mat_a_2 - mat_b_2 @ tsolve(mat_a_2, mat_b_2))
         smat_trn['S21'] = 2 * tinv(mat_a_2)
         smat_trn['S22'] = - tsolve(mat_a_2, mat_b_2)
@@ -450,15 +435,16 @@ class FourierBaseSover(Cell3D):
         norm_vec = torch.tensor(
             [0.0, 0.0, 1.0], dtype=self.tcomplex, device=self.device)
 
+        ate = torch.empty_like(norm_vec)
         if np.abs(self.src['theta']) < 1e-3:
             if self.src['norm_te_dir'] == 'y':
                 ate = torch.tensor(
-                    [0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device).unsqueeze(0).repeat(self.n_freqs, 1)
+                    [0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
             elif self.src['norm_te_dir'] == 'x':
                 ate = torch.tensor(
-                    [1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device).unsqueeze(0).repeat(self.n_freqs, 1)
+                    [1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
         else:
-            ate = torch.cross(self.kinc, norm_vec.unsqueeze(0).repeat(self.n_freqs, 1))
+            ate = torch.cross(self.kinc, norm_vec[None, :].repeat(self.n_freqs, 1))
             ate = ate / torch.norm(ate, dim=1).unsqueeze(-1)
 
         atm = torch.cross(ate, self.kinc, dim=1)
@@ -487,8 +473,8 @@ class FourierBaseSover(Cell3D):
 
         # ref_field_z = - (mat_kx @ tinv(mat_kz_ref)) @ ref_field_x \
         #      - (mat_ky @ tinv(mat_kz_ref)) @ ref_field_y
-        ref_field_z = - mat_kx @ tsolve(mat_kz_ref, ref_field_x) \
-             - mat_ky @ tsolve(mat_kz_ref, ref_field_y)
+        ref_field_z = - mat_kx_diag @ tsolve(self.to_diag(mat_kz_ref), ref_field_x) \
+             - mat_ky_diag @ tsolve(self.to_diag(mat_kz_ref), ref_field_y)
 
         # Calculate transmitted fields
         ctrn = smat_global['S21'] @ csrc
@@ -497,12 +483,12 @@ class FourierBaseSover(Cell3D):
         trn_field_y = etrn[:, n_harmonics: 2*n_harmonics, :]
         # trn_field_z = - (mat_kx @ tinv(mat_kz_trn)) @ trn_field_x \
         #      - (mat_ky @ tinv(mat_kz_trn)) @ trn_field_y
-        trn_field_z = - mat_kx @ tsolve(mat_kz_trn, trn_field_x) \
-             - mat_ky @ tsolve(mat_kz_trn, trn_field_y)
+        trn_field_z = - mat_kx_diag @ tsolve(self.to_diag(mat_kz_trn), trn_field_x) \
+             - mat_ky_diag @ tsolve(self.to_diag(mat_kz_trn), trn_field_y)
 
         # Calculate diffraction efficiences
-        ref_diff_efficiency = torch.reshape(torch.real(self.ur2/self.ur1*mat_kz_ref / \
-            self.kinc[:, 2].unsqueeze(-1).unsqueeze(-1)) @
+        ref_diff_efficiency = torch.reshape(torch.real(self.ur2/self.ur1*self.to_diag(mat_kz_ref) / \
+            self.kinc[:, 2, None, None]) @
                             (torch.real(ref_field_x) ** 2 + torch.imag(ref_field_x) ** 2 +
                              torch.real(ref_field_y) ** 2 + torch.imag(ref_field_y) ** 2 +
                              + torch.real(ref_field_z) ** 2 + torch.imag(ref_field_z) ** 2),
@@ -510,8 +496,8 @@ class FourierBaseSover(Cell3D):
                                    self.kdim[0],
                                    self.kdim[1])).transpose(dim0=-2, dim1=-1)
 
-        trn_diff_efficiency = torch.reshape(torch.real(self.ur1/self.ur2*mat_kz_trn / \
-            self.kinc[:, 2].unsqueeze(-1).unsqueeze(-1)) @
+        trn_diff_efficiency = torch.reshape(torch.real(self.ur1/self.ur2*self.to_diag(mat_kz_trn) / \
+            self.kinc[:, 2, None, None]) @
                             (torch.real(trn_field_x) ** 2 + torch.imag(trn_field_x) ** 2 +
                              torch.real(trn_field_y) ** 2 + torch.imag(trn_field_y) ** 2 +
                              + torch.real(trn_field_z) ** 2 + torch.imag(trn_field_z) ** 2),
@@ -598,14 +584,14 @@ class FourierBaseSover(Cell3D):
                                                     device=self.device).unsqueeze(0).repeat(self.n_freqs, 1)
 
         # Calculate reciprocal lattice vectors
-        d_v = self.lattice_t1[:, 0] * self.lattice_t2[:, 1] - self.lattice_t2[:, 0] * self.lattice_t1[:, 1]
+        d_v = self.lattice_t1[0] * self.lattice_t2[1] - self.lattice_t2[0] * self.lattice_t1[1]
 
         self.reci_t1 = 2 * torch.pi * \
-            torch.cat(((+self.lattice_t2[:, 1] / d_v).unsqueeze(-1),
-                       (-self.lattice_t2[:, 0] / d_v).unsqueeze(-1)), dim=1)
+            torch.cat(((+self.lattice_t2[1] / d_v).unsqueeze(0),
+                       (-self.lattice_t2[0] / d_v).unsqueeze(0)), dim=0)
         self.reci_t2 = 2 * torch.pi * \
-            torch.cat(((-self.lattice_t1[:, 1] / d_v).unsqueeze(-1),
-                       (+self.lattice_t1[:, 0] / d_v).unsqueeze(-1)), dim=1)
+            torch.cat(((-self.lattice_t1[1] / d_v).unsqueeze(0),
+                       (+self.lattice_t1[0] / d_v).unsqueeze(0)), dim=0)
 
         # Calculate wave vector expansion
         self.tlam0 = torch.tensor(
@@ -629,6 +615,14 @@ class FourierBaseSover(Cell3D):
 
                     print(
                         f"Warning: Layer {n_layer} has no pattern assigned, and was changed to homogeneous")
+
+
+    def to_diag(self, input_mat: torch.Tensor) -> torch.Tensor:
+        n_harmonics = self.kdim[0] * self.kdim[1]
+        if input_mat.shape[-1] == n_harmonics:
+            return input_mat.unsqueeze(-2) * self.ident_mat_k
+        else:
+            return input_mat.unsqueeze(-2) * self.ident_mat_k2
 
 
     def eval(self):
@@ -683,7 +677,7 @@ class FourierBaseSover(Cell3D):
         if bg_material == 'air':
             self.layer_manager.layers[layer_index].ermat = 1 + (er_bg - 1) * mask_format
         else:
-            self.layer_manager.layers[layer_index].ermat = torch.tensor(self._matlib[bg_material].er, device=self.device).unsqueeze(0).unsqueeze(-1).unsqueeze(-1) * (1 - mask_format) + \
+            self.layer_manager.layers[layer_index].ermat = torch.tensor(self._matlib[bg_material].er, device=self.device)[:, None, None] * (1 - mask_format) + \
                 (er_bg - 1) * mask_format
 
         if set_grad is True:
@@ -719,7 +713,7 @@ class FourierBaseSover(Cell3D):
         self.layer_manager.update_layer_thickness(layer_index=layer_index, thickness=thickness)
         self.layer_manager.layers[layer_index].is_solved = False
 
-    def _get_bg(self, layer_index: int, param='er') -> Union[torch.Tensor, None]:
+    def _get_bg(self, layer_index: int, param='er') -> torch.Tensor:
         """_get_bg.
 
         Returns the background matrix of the specified layer.
@@ -776,12 +770,14 @@ class FourierBaseSover(Cell3D):
 
         if mat.ndim == 1 and mat.shape[0] == self.n_freqs:
             # The input tensor with dimension (n_freqs)
-            ret = mat.unsqueeze(-1).unsqueeze(-1)
+            ret = mat[:, None, None]
         elif mat.ndim == 2:
             # The input matrix with dimension (n_harmonics, n_harmonics)
             ret = mat.unsqueeze(0).repeat(self.n_freqs, 1, 1)
         elif mat.ndim == 3 and mat.shape[0] == self.n_freqs:
             # The input matrix with dimension (n_freq, n_harmonics, n_harmonics)
+            print("No need expand")
+            raise RuntimeError("Debug")
             ret = mat
         else:
             raise RuntimeError("Not Listed in the Case")
@@ -830,13 +826,19 @@ class RCWASolver(FourierBaseSover):
         # Compute Eigen Modes
         mat_lam_i, mat_w_i = EigComplex.apply(p_mat_i @ q_mat_i)
 
-        dmat_lam_i = torch.sqrt(mat_lam_i).unsqueeze(-2) * \
-            torch.eye(mat_lam_i.shape[-1],
-                      dtype=self.tcomplex, device=self.device)
+        # dmat_lam_i = torch.sqrt(mat_lam_i).unsqueeze(-2) * \
+        #     torch.eye(mat_lam_i.shape[-1],
+        #               dtype=self.tcomplex, device=self.device)
+        # dmat_lam_i = self.to_diag(torch.sqrt(mat_lam_i))
+        inv_dmat_lam_i = self.to_diag(1 / torch.sqrt(mat_lam_i))
 
-        mat_v_i = q_mat_i @ mat_w_i @ tinv(dmat_lam_i)
-        mat_x_i = torch.linalg.matrix_exp(- dmat_lam_i * self.expand_dims(self.k_0)\
-                                     * self.layer_manager.layers[layer_index].thickness.to(self.device)).to(self.tcomplex)
+
+        # mat_v_i = q_mat_i @ mat_w_i @ tinv(dmat_lam_i)
+        mat_v_i = q_mat_i @ mat_w_i @ inv_dmat_lam_i
+        # mat_x_i = torch.linalg.matrix_exp(- dmat_lam_i * self.expand_dims(self.k_0)\
+        #                              * self.layer_manager.layers[layer_index].thickness.to(self.device)).to(self.tcomplex)
+        mat_x_i = torch.linalg.matrix_exp(self.to_diag(- torch.sqrt(mat_lam_i) * self.k_0[:, None] \
+            * self.layer_manager.layers[layer_index].thickness.to(self.device))).to(self.tcomplex)
 
         # Calculate Layer Scattering Matrix
         mat_a_i = tsolve(mat_w_i, mat_w0) + tsolve(mat_v_i, mat_v0)

@@ -6,7 +6,6 @@ import torch
 import skimage.draw as skdraw
 
 from torch.linalg import inv as tinv
-from torch.fft import fft2, fftshift
 from .materials import MaterialClass
 
 # Function Type
@@ -47,49 +46,7 @@ def tensor_params_check(func: Optional[FuncType] = None, check_start_index: int 
                     raise TypeError(errstr)
             n_checked += 1
 
-        # # Dimension Check, assert if the parameters match the batch size
-        # n_checked = 0 # ignore the first parameter [self]
         l_args = list(args)
-        # for index ,val in enumerate(l_args):
-        #     if check_start_index <= n_checked <= check_stop_index:
-        #         if val.ndim == 0:
-        #             l_args[index] = val.expand(batch_size)
-        #         elif val.ndim == 1 and val.shape[0] == 1:
-        #             l_args[index] = val.expand(batch_size)
-        #         elif val.ndim == 1 and val.shape[0] != batch_size:
-        #             errstr = f"The size of the input tensor \
-        #             {list(val.shape)} must match the batch size {[batch_size]} or [1]."
-        #             raise RuntimeError(errstr)
-        #         elif val.ndim == 2 and val.shape[0] == 1:
-        #             l_args[index] = val.expand(batch_size, val.shape[1])
-        #         elif val.ndim == 2 and val.shape[0] != batch_size:
-        #             errstr = f"The size of the input tensor \
-        #             {list(val.shape)} must match the batch size {[batch_size,]} or [1,]."
-        #             raise RuntimeError(errstr)
-        #         elif val.ndim > 2:
-        #             errstr = f"The input tensor does not match the batch size."
-        #             raise RuntimeError(errstr)
-        #     n_checked += 1
-        #
-        # for keys, val in kwargs.items():
-        #     if (n_checked >= check_start_index and n_checked <= check_stop_index):
-        #         if val.ndim == 0:
-        #             kwargs[keys] = val.expand(batch_size)
-        #         elif val.ndim == 1 and val.shape[0] == 1:
-        #             kwargs[keys] = val.expand(batch_size)
-        #         elif val.ndim == 1 and val.shape[0] != batch_size:
-        #             errstr = f"The size of the input tensor {list(val.shape)} must match the batch size {[batch_size]} or [1]."
-        #             raise RuntimeError(errstr)
-        #         elif val.ndim == 2 and val.shape[0] == 1:
-        #             kwargs[keys] = val.expand(batch_size, val.shape[1])
-        #         elif val.ndim == 2 and val.shape[0] != batch_size:
-        #             errstr = f"The size of the input tensor \
-        #             {list(val.shape)} must match the batch size {[batch_size, ]} or [1, ]."
-        #             raise RuntimeError(errstr)
-        #         elif val.ndim > 2:
-        #             errstr = "The input tensor does not match the batch size."
-        #             raise RuntimeError(errstr)
-        #     n_checked += 1
 
         return func(*tuple(l_args), **kwargs)
     return tensor_warpper
