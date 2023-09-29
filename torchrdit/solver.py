@@ -171,45 +171,62 @@ class FourierBaseSover(Cell3D):
 
         ident_mat_k = torch.eye(n_harmonics, dtype=self.tcomplex, device=self.device)
 
-        mat_kx = kx_0.transpose(
-            dim0=-2, dim1=-1).flatten(start_dim=-2).unsqueeze(-2) * ident_mat_k
-        mat_ky = ky_0.transpose(
-            dim0=-2, dim1=-1).flatten(start_dim=-2).unsqueeze(-2) * ident_mat_k
-        mat_kz_ref = kz_ref_0.transpose(
-            dim0=-2, dim1=-1).flatten(start_dim=-2).unsqueeze(-2) * ident_mat_k
-        mat_kz_trn = kz_trn_0.transpose(
-            dim0=-2, dim1=-1).flatten(start_dim=-2).unsqueeze(-2) * ident_mat_k
+        mat_kx = kx_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
+        mat_ky = ky_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
+        mat_kz_ref = kz_ref_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
+        mat_kz_trn = kz_trn_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
 
+        # print(mat_kx.shape)
+        # mat_kx = kx_0.transpose(
+        #     dim0=-2, dim1=-1).flatten(start_dim=-2).unsqueeze(-2) * ident_mat_k
+        # mat_ky = ky_0.transpose(
+        #     dim0=-2, dim1=-1).flatten(start_dim=-2).unsqueeze(-2) * ident_mat_k
+        # mat_kz_ref = kz_ref_0.transpose(
+        #     dim0=-2, dim1=-1).flatten(start_dim=-2).unsqueeze(-2) * ident_mat_k
+        # mat_kz_trn = kz_trn_0.transpose(
+        #     dim0=-2, dim1=-1).flatten(start_dim=-2).unsqueeze(-2) * ident_mat_k
+        print(ident_mat_k.shape)
+        print(mat_kx.shape)
+        print(mat_ky.shape)
 
-        ident_mat = ident_mat_k.unsqueeze(0).expand(self.n_freqs, -1, -1)
+        # ident_mat = ident_mat_k.unsqueeze(0).expand(self.n_freqs, -1, -1)
         zero_mat = torch.zeros(
             size=(self.n_freqs ,n_harmonics, n_harmonics), dtype=self.tcomplex, device=self.device)
-
-
+        
         # Calculate eigen-modes of the gap medium
+        mat_kx_kx = mat_kx * mat_kx
+        mat_ky_ky = mat_ky * mat_ky
+        mat_kx_ky = mat_ky_kx = mat_kx * mat_ky
 
-        mat_kx_ky = mat_kx @ mat_ky
-        mat_ky_kx = mat_ky @ mat_kx
-        mat_kx_kx = mat_kx @ mat_kx
-        mat_ky_ky = mat_ky @ mat_ky
+        # mat_kx_ky = mat_kx @ mat_ky
+        # mat_ky_kx = mat_ky @ mat_kx
+        # mat_kx_kx = mat_kx @ mat_kx
+        # mat_ky_ky = mat_ky @ mat_ky
+        ident_mat = torch.ones_like(mat_kx)
 
+        # mat_kz = torch.conj(torch.sqrt(ident_mat - mat_kx_kx - mat_ky_ky))
         mat_kz = torch.conj(torch.sqrt(ident_mat - mat_kx_kx - mat_ky_ky))
 
         # ident_mat_kx_ky = ident_mat - mat_kx_ky
         ident_mat_kx_kx = ident_mat - mat_kx_kx
         ident_mat_ky_ky = ident_mat - mat_ky_ky
 
+        print(ident_mat_kx_kx.shape)
+        print(ident_mat_ky_ky.shape) # 200 x 121
 
-        # q_mat = blockmat2x2([[mat_kx_ky + 1e-6, ident_mat_kx_kx],
-        #                  [- ident_mat_ky_ky, - mat_kx_ky - 1e-6]])
-        q_mat = blockmat2x2([[mat_kx_ky, ident_mat_kx_kx],
-                         [- ident_mat_ky_ky, - mat_kx_ky]])
-
+        # q_mat = blockmat2x2([[mat_kx_ky, ident_mat_kx_kx],
+                        #  [- ident_mat_ky_ky, - mat_kx_ky]])
+        
         mat_w0 = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
-
-        mat_lam = blockmat2x2([[1j*mat_kz, zero_mat], [zero_mat, 1j*mat_kz]])
-
-        mat_v0 = q_mat @ tinv(mat_lam)
+        mat_lam = 1j * mat_kz
+        # mat_lam = blockmat2x2([[1j*mat_kz, zero_mat], [zero_mat, 1j*mat_kz]])
+        # mat_v0 = q_mat @ tinv(mat_lam)
+        # mat_v0_00 = mat_kx_ky / mat_lam
+        # mat_v0_01 = ident_mat_kx_kx / mat_lam
+        # mat_v0_10 = - ident_mat_ky_ky / mat_lam
+        # mat_v0_11 = - mat_kx_ky / mat_lam
+        mat_v0 = blockmat2x2([[mat_kx_ky / mat_lam, ident_mat_kx_kx / mat_lam],
+                            [- ident_mat_ky_ky / mat_lam, - mat_kx_ky / mat_lam]])
 
         # p_mat = blockmat2x2([[mat_kx_ky + 1e-6, ident_mat_kx_kx],
         #                  [- ident_mat_ky_ky, - mat_kx_ky - 1e-6]])
