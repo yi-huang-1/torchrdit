@@ -6,6 +6,7 @@ import torch
 import skimage.draw as skdraw
 
 from torch.linalg import inv as tinv
+from torch.linalg import solve as tsolve
 from .materials import MaterialClass
 
 # Function Type
@@ -190,15 +191,31 @@ def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64
     identity_mat = torch.eye(harmonic_m, harmonic_n, dtype=tcomplex, device=device)
 
     # Compute commom terms
-    mat_d = smat_a['S12'] @ tinv(identity_mat - smat_b['S11'] @ smat_a['S22'])
-    mat_f = smat_b['S21'] @ tinv(identity_mat - smat_a['S22'] @ smat_b['S11'])
+    inv_cycle_1 = identity_mat - smat_b['S11'] @ smat_a['S22']
+    # cycle_1 = tinv(identity_mat - smat_b['S11'] @ smat_a['S22'])
+    cycle_1_smat_b_11  = tsolve(inv_cycle_1, smat_b['S11'])
+    cycle_1_smat_b_12  = tsolve(inv_cycle_1, smat_b['S12'])
+
+    # woodbury matrix identity
+    cycle_2 = identity_mat + smat_a['S22'] @ cycle_1_smat_b_11
+    smat_b_21_cycle_2 = smat_b['S21'] @ cycle_2
+    # mat_d = smat_a['S12'] @ cycle_1
+    # mat_f = smat_b['S21'] @ cycle_2
+
+    # mat_d = smat_a['S12'] @ tinv(identity_mat - smat_b['S11'] @ smat_a['S22'])
+    # mat_f = smat_b['S21'] @ tinv(identity_mat - smat_a['S22'] @ smat_b['S11'])
 
     # Compute combined scattering matrix
     smatrix = {}
-    smatrix['S11'] = smat_a['S11'] + mat_d @ smat_b['S11'] @ smat_a['S21']
-    smatrix['S12'] = mat_d @ smat_b['S12']
-    smatrix['S21'] = mat_f @ smat_a['S21']
-    smatrix['S22'] = smat_b['S22'] + mat_f @ smat_a['S22'] @ smat_b['S12']
+    smatrix['S11'] = smat_a['S11'] + smat_a['S12'] @ cycle_1_smat_b_11 @ smat_a['S21']
+    smatrix['S12'] = smat_a['S12'] @ cycle_1_smat_b_12
+    smatrix['S21'] = smat_b_21_cycle_2 @ smat_a['S21']
+    smatrix['S22'] = smat_b['S22'] + smat_b_21_cycle_2 @ smat_a['S22'] @ smat_b['S12']
+
+    # smatrix['S11'] = smat_a['S11'] + mat_d @ smat_b['S11'] @ smat_a['S21']
+    # smatrix['S12'] = mat_d @ smat_b['S12']
+    # smatrix['S21'] = mat_f @ smat_a['S21']
+    # smatrix['S22'] = smat_b['S22'] + mat_f @ smat_a['S22'] @ smat_b['S12']
 
     return smatrix
 
