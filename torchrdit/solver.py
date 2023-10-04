@@ -354,7 +354,6 @@ class FourierBaseSover(Cell3D):
         # ============================================================================
         # End Main Loop
         # ============================================================================
-
         # Connect to reflection region
         inv_mat_lam_ref = 1 / (1j * mat_kz_ref)
 
@@ -376,21 +375,27 @@ class FourierBaseSover(Cell3D):
                                              self.to_diag(((self.ur1 * self.er1)[:, None] - mat_kx_kx) * inv_mat_lam_ref)],
                                             [self.to_diag((mat_ky_ky - (self.ur1 * self.er1)[:, None]) * inv_mat_lam_ref),
                                             - self.to_diag(mat_ky_kx * inv_mat_lam_ref)]])
-
         # mat_w_ref = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
         mat_w_ref = self.ident_mat_k2[None, :, :].expand(self.n_freqs, -1, -1)
 
         smat_ref = {}
-        atw1 = tsolve(mat_w0, mat_w_ref)
+        # atw1 = tsolve(mat_w0, mat_w_ref)
+        atw1 = mat_w_ref
         atv1 = tsolve(mat_v0, mat_v_ref)
-
 
         mat_a_1 = atw1 + atv1
         mat_b_1 = atw1 - atv1
-        smat_ref['S11'] = - tsolve(mat_a_1, mat_b_1)
-        smat_ref['S12'] = 2 * tinv(mat_a_1)
-        smat_ref['S21'] = 1/2 * (mat_a_1 - mat_b_1 @ tsolve(mat_a_1, mat_b_1))
-        smat_ref['S22'] = mat_b_1 @ tinv(mat_a_1)
+        inv_mat_a_1 = tinv(mat_a_1)
+        inv_mat_a_1_mat_b_1 = inv_mat_a_1 @ mat_b_1
+        smat_ref['S11'] = - inv_mat_a_1_mat_b_1
+        smat_ref['S12'] = 2 * inv_mat_a_1
+        smat_ref['S21'] = 0.5 * (mat_a_1 - mat_b_1 @ inv_mat_a_1_mat_b_1)
+        smat_ref['S22'] = mat_b_1 @ inv_mat_a_1
+
+        # smat_ref['S11'] = - tsolve(mat_a_1, mat_b_1)
+        # smat_ref['S12'] = 2 * tinv(mat_a_1)
+        # smat_ref['S21'] = 1/2 * (mat_a_1 - mat_b_1 @ tsolve(mat_a_1, mat_b_1))
+        # smat_ref['S22'] = mat_b_1 @ tinv(mat_a_1)
 
         smat_global = redhstar(smat_ref, smat_global)
 
@@ -417,18 +422,24 @@ class FourierBaseSover(Cell3D):
                                             - self.to_diag(mat_ky_kx * inv_mat_lam_trn)]])
 
         mat_w_trn = mat_w_ref
-
         smat_trn = {}
-        atw2 = tsolve(mat_w0, mat_w_trn)
+        # atw2 = tsolve(mat_w0, mat_w_trn)
+        atw2 = mat_w_trn
         atv2 = tsolve(mat_v0, mat_v_trn)
 
         mat_a_2 = atw2 + atv2
         mat_b_2 = atw2 - atv2
-        smat_trn['S11'] = mat_b_2 @ tinv(mat_a_2)
-        smat_trn['S12'] = 1/2 * (mat_a_2 - mat_b_2 @ tsolve(mat_a_2, mat_b_2))
-        smat_trn['S21'] = 2 * tinv(mat_a_2)
-        smat_trn['S22'] = - tsolve(mat_a_2, mat_b_2)
+        inv_mat_a_2 = tinv(mat_a_2)
+        inv_mat_a_2_mat_b_2 = inv_mat_a_2 @ mat_b_2
+        smat_trn['S11'] = mat_b_2 @ inv_mat_a_2
+        smat_trn['S12'] = 0.5 * (mat_a_2 - mat_b_2 @ inv_mat_a_2_mat_b_2)
+        smat_trn['S21'] = 2 * inv_mat_a_2
+        smat_trn['S22'] = - inv_mat_a_2_mat_b_2
 
+        # smat_trn['S11'] = mat_b_2 @ tinv(mat_a_2)
+        # smat_trn['S12'] = 1/2 * (mat_a_2 - mat_b_2 @ tsolve(mat_a_2, mat_b_2))
+        # smat_trn['S21'] = 2 * tinv(mat_a_2)
+        # smat_trn['S22'] = - tsolve(mat_a_2, mat_b_2)
         smat_global = redhstar(smat_global, smat_trn)
 
 
@@ -920,7 +931,6 @@ class RDITSolver(FourierBaseSover):
         Returns:
             dict:
         """
-        t1 = time.perf_counter()
         n_harmonics = self.kdim[0] * self.kdim[1]
 
         smat_layer = {}
@@ -940,7 +950,7 @@ class RDITSolver(FourierBaseSover):
                             device=self.device).unsqueeze(0).repeat(self.n_freqs, 1, 1)
         q_fcoef = torch.eye(2*n_harmonics, 2*n_harmonics, dtype=self.tcomplex,
                             device=self.device).unsqueeze(0).repeat(self.n_freqs, 1, 1)
-        # TODO optimization
+        
         for irdit_order in range(1, self._rdit_orders + 1):
             if (irdit_order % 2) == 0:  # even orders
                 p_fcoef = p_fcoef @ q_mat_i
