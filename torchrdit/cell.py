@@ -13,6 +13,10 @@ from .layers import LayerManager
 # Function Type
 FuncType = Callable[..., Any]
 
+class CellType:
+    Cartesian = 'Cartesian'
+    Other = 'Other'
+
 
 class Cell3D():
     """ Base class of unit cell """
@@ -21,14 +25,12 @@ class Cell3D():
     n_kurmat_gen = 0
 
     # Define floating points
-    # tcomplex = torch.complex64
-    # tfloat = torch.float32
-    # tint = torch.int32
-    # nfloat = np.float32
     tcomplex = torch.complex128
     tfloat = torch.float64
     tint = torch.int64
     nfloat = np.float64
+
+    cell_type = CellType.Cartesian
 
     def __init__(self,
                  lengthunit: str = 'um',  # length unit used in the solver
@@ -62,6 +64,8 @@ class Cell3D():
             self.lattice_t2 = self._add_lattice_vectors(torch.tensor([0.0, 1.0]))
         else:
             self.lattice_t2 = self._add_lattice_vectors(t2)
+            
+        self.cell_type = self.get_cell_type()
 
         # Add materials to material_lib
         self._matlib = {}
@@ -72,16 +76,11 @@ class Cell3D():
         _mat_air = create_material(name='air')
         self.add_materials(material_list=[_mat_air])
 
-        self.layer_manager = LayerManager()
-        self.update_trn_material(trn_material='air')
-        self.update_ref_material(ref_material='air')
-
-
         # build device
-        vec_p = torch.linspace(-0.5, 0.5, rdim[0], dtype= self.tfloat, device=self.device)
-        vec_q = torch.linspace(-0.5, 0.5, rdim[1], dtype= self.tfloat, device=self.device)
+        self.vec_p = torch.linspace(-0.5, 0.5, rdim[0], dtype= self.tfloat, device=self.device)
+        self.vec_q = torch.linspace(-0.5, 0.5, rdim[1], dtype= self.tfloat, device=self.device)
 
-        [mesh_q, mesh_p] = torch.meshgrid(vec_q, vec_p, indexing='xy')
+        [mesh_q, mesh_p] = torch.meshgrid(self.vec_q, self.vec_p, indexing='xy')
 
         self.XO = mesh_p * self.lattice_t1[0] +\
             mesh_q * self.lattice_t2[0]
@@ -91,6 +90,14 @@ class Cell3D():
         # scaling factor of lengths
         self._lenunit = lengthunit.lower()
         self._len_scale = lengthunit_dict[self._lenunit]
+
+        self.layer_manager = LayerManager(lattice_t1=self.lattice_t1,
+                                          lattice_t2=self.lattice_t2,
+                                          vec_p=self.vec_p,
+                                          vec_q=self.vec_q)
+        self.update_trn_material(trn_material='air')
+        self.update_ref_material(ref_material='air')
+
 
     def add_materials(self, material_list: list = []):
         """add_materials.
@@ -164,8 +171,6 @@ class Cell3D():
         """
         for imat in self._matlib.values():
             if imat.isdispersive_er is True:
-                # if type(imat.er) == type(None):
-                # if isinstance(imat.er, NoneType):
                 if imat.er is None:
                     imat.load_dispersive_er(
                         self._lam0, self._lenunit)
@@ -250,17 +255,18 @@ class Cell3D():
 
         Prints information of all layers.
         """
+        # cell type
+        print("------------------------------------")
+        print(f"Cell Type: {self.cell_type}")
         # reflection layer
         print("------------------------------------")
         print("layer # Reflection")
-        # print(f"\tmaterial name: {self._layerstruct._ref_mat_name}")
         print(f"\tmaterial name: {self.layer_manager.ref_material_name}")
         print(f"\tpermittivity: {self.er1}")
         print(f"\tpermeability: {self.ur1}")
 
         # structure layers
         print("------------------------------------")
-        # for ilay in range(self._layerstruct._nlayer):
         for ilay in range(self.layer_manager.nlayer):
             print(f"layer # {ilay}")
             print(f"\tmaterial name: {self.layer_manager.layers[ilay].material_name}")
@@ -319,4 +325,13 @@ class Cell3D():
         """
         return torch.tensor(self._matlib[self.layer_manager.trn_material_name].ur,
                             dtype=self.tcomplex, device=self.device)
+
+    def get_cell_type(self):
+        if self.lattice_t1[0] == 0 and self.lattice_t1[1] != 0 and self.lattice_t2[0] != 0 and self.lattice_t2[1] == 0:
+            return CellType.Cartesian
+        elif self.lattice_t1[0] != 0 and self.lattice_t1[1] == 0 and self.lattice_t2[0] == 0 and self.lattice_t2[1] != 0:
+            return CellType.Cartesian
+        else:
+            return CellType.Other
+
 

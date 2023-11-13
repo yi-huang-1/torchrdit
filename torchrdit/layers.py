@@ -4,6 +4,7 @@ from .utils import tensor_params_check
 
 from torch.fft import fft2, fftshift
 import torch
+import numpy as np
 
 class Layer(metaclass=ABCMeta):
     """Layer.
@@ -270,7 +271,11 @@ class LayerManager:
     A class to manage layer instances.
     """
 
-    def __init__(self) -> None:
+    def __init__(self,
+                 lattice_t1,
+                 lattice_t2,
+                 vec_p,
+                 vec_q) -> None:
         self.layers = []
         self.layer_director = LayerDirector()
         
@@ -281,10 +286,16 @@ class LayerManager:
         self._is_ref_dispers = False
         self._is_trn_dispers = False
 
+        self.lattice_t1 = lattice_t1
+        self.lattice_t2 = lattice_t2
+        self.vec_p = vec_p
+        self.vec_q = vec_q
+
     def gen_toeplitz_matrix(self, layer_index: int,
                             n_harmonic1: int,
                             n_harmonic2: int,
-                            param: str = 'er'):
+                            param: str = 'er',
+                            method :str = 'FFT'):
         # The dimensions of ermat/urmat is (n_layers, H, W)
         # The dimensions of kermat/kurmat is (n_layers, kH, kW)
 
@@ -292,25 +303,20 @@ class LayerManager:
             if self.layers[layer_index].ermat is None:
                 raise ValueError(f"Permittivity distribution of specified layer {layer_index} not found!")
 
-            if self.layers[layer_index].is_dispersive is True:
-                self.layers[layer_index].kermat = self._gen_toeplitz2d_dispersive(
-                    self.layers[layer_index].ermat,
-                    n_harmonic1, n_harmonic2)
-            else:
-                self.layers[layer_index].kermat = self._gen_toeplitz2d_normal(
-                    self.layers[layer_index].ermat,
-                    n_harmonic1, n_harmonic2)
+            self.layers[layer_index].kermat = self._gen_toeplitz2d(
+                self.layers[layer_index].ermat, n_harmonic1, n_harmonic2, method)
         elif param == 'ur':
             if self.layers[layer_index].urmat is None:
                 raise ValueError(f"Permeability distribution of specified layer {layer_index} not found!")
 
-            self.layers[layer_index].kurmat = self._gen_toeplitz2d_normal(
-                self.layers[layer_index].urmat, n_harmonic1, n_harmonic2)
+            self.layers[layer_index].kurmat = self._gen_toeplitz2d(
+                self.layers[layer_index].urmat, n_harmonic1, n_harmonic2, method)
 
 
-    def _gen_toeplitz2d_normal(self,input_matrix: torch.Tensor,
-                         nharmonic_1: int = 1,
-                         nharmonic_2: int = 1) -> torch.Tensor:
+    def _gen_toeplitz2d(self, input_matrix: torch.Tensor,
+                        nharmonic_1: int = 1,
+                        nharmonic_2: int = 1,
+                        method :str = 'FFT') -> torch.Tensor:
         """This function constructs Toeplitz matrices from
         a real-space 2D grid.
 
@@ -318,71 +324,22 @@ class LayerManager:
             input_matrix (torch.Tensor): Grid in real space: (H, W)
             nharmonic_1 (int): Number of harmonics for the T1 direction.
             nharmonic_2 (int): Number of harmonics for the T2 direction.
-
+            method (str): method of computing Toeplitz matrix. ['FFT': for all cell type; 'Analytical': only for Cartesian]
         Returns:
             toep_matrix (torch.Tensor): Toeplitz matrix: (n_harmonics, n_harmonics)
         """
 
-        n_height, n_width = input_matrix.size()
+        if input_matrix.ndim == 2:
+            n_height, n_width = input_matrix.size()
+        elif input_matrix.ndim == 3:
+            _, n_height, n_width = input_matrix.size()
+        else:
+            raise ValueError(f"Unexpected dimensions of input_matrix [{input_matrix.shape}]")
 
-
-        # compute fourier coefficents of input_matrix for only the last two dimensions
-        finput_matrix = fftshift(fftshift(fft2(input_matrix), dim=-1), dim=-2)\
-            / (n_height * n_width)
-
-        toep_matrix = self._extract_normal(input_matrix=finput_matrix,
-                                                nharmonic_1=nharmonic_1,
-                                                nharmonic_2=nharmonic_2,
-                                                n_height=n_height,
-                                                n_width=n_width)
-
-        return toep_matrix
-
-    def _gen_toeplitz2d_dispersive(self,input_matrix: torch.Tensor,
-                             nharmonic_1: int = 1,
-                             nharmonic_2: int = 1) -> torch.Tensor:
-        """This function constructs Toeplitz matrices from
-        a real-space 2D grid.
-
-        Args:
-            input_matrix (torch.Tensor): Grid in real space: (n_freqs, H, W)
-            nharmonic_1 (int): Number of harmonics for the T1 direction.
-            nharmonic_2 (int): Number of harmonics for the T2 direction.
-
-        Returns:
-            toep_matrix (torch.Tensor): Toeplitz matrix: (n_harmonics, n_harmonics)
-        """
-
-        _, n_height, n_width = input_matrix.size()
-
-        # compute fourier coefficents of input_matrix for only the last two dimensions
-        finput_matrix = fftshift(
-            fftshift(fft2(input_matrix[:, :, :]), dim=-1), dim=-2) / (n_height * n_width)
-
-        #
-        # toep_matrix = finput_matrix[:, :, p_0 - pf_t, q_0 - qf_t]
-        toep_matrix = self._extract_dispersive(input_matrix=finput_matrix,
-                                                nharmonic_1=nharmonic_1,
-                                                nharmonic_2=nharmonic_2,
-                                                n_height=n_height,
-                                                n_width=n_width)
-
-        return toep_matrix
-
-    def _extract_dispersive(self,input_matrix: torch.Tensor,
-                                  nharmonic_1: int,
-                                  nharmonic_2: int,
-                                  n_height: int,
-                                  n_width: int):
         # Computes indices of spatial harmonics
         nharmonic_1 = int(nharmonic_1)
         nharmonic_2 = int(nharmonic_2)
-
         n_harmonics = nharmonic_1 * nharmonic_2
-
-        # compute zero-order harmonic
-        p_0 = torch.floor(torch.tensor(n_height / 2)).to(torch.int64)
-        q_0 = torch.floor(torch.tensor(n_width / 2)).to(torch.int64)
 
         rows = torch.arange(n_harmonics, dtype = torch.int64, device = input_matrix.device)
         cols = torch.arange(n_harmonics, dtype = torch.int64, device = input_matrix.device)
@@ -396,36 +353,53 @@ class LayerManager:
         qf_t = row_s - col_s
         pf_t = prow_t - pcol_t
 
-        return input_matrix[:, p_0 - pf_t, q_0 - qf_t]
+        if method == 'FFT':
+            # compute fourier coefficents of input_matrix for only the last two dimensions
+            finput_matrix = fftshift(fftshift(fft2(input_matrix), dim=-1), dim=-2)\
+                / (n_height * n_width)
 
-    def _extract_normal(self,input_matrix: torch.Tensor,
-                                  nharmonic_1: int,
-                                  nharmonic_2: int,
-                                  n_height: int,
-                                  n_width: int):
-        # Computes indices of spatial harmonics
-        nharmonic_1 = int(nharmonic_1)
-        nharmonic_2 = int(nharmonic_2)
+            # compute zero-order harmonic
+            p_0 = torch.floor(torch.tensor(n_height / 2)).to(torch.int64)
+            q_0 = torch.floor(torch.tensor(n_width / 2)).to(torch.int64)
 
-        n_harmonics = nharmonic_1 * nharmonic_2
+            if finput_matrix.ndim == 2:
+                return finput_matrix[p_0 - pf_t, q_0 - qf_t]
+            elif finput_matrix.ndim == 3:
+                return finput_matrix[:, p_0 - pf_t, q_0 - qf_t]
+            else:
+                return None
+        elif method == 'Analytical':
+            """
+            This method is deveploped based on: https://github.com/2iw31Zhv/diffsmat_py
+            @author: Ziwei Zhu
+            """
+            ms = torch.arange(-nharmonic_1+1, nharmonic_1, device = input_matrix.device)
+            ns = torch.arange(-nharmonic_2+1, nharmonic_2, device = input_matrix.device)
 
-        # compute zero-order harmonic
-        p_0 = torch.floor(torch.tensor(n_height / 2)).to(torch.int64)
-        q_0 = torch.floor(torch.tensor(n_width / 2)).to(torch.int64)
+            lx = (self.lattice_t1[0] + self.lattice_t2[0])
+            ly = (self.lattice_t1[1] + self.lattice_t2[1])
 
-        rows = torch.arange(n_harmonics, dtype = torch.int64, device = input_matrix.device)
-        cols = torch.arange(n_harmonics, dtype = torch.int64, device = input_matrix.device)
+            dx = lx / n_height
+            dy = ly / n_width
 
-        rows, cols = torch.meshgrid(rows, cols, indexing = "ij")
+            kx = 2 * np.pi / lx * ms
+            ky = 2 * np.pi / ly * ns
 
-        row_s = torch.div(rows, nharmonic_2, rounding_mode = 'floor')
-        prow_t = rows - row_s * nharmonic_2
-        col_s = torch.div(cols, nharmonic_2, rounding_mode = 'floor')
-        pcol_t = cols - col_s * nharmonic_2
-        qf_t = row_s - col_s
-        pf_t = prow_t - pcol_t
+            xs = self.vec_p * lx
+            ys = self.vec_q * ly
+            
+            basis_kx_conj = torch.exp(1j * kx[:, None] * xs[None, :]) * torch.special.sinc(ms * dx / lx)[:, None]
+            basis_ky_conj = torch.exp(1j * ky[None, :] * ys[:, None]) * torch.special.sinc(ns * dy / ly)[None, :]
 
-        return input_matrix[p_0 - pf_t, q_0 - qf_t]
+            finput_matrix =  dx * dy * basis_kx_conj @ input_matrix.transpose(-2, -1) @ basis_ky_conj / (lx * ly)
+
+            if finput_matrix.ndim == 2:
+                return finput_matrix[nharmonic_1 + pf_t - 1, nharmonic_2 + qf_t - 1]
+            elif finput_matrix.ndim == 3:
+                return finput_matrix[:, nharmonic_1 + pf_t - 1, nharmonic_2 + qf_t - 1]
+            else:
+                return None
+
 
     @tensor_params_check(check_start_index=2, check_stop_index=2)
     def add_layer(self, layer_type, thickness, material_name, is_optimize = False, is_dispersive = False):
