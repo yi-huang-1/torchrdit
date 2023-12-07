@@ -33,3 +33,18 @@ The package contains the work from multiple publicatinos. Please consider to cit
 ```
 Y. Huang, H. Tang, B. Zheng, Y. Dong, M. Haerinia, V. Podolskiy, and H. Zhang, "Inverse Design of Photonic Structures Using Automatic Differentiable Rigorous Diffraction Interface Theory," in CLEO 2023, Technical Digest Series (Optica Publishing Group, 2023), paper JTu2A.119.
 ```
+
+```
+@inproceedings{Huang:23,
+author = {Yi Huang and Hong Tang and Bowen Zheng and Yunxi Dong and Mohammad Haerinia and Viktor A. Podolskiy and Hualiang Zhang},
+booktitle = {CLEO 2023},
+journal = {CLEO 2023},
+keywords = {Diffraction optics; Diffraction theory; Inverse design; Machine learning; Rigorous coupled wave analysis; Waveguide modes},
+pages = {JTu2A.119},
+publisher = {Optica Publishing Group},
+title = {Inverse Design of Photonic Structures Using Automatic Differentiable Rigorous Diffraction Interface Theory},
+year = {2023},
+url = {https://opg.optica.org/abstract.cfm?URI=CLEO_AT-2023-JTu2A.119},
+doi = {10.1364/CLEO_AT.2023.JTu2A.119},
+}
+```
