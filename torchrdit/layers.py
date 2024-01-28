@@ -24,6 +24,7 @@ class Layer(metaclass=ABCMeta):
         self.urmat = None
         self.kermat = None
         self.kurmat = None
+        self.mask_format = None
 
     @abstractmethod
     def __str__(self) -> None:
