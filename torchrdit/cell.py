@@ -262,8 +262,8 @@ class Cell3D():
         print("------------------------------------")
         print("layer # Reflection")
         print(f"\tmaterial name: {self.layer_manager.ref_material_name}")
-        print(f"\tpermittivity: {self.er1}")
-        print(f"\tpermeability: {self.ur1}")
+        print(f"\tpermittivity: {torch.mean(self.er1)}")
+        print(f"\tpermeability: {torch.mean(self.ur1)}")
 
         # structure layers
         print("------------------------------------")
@@ -278,8 +278,8 @@ class Cell3D():
 
         print("layer # Transmission")
         print(f"\tmaterial name: {self.layer_manager.trn_material_name}")
-        print(f"\tpermittivity: {self.er2}")
-        print(f"\tpermeability: {self.ur2}")
+        print(f"\tpermittivity: {torch.mean(self.er2)}")
+        print(f"\tpermeability: {torch.mean(self.ur2)}")
         print("------------------------------------")
 
     def get_layout(self) -> Tuple[torch.Tensor, torch.Tensor]:

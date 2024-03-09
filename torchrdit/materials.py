@@ -36,13 +36,20 @@ class MaterialClass():
         else:
             self._isdiedispersive = True
             if user_dielectric_file is not None:
-                self._loadeder = np.loadtxt(user_dielectric_file).astype(np.float32)
+                skip_header = self._check_header(user_dielectric_file)
+                self._loadeder = np.loadtxt(user_dielectric_file, skiprows=1 if skip_header else 0).astype(np.float32)
                 self._er = None
             else:
                 raise ValueError(
                     'File path of the dispersive data must be defined!')
 
         self._ur = permeability
+
+    @staticmethod
+    def _check_header(filename):
+        with open(filename, 'r') as file:
+            first_line = file.readline()
+            return not first_line.lstrip('-').replace('.', '', 1).isdigit()
 
     @property
     def isdispersive_er(self):
@@ -159,6 +166,7 @@ class MaterialClass():
         Returns:
             None:
         """
+        min_ref_pts = 6
 
         disp_er_sorted = self._extract_laoded_data(lengthunit=lengthunit)
 
@@ -177,6 +185,11 @@ class MaterialClass():
         wl_ind1, wl_ind2 = tuple(
             map(wl_inds, (lam_min, lam_max), (wl_list, wl_list)))
         wl_ind2 = wl_ind2 + 1
+        if wl_ind2 - wl_ind1 < min_ref_pts:
+            lft = min_ref_pts // 2
+            rft = min_ref_pts - lft
+            wl_ind1 = wl_ind1 - lft
+            wl_ind2 = wl_ind2 + rft
 
         wls = wl_list[wl_ind1: wl_ind2]
         data_eps1 = disp_er_sorted[wl_ind1:wl_ind2, 1]
