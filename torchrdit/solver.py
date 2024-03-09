@@ -22,6 +22,7 @@ class FourierBaseSover(Cell3D):
     k_0 = torch.empty((1,))
 
     is_use_FFF = True
+    is_solve_batch = True
 
     def __init__(self,
                  # wavelengths (frequencies) to be solved
@@ -120,9 +121,33 @@ class FourierBaseSover(Cell3D):
             dict:
         """
         raise NotImplementedError("self._solve not implemented.")
+        
+    def _solve_nonhomo_layer_single_frequency(self,
+                             layer_index: int,
+                             p_mat_i: torch.Tensor,
+                             q_mat_i: torch.Tensor,
+                             mat_w0: torch.Tensor,
+                             mat_v0: torch.Tensor,
+                            freq_index: int) -> dict:
+        """_solve_nonhomo_layer.
+
+        Fucntion of solving non-homogenous layers in the parent class. It needs to be implemented
+        in the child classes with concrete algorithm.
+
+        Args:
+            layer_index (int): layer_index
+            p_mat_i (torch.Tensor): p_mat_i
+            q_mat_i (torch.Tensor): q_mat_i
+            mat_w0 (torch.Tensor): mat_w0
+            mat_v0 (torch.Tensor): mat_v0
+
+        Returns:
+            dict:
+        """
+        raise NotImplementedError("self._solve not implemented.")
 
 
-    def _solve(self, **kwargs) -> dict:
+    def _solve_batch_frequencies(self, **kwargs) -> dict:
 
         # kx_0, ky_0: (n_freqs, kdim[0], kdim[1])
         kx_0 = self.kinc[:, 0, None, None] - \
@@ -141,7 +166,6 @@ class FourierBaseSover(Cell3D):
             ind = torch.nonzero(ky_0 == 0.0)
             ky_0[ind[:, 0], ind[:, 1]] = ky_0[ind[:, 0], ind[:, 1]] + 1e-6
 
-
         if self.layer_manager.is_ref_dispersive is False:
             kz_ref_0 = torch.conj(torch.sqrt(
                 torch.conj(self.ur1)*torch.conj(self.er1) - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
@@ -155,7 +179,6 @@ class FourierBaseSover(Cell3D):
         else:
             kz_trn_0 = torch.conj(torch.sqrt(
                 (torch.conj(self.ur2)*torch.conj(self.er2))[:, None, None] - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
-
 
         # Transform to diagnal matrices
         n_harmonics = self.kdim[0] * self.kdim[1]
@@ -184,7 +207,6 @@ class FourierBaseSover(Cell3D):
         mat_ky_diag = self.to_diag(mat_ky)
 
         mat_kz = torch.conj(torch.sqrt(1.0 - mat_kx_kx - mat_ky_ky))
-
 
         ident_mat_kx_kx = 1.0 - mat_kx_kx
         ident_mat_ky_ky = 1.0 - mat_ky_ky
@@ -494,9 +516,453 @@ class FourierBaseSover(Cell3D):
         data['ky'] = torch.squeeze(ky_0)
         return data
 
+    
+    def _solve_single_frequency(self, **kwargs) -> dict:
+
+        # kx_0, ky_0: (n_freqs, kdim[0], kdim[1])
+        kx_0 = self.kinc[:, 0, None, None] - \
+            (self.mesh_fp[None, :, :] * self.reci_t1[0, None, None] + \
+                self.mesh_fq[None, :, :] * self.reci_t2[0, None, None]) / self.k_0[:, None, None] + 0*1j
+
+        ky_0 = self.kinc[:, 1, None, None] - \
+            (self.mesh_fp[None, :, :] * self.reci_t1[1, None, None] + \
+                self.mesh_fq[None, :, :] * self.reci_t2[1, None, None]) / self.k_0[:, None, None] + 0*1j
+
+
+        # Add relaxition
+        if torch.any(kx_0 == 0.0):
+            ind = torch.nonzero(kx_0 == 0.0)
+            kx_0[ind[:, 0], ind[:, 1]] = kx_0[ind[:, 0], ind[:, 1]] + 1e-6
+        if torch.any(ky_0 == 0.0):
+            ind = torch.nonzero(ky_0 == 0.0)
+            ky_0[ind[:, 0], ind[:, 1]] = ky_0[ind[:, 0], ind[:, 1]] + 1e-6
+
+
+        if self.layer_manager.is_ref_dispersive is False:
+            kz_ref_0 = torch.conj(torch.sqrt(
+                torch.conj(self.ur1)*torch.conj(self.er1) - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
+        else:
+            kz_ref_0 = torch.conj(torch.sqrt(
+                (torch.conj(self.ur1)*torch.conj(self.er1))[:, None, None] - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
+
+        if self.layer_manager.is_trn_dispersive is False:
+            kz_trn_0 = torch.conj(torch.sqrt(
+                torch.conj(self.ur2)*torch.conj(self.er2) - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
+        else:
+            kz_trn_0 = torch.conj(torch.sqrt(
+                (torch.conj(self.ur2)*torch.conj(self.er2))[:, None, None] - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
+
+        # Transform to diagnal matrices
+        n_harmonics = self.kdim[0] * self.kdim[1]
+
+        self.ident_mat_k = torch.eye(n_harmonics, dtype=self.tcomplex, device=self.device)
+        self.ident_mat_k2 = torch.eye(2 * n_harmonics, dtype=self.tcomplex, device=self.device)
+
+        mat_kx = kx_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
+        mat_ky = ky_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
+        mat_kz_ref = kz_ref_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
+        mat_kz_trn = kz_trn_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
+
+
+        ident_mat = self.ident_mat_k[None, :, :].expand(self.n_freqs, -1, -1)
+        zero_mat = torch.zeros(
+            size=(self.n_freqs ,n_harmonics, n_harmonics), dtype=self.tcomplex, device=self.device)
+        
+        # Calculate eigen-modes of the gap medium
+
+        mat_kx_ky = mat_kx * mat_ky
+        mat_ky_kx = mat_ky * mat_kx
+        mat_kx_kx = mat_kx * mat_kx
+        mat_ky_ky = mat_ky * mat_ky
+
+        mat_kx_diag = self.to_diag(mat_kx)
+        mat_ky_diag = self.to_diag(mat_ky)
+
+        mat_kz = torch.conj(torch.sqrt(1.0 - mat_kx_kx - mat_ky_ky))
+
+
+        ident_mat_kx_kx = 1.0 - mat_kx_kx
+        ident_mat_ky_ky = 1.0 - mat_ky_ky
+
+        mat_w0 = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
+
+        inv_mat_lam = 1 / (1j*mat_kz)
+        
+        mat_v0 = blockmat2x2([[self.to_diag(mat_kx_ky * inv_mat_lam), self.to_diag(ident_mat_kx_kx * inv_mat_lam)],
+                  [self.to_diag(- ident_mat_ky_ky * inv_mat_lam), self.to_diag(- mat_kx_ky * inv_mat_lam)]])
+        
+        data = {}
+
+        for ind_freq  in range(self.n_freqs):
+            
+            # Initialize global scattering matrix
+            smat_global = init_smatrix(shape=(
+                              2*n_harmonics, 2*n_harmonics), dtype=self.tcomplex, device=self.device)
+            smat_layer = {}
+
+            # ============================================================================
+            # Main Loop
+            # ============================================================================
+            # Build Eigen Value Problem
+            for n_layer in range(self.layer_manager.nlayer):
+                # Transform dimensions to (n_batches, n_freqs, n_harmonics, n_harmonics)
+                if (self.layer_manager.layers[n_layer].is_solved is False) \
+                    or (self.layer_manager.layers[n_layer].is_optimize is True):
+
+                    # # no need to solve the non-optimized layers in 'opt' mode.
+                    # if self.solver_mode == 'opt':
+                    #     self.layer_manager.layers[n_layer].is_solved = True
+
+                    if self.layer_manager.layers[n_layer].is_homogeneous is False:
+                        if self.layer_manager.layers[n_layer].is_dispersive is False:
+                            toeplitz_er = self.expand_dims(self.layer_manager.layers[n_layer].kermat)[ind_freq,:,:]
+                        else:
+                            toeplitz_er = self.layer_manager.layers[n_layer].kermat[ind_freq,:,:]
+
+
+                        # assuming permeability always non-dispersive
+                        # Transform dimensions to (n_freqs, n_harmonics, n_harmonics)
+                        toeplitz_ur = self.expand_dims(self.layer_manager.layers[n_layer].kurmat)[ind_freq,:,:]
+
+
+                        solve_ter_mky = tsolve(toeplitz_er, mat_ky_diag[ind_freq,:,:])
+                        solve_ter_mkx = tsolve(toeplitz_er, mat_kx_diag[ind_freq,:,:])
+                        solve_tur_mky = tsolve(toeplitz_ur, mat_ky_diag[ind_freq,:,:])
+                        solve_tur_mkx = tsolve(toeplitz_ur, mat_kx_diag[ind_freq,:,:])
+
+
+                        p_mat_i = blockmat2x2([[mat_kx_diag[ind_freq,:,:] @ solve_ter_mky,
+                                           toeplitz_ur - mat_kx_diag[ind_freq,:,:] @ solve_ter_mkx],
+                                          [mat_ky_diag[ind_freq,:,:] @ solve_ter_mky - toeplitz_ur,
+                                         - mat_ky_diag[ind_freq,:,:] @ solve_ter_mkx]])
+                        
+
+                        if self.is_use_FFF is True: 
+                            _, _, n_xx, n_yy, n_xy = self._calculate_nv_field(mask=self.layer_manager.layers[n_layer].mask_format.squeeze())
+                            if self.layer_manager.layers[n_layer].is_dispersive is False:
+                                reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[n_layer].ermat,
+                                                                              nharmonic_1=self.kdim[0],
+                                                                                nharmonic_2=self.kdim[1],
+                                                                                            method='FFT')
+                            else:
+                                reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[n_layer].ermat,
+                                                                              nharmonic_1=self.kdim[0],
+                                                                                nharmonic_2=self.kdim[1],
+                                                                                            method='FFT')[ind_freq,:,:]
+                            delta_toeplitz_er = toeplitz_er - tinv(reciprocal_toeplitz_er)
+                            q_mat_i = blockmat2x2([[mat_kx_diag[ind_freq,:,:] @ solve_tur_mky - delta_toeplitz_er @ n_xy,
+                                               toeplitz_er - mat_kx_diag[ind_freq,:,:] @ solve_tur_mkx - delta_toeplitz_er @ n_yy],
+                                              [mat_ky_diag[ind_freq,:,:] @ solve_tur_mky - toeplitz_er + delta_toeplitz_er @ n_xx,
+                                             delta_toeplitz_er @ n_xy - mat_ky_diag[ind_freq,:,:] @ solve_tur_mkx]])
+                        else:
+                            q_mat_i = blockmat2x2([[mat_kx_diag[ind_freq,:,:] @ solve_tur_mky,
+                                               toeplitz_er - mat_kx_diag[ind_freq,:,:] @ solve_tur_mkx],
+                                              [mat_ky_diag[ind_freq,:,:] @ solve_tur_mky - toeplitz_er,
+                                             - mat_ky_diag[ind_freq,:,:] @ solve_tur_mkx]])
+                            
+                        smat_layer = self._solve_nonhomo_layer_single_frequency(layer_index=n_layer,
+                                                  p_mat_i=p_mat_i,
+                                                  q_mat_i=q_mat_i,
+                                                  mat_w0=mat_w0[ind_freq,:,:],
+                                                  mat_v0=mat_v0[ind_freq,:,:],
+                                                    freq_index=ind_freq)
+
+                    elif self.layer_manager.layers[n_layer].is_homogeneous is True:
+                        if self.layer_manager.layers[n_layer].is_dispersive is True:
+                            toeplitz_er = torch.tensor(
+                                self._matlib[self.layer_manager.layers[n_layer].material_name].er,
+                                device=self.device).to(self.tcomplex)[ind_freq]
+                            toeplitz_ur = torch.tensor(
+                                self._matlib[self.layer_manager.layers[n_layer].material_name].ur,
+                                device=self.device).to(self.tcomplex)
+
+                            
+                            # ===========================================================
+                            toep_ur_er = toeplitz_ur * toeplitz_er
+                            conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er)
+
+                            mat_kz_i = torch.conj(torch.sqrt(
+                                conj_toep_ur_er - mat_kx[ind_freq,:] ** 2 - mat_ky[ind_freq,:] ** 2) + 0*1j).to(self.tcomplex)
+                            
+                            inv_dmat_lam_i = 1 / (1j*mat_kz_i)
+                            mat_v_i = 1 / toeplitz_ur * blockmat2x2([[self.to_diag(mat_kx_ky[ind_freq,:] * inv_dmat_lam_i),
+                                                                      self.to_diag((toep_ur_er - mat_kx_kx[ind_freq,:]) * inv_dmat_lam_i)],
+                                                                     [self.to_diag((mat_ky_ky[ind_freq,:] - toep_ur_er) * inv_dmat_lam_i),
+                                                                      - self.to_diag(mat_ky_kx[ind_freq,:] * inv_dmat_lam_i)]])
+
+                            # ===========================================================
+                        else:
+                            toeplitz_er = torch.tensor(
+                                self._matlib[self.layer_manager.layers[n_layer].material_name].er, device=self.device)
+                            toeplitz_ur = torch.tensor(
+                                self._matlib[self.layer_manager.layers[n_layer].material_name].ur, device=self.device)
+                            # ===========================================================
+                            toep_ur_er = toeplitz_ur * toeplitz_er
+                            conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er)
+
+                            mat_kz_i = torch.conj(torch.sqrt(
+                                conj_toep_ur_er - mat_kx[ind_freq,:] ** 2 - mat_ky[ind_freq,:] ** 2) + 0*1j).to(self.tcomplex)
+
+                            inv_dmat_lam_i = 1 / (1j*mat_kz_i)
+                            mat_v_i = 1 / toeplitz_ur * blockmat2x2([[self.to_diag(mat_kx_ky[ind_freq,:] * inv_dmat_lam_i),
+                                                                      self.to_diag((toep_ur_er - mat_kx_kx[ind_freq,:]) * inv_dmat_lam_i)],
+                                                                     [self.to_diag((mat_ky_ky[ind_freq,:] - toep_ur_er) * inv_dmat_lam_i),
+                                                                      - self.to_diag(mat_ky_kx[ind_freq,:] * inv_dmat_lam_i)]])
+
+
+                            # ===========================================================
+
+
+                        mat_x_i = - 1j*mat_kz_i * self.k_0[ind_freq] \
+                            * self.layer_manager.layers[n_layer].thickness.to(self.device).to(self.tcomplex)
+
+                        mat_x_i_diag = torch.concat([mat_x_i, mat_x_i], dim=0)
+                        mat_x_i = self.to_diag(torch.exp(mat_x_i_diag))
+
+                        # Calculate Layer Scattering Matrix
+                        atwi = mat_w0[ind_freq,:,:]
+                        atvi = tsolve(mat_v_i, mat_v0[ind_freq,:,:])
+                        mat_a_i = atwi + atvi
+                        mat_b_i = atwi - atvi
+                        
+                        solve_ai_xi = tsolve(mat_a_i, mat_x_i)           
+
+                        mat_xi_bi = mat_x_i @ mat_b_i
+
+                        mat_d_i = mat_a_i - mat_xi_bi @ solve_ai_xi @ mat_b_i
+
+                        smat_layer['S11'] = tsolve(
+                            mat_d_i, mat_xi_bi @ solve_ai_xi @ mat_a_i - mat_b_i)
+                        smat_layer['S12'] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tsolve(mat_a_i, mat_b_i))
+                        smat_layer['S21'] = smat_layer['S12']
+                        smat_layer['S22'] = smat_layer['S11']
+
+
+                    self.smat_layers[n_layer] = smat_layer
+                    
+                    # raise RuntimeError("Debug homo layer homo")
+
+                # Update global scattering matrix
+                smat_global = redhstar(smat_global, self.smat_layers[n_layer])
+            # ============================================================================
+            # End Main Loop
+            # ============================================================================
+
+            # Connect to reflection region
+            inv_mat_lam_ref = 1 / (1j * mat_kz_ref[ind_freq,:])
+
+            if self.layer_manager.is_ref_dispersive is False:
+                mat_v_ref = (1/self.ur1) * blockmat2x2([[self.to_diag(mat_kx_ky[ind_freq,:] * inv_mat_lam_ref),
+                                                 self.to_diag((self.ur1 * self.er1 - mat_kx_kx[ind_freq,:]) * inv_mat_lam_ref)],
+                                                [self.to_diag((mat_ky_ky[ind_freq,:] - self.ur1 * self.er1) * inv_mat_lam_ref),
+                                                - self.to_diag(mat_ky_kx[ind_freq,:] * inv_mat_lam_ref)]])
+            else:
+                mat_v_ref = (1/self.ur1) * blockmat2x2([[self.to_diag(mat_kx_ky[ind_freq,:] * inv_mat_lam_ref),
+                                                 self.to_diag(((self.ur1 * self.er1)[:, None] - mat_kx_kx[ind_freq,:]) * inv_mat_lam_ref)],
+                                                [self.to_diag((mat_ky_ky[ind_freq,:] - (self.ur1 * self.er1)[:, None]) * inv_mat_lam_ref),
+                                                - self.to_diag(mat_ky_kx[ind_freq,:] * inv_mat_lam_ref)]])
+            # mat_w_ref = self.ident_mat_k2[None, :, :].expand(self.n_freqs, -1, -1)
+            mat_w_ref = self.ident_mat_k2
+
+
+            smat_ref = {}
+            atw1 = mat_w_ref
+            atv1 = tsolve(mat_v0[ind_freq,:,:], mat_v_ref)
+            
+
+            mat_a_1 = atw1 + atv1
+            mat_b_1 = atw1 - atv1
+            inv_mat_a_1 = tinv(mat_a_1)
+            inv_mat_a_1_mat_b_1 = inv_mat_a_1 @ mat_b_1
+            smat_ref['S11'] = - inv_mat_a_1_mat_b_1
+            smat_ref['S12'] = 2 * inv_mat_a_1
+            smat_ref['S21'] = 0.5 * (mat_a_1 - mat_b_1 @ inv_mat_a_1_mat_b_1)
+            smat_ref['S22'] = mat_b_1 @ inv_mat_a_1
+
+            smat_global = redhstar(smat_ref, smat_global)
+            
+            
+
+            # Connect to transmission region
+            inv_mat_lam_trn = 1 / (1j * mat_kz_trn[ind_freq,:]) 
+
+            if self.layer_manager.is_trn_dispersive is False:
+                mat_v_trn = (1/self.ur2) * blockmat2x2([[self.to_diag(mat_kx_ky[ind_freq,:] * inv_mat_lam_trn),
+                                                self.to_diag((self.ur2 * self.er2 - mat_kx_kx[ind_freq,:]) * inv_mat_lam_trn)],
+                                                [self.to_diag((mat_ky_ky[ind_freq,:] - self.ur2 * self.er2) * inv_mat_lam_trn),
+                                                - self.to_diag(mat_ky_kx[ind_freq,:] * inv_mat_lam_trn)]])
+            else:
+                mat_v_trn = (1/self.ur2) * blockmat2x2([[self.to_diag(mat_kx_ky[ind_freq,:] * inv_mat_lam_trn),
+                                                         self.to_diag(((self.ur2 * self.er2)[ind_freq, None] - mat_kx_kx[ind_freq,:]) * inv_mat_lam_trn)],
+                                                        [self.to_diag((mat_ky_ky[ind_freq,:] - (self.ur2 * self.er2)[ind_freq, None]) * inv_mat_lam_trn),
+                                                - self.to_diag(mat_ky_kx[ind_freq,:] * inv_mat_lam_trn)]])
+
+            mat_w_trn = mat_w_ref
+            smat_trn = {}
+            # atw2 = tsolve(mat_w0, mat_w_trn)
+            atw2 = mat_w_trn
+            atv2 = tsolve(mat_v0[ind_freq,:,:], mat_v_trn)
+
+
+            mat_a_2 = atw2 + atv2
+            mat_b_2 = atw2 - atv2
+            inv_mat_a_2 = tinv(mat_a_2)
+            inv_mat_a_2_mat_b_2 = inv_mat_a_2 @ mat_b_2
+            smat_trn['S11'] = mat_b_2 @ inv_mat_a_2
+            smat_trn['S12'] = 0.5 * (mat_a_2 - mat_b_2 @ inv_mat_a_2_mat_b_2)
+            smat_trn['S21'] = 2 * inv_mat_a_2
+            smat_trn['S22'] = - inv_mat_a_2_mat_b_2
+
+            smat_global = redhstar(smat_global, smat_trn)
+
+
+            # Compute polarization vector
+            norm_vec = torch.tensor(
+                [0.0, 0.0, 1.0], dtype=self.tcomplex, device=self.device)
+
+            ate = torch.empty_like(norm_vec)
+            if np.abs(self.src['theta']) < 1e-3:
+                if self.src['norm_te_dir'] == 'y':
+                    ate = torch.tensor(
+                        [0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)
+                elif self.src['norm_te_dir'] == 'x':
+                    ate = torch.tensor(
+                        [1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)
+            else:
+                ate = torch.cross(self.kinc[ind_freq,:], norm_vec)
+                ate = ate / torch.norm(ate, dim=0)
+            
+
+            atm = torch.cross(ate, self.kinc[ind_freq,:], dim=0)
+            atm = atm / torch.norm(atm)
+            
+
+            pol_vec = self.src['pte'] * ate + self.src['ptm'] * atm
+            pol_vec = pol_vec / torch.norm(pol_vec, dim=0)
+            
+
+            # Calculate electric field source vector
+            delta = torch.zeros(
+                size=(n_harmonics,), dtype=self.tcomplex, device=self.device)
+
+            delta[(self.kdim[1] // 2) * self.kdim[0] +(self.kdim[0] // 2)] = 1
+            esrc = torch.cat((pol_vec[0] * delta,
+                             pol_vec[1] * delta), dim=0)
+
+
+            # Calculate source vectors
+            csrc = tsolve(mat_w_ref, esrc.unsqueeze(-1))
+            
+            
+
+            # Calculate reflected fields
+            cref = smat_global['S11'] @ csrc
+            eref = mat_w_ref @ cref
+            
+            ref_field_x = eref[0: n_harmonics, :]
+            ref_field_y = eref[n_harmonics: 2*n_harmonics, :]
+
+
+            ref_field_z = - mat_kx_diag[ind_freq,:,:] @ tsolve(self.to_diag(mat_kz_ref)[ind_freq,:,:], ref_field_x) \
+                - mat_ky_diag[ind_freq,:,:] @ tsolve(self.to_diag(mat_kz_ref)[ind_freq,:,:], ref_field_y)
+
+            
+            # Calculate transmitted fields
+            ctrn = smat_global['S21'] @ csrc
+            etrn = mat_w_trn @ ctrn
+            trn_field_x = etrn[0: n_harmonics, :]
+            trn_field_y = etrn[n_harmonics: 2*n_harmonics, :]
+            trn_field_z = - mat_kx_diag[ind_freq,:,:] @ tsolve(self.to_diag(mat_kz_trn)[ind_freq,:,:], trn_field_x) \
+                 - mat_ky_diag[ind_freq,:,:] @ tsolve(self.to_diag(mat_kz_trn)[ind_freq,:,:], trn_field_y)
+                
+
+            # Calculate diffraction efficiences
+            ref_diff_efficiency = torch.reshape(torch.real(self.ur2/self.ur1*self.to_diag(mat_kz_ref)[ind_freq,:,:] / \
+                self.kinc[ind_freq, 2, None, None]) @
+                                (torch.real(ref_field_x) ** 2 + torch.imag(ref_field_x) ** 2 +
+                                 torch.real(ref_field_y) ** 2 + torch.imag(ref_field_y) ** 2 +
+                                 + torch.real(ref_field_z) ** 2 + torch.imag(ref_field_z) ** 2),
+                                shape=(self.kdim[0],
+                                       self.kdim[1])).transpose(dim0=-2, dim1=-1)
+
+            trn_diff_efficiency = torch.reshape(torch.real(self.ur1/self.ur2*self.to_diag(mat_kz_trn)[ind_freq,:,:] / \
+                self.kinc[ind_freq, 2, None, None]) @
+                                (torch.real(trn_field_x) ** 2 + torch.imag(trn_field_x) ** 2 +
+                                 torch.real(trn_field_y) ** 2 + torch.imag(trn_field_y) ** 2 +
+                                 + torch.real(trn_field_z) ** 2 + torch.imag(trn_field_z) ** 2),
+                                shape=(self.kdim[0],
+                                       self.kdim[1])).transpose(dim0=-2, dim1=-1)
+
+
+            # Calculate overall reflectance & Transmittance
+            total_ref_efficiency = torch.sum(ref_diff_efficiency, dim=(-1, -2))
+            total_trn_efficiency = torch.sum(trn_diff_efficiency, dim=(-1, -2))
+            
+            
+            # raise RuntimeError("Debug")
+
+            # Store output data
+            if ind_freq == 0:
+                data['rx'] = torch.reshape(ref_field_x, shape=(
+                    self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)[None,:,:]
+                data['ry'] = torch.reshape(ref_field_y, shape=(
+                    self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)[None,:,:]
+                data['rz'] = torch.reshape(ref_field_z, shape=(
+                    self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)[None,:,:]
+                data['tx'] = torch.reshape(trn_field_x, shape=(
+                    self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)[None,:,:]
+                data['ty'] = torch.reshape(trn_field_y, shape=(
+                    self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)[None,:,:]
+                data['tz'] = torch.reshape(trn_field_z, shape=(
+                    self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)[None,:,:]
+                data['RDE'] = ref_diff_efficiency[None,:,:]
+                data['TDE'] = trn_diff_efficiency[None,:,:]
+                data['REF'] = total_ref_efficiency[None]
+                data['TRN'] = total_trn_efficiency[None]
+            else:
+                data['rx'] = torch.cat((data['rx'],
+                                       torch.reshape(ref_field_x, shape=(
+                    self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)[None,:,:]),dim=0)
+                data['ry'] = torch.cat((data['ry'],
+                                       torch.reshape(ref_field_y, shape=(
+                    self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)[None,:,:]),dim=0)
+                data['rz'] = torch.cat((data['rz'],
+                                       torch.reshape(ref_field_z, shape=(
+                    self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)[None,:,:]),dim=0)
+                data['tx'] = torch.cat((data['tx'],
+                                       torch.reshape(trn_field_x, shape=(
+                    self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)[None,:,:]),dim=0)
+                data['ty'] = torch.cat((data['ty'],
+                                       torch.reshape(trn_field_y, shape=(
+                    self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)[None,:,:]),dim=0)
+                data['tz'] = torch.cat((data['tz'],
+                                       torch.reshape(trn_field_z, shape=(
+                    self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)[None,:,:]),dim=0)
+                data['RDE'] = torch.cat((data['RDE'],
+                                        ref_diff_efficiency[None,:,:]), dim=0)
+                
+                data['TDE'] = torch.cat((data['TDE'],
+                                        trn_diff_efficiency[None,:,:]), dim=0)
+                data['REF'] = torch.cat((data['REF'],
+                                        total_ref_efficiency[None]), dim=0)
+                data['TRN'] = torch.cat((data['TRN'],
+                                        total_trn_efficiency[None]), dim=0)
+                
+            
+                # raise RuntimeError("Debug")
+        data['kzref'] = mat_kz_ref
+        data['kztrn'] = mat_kz_trn
+        data['kinc'] = self.kinc
+        data['kx'] = torch.squeeze(kx_0)
+        data['ky'] = torch.squeeze(ky_0)
+            
+        return data
+
+    
     def solve(self,
               source: dict,
               is_use_FFF: bool = True,
+              is_sovle_batch: bool = True,
               **kwargs) -> dict:
         """solve.
 
@@ -512,11 +978,15 @@ class FourierBaseSover(Cell3D):
         # self.n_freqs = len(source.lam0)
         self.src = source
         self.is_use_FFF = is_use_FFF
+        self.is_solve_batch = is_sovle_batch
 
         if self.n_solve == 0:
             self._pre_solve()
 
-        data = self._solve()
+        if self.is_solve_batch is True:
+            data = self._solve_batch_frequencies()
+        else:
+            data = self._solve_single_frequency()
 
         self.n_solve = self.n_solve + 1
 
@@ -668,10 +1138,10 @@ class FourierBaseSover(Cell3D):
 
     def _calculate_nv_field(self, mask: torch.Tensor):
         # Sobel filters
-        sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=self.tfloat)[None, None, :, :]
-        sobel_y = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=self.tfloat)[None, None, :, :]
+        sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=self.tfloat, device=self.device)[None, None, :, :]
+        sobel_y = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=self.tfloat, device=self.device)[None, None, :, :]
 
-        mask = (mask > 0.5).to(self.tfloat)
+        mask = (mask > 0.5).to(self.tfloat).to(self.device)
 
         # use conv2d to compute the gradients
         gradient_x = tconv2d(mask[None, None, :, :], sobel_x, padding=1)
@@ -681,7 +1151,7 @@ class FourierBaseSover(Cell3D):
         index_field_vec = torch.nonzero(gradient_mag.squeeze() == 0)
 
 
-        blurred_mask = blur_filter(mask[None, None, :, :], radius=4, beta=2, num_blur=1, tfloat=self.tfloat)
+        blurred_mask = blur_filter(mask[None, None, :, :], radius=4, beta=2, num_blur=1, tfloat=self.tfloat, device=self.device)
         gradient_x_br = tconv2d(blurred_mask, sobel_x, padding=1)
         gradient_y_br = tconv2d(blurred_mask, sobel_y, padding=1)
 
@@ -809,423 +1279,6 @@ class FourierBaseSover(Cell3D):
 
         return ret
 
-class FourierBaseSoverFFF(FourierBaseSover):
-    def solve(self,
-              source: dict,
-              Nx,
-              Ny,
-              **kwargs) -> dict:
-        """solve.
-
-        This function call the specified algorithm to solve the models.
-
-        Args:
-            source (dict): source
-
-        Returns:
-            dict:
-        """
-
-        # self.n_freqs = len(source.lam0)
-        self.src = source
-
-        if self.n_solve == 0:
-            self._pre_solve()
-
-        data = self._solve(Nx, Ny)
-
-        self.n_solve = self.n_solve + 1
-
-        return data
-
-    def _solve(self, Nx, Ny, **kwargs) -> dict:
-
-        # kx_0, ky_0: (n_freqs, kdim[0], kdim[1])
-        kx_0 = self.kinc[:, 0, None, None] - \
-            (self.mesh_fp[None, :, :] * self.reci_t1[0, None, None] + \
-                self.mesh_fq[None, :, :] * self.reci_t2[0, None, None]) / self.k_0[:, None, None] + 0*1j
-
-        ky_0 = self.kinc[:, 1, None, None] - \
-            (self.mesh_fp[None, :, :] * self.reci_t1[1, None, None] + \
-                self.mesh_fq[None, :, :] * self.reci_t2[1, None, None]) / self.k_0[:, None, None] + 0*1j
-
-        # Add relaxition
-        if torch.any(kx_0 == 0.0):
-            ind = torch.nonzero(kx_0 == 0.0)
-            kx_0[ind[:, 0], ind[:, 1]] = kx_0[ind[:, 0], ind[:, 1]] + 1e-6
-        if torch.any(ky_0 == 0.0):
-            ind = torch.nonzero(ky_0 == 0.0)
-            ky_0[ind[:, 0], ind[:, 1]] = ky_0[ind[:, 0], ind[:, 1]] + 1e-6
-
-
-        if self.layer_manager.is_ref_dispersive is False:
-            kz_ref_0 = torch.conj(torch.sqrt(
-                torch.conj(self.ur1)*torch.conj(self.er1) - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
-        else:
-            kz_ref_0 = torch.conj(torch.sqrt(
-                (torch.conj(self.ur1)*torch.conj(self.er1))[:, None, None] - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
-
-        if self.layer_manager.is_trn_dispersive is False:
-            kz_trn_0 = torch.conj(torch.sqrt(
-                torch.conj(self.ur2)*torch.conj(self.er2) - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
-        else:
-            kz_trn_0 = torch.conj(torch.sqrt(
-                (torch.conj(self.ur2)*torch.conj(self.er2))[:, None, None] - kx_0 * kx_0 - ky_0 * ky_0 + 0*1j))
-
-
-        # Transform to diagnal matrices
-        n_harmonics = self.kdim[0] * self.kdim[1]
-
-        self.ident_mat_k = torch.eye(n_harmonics, dtype=self.tcomplex, device=self.device)
-        self.ident_mat_k2 = torch.eye(2 * n_harmonics, dtype=self.tcomplex, device=self.device)
-
-        mat_kx = kx_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
-        mat_ky = ky_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
-        mat_kz_ref = kz_ref_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
-        mat_kz_trn = kz_trn_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
-
-
-        ident_mat = self.ident_mat_k[None, :, :].expand(self.n_freqs, -1, -1)
-        zero_mat = torch.zeros(
-            size=(self.n_freqs ,n_harmonics, n_harmonics), dtype=self.tcomplex, device=self.device)
-        
-        # Calculate eigen-modes of the gap medium
-
-        mat_kx_ky = mat_kx * mat_ky
-        mat_ky_kx = mat_ky * mat_kx
-        mat_kx_kx = mat_kx * mat_kx
-        mat_ky_ky = mat_ky * mat_ky
-
-        mat_kx_diag = self.to_diag(mat_kx)
-        mat_ky_diag = self.to_diag(mat_ky)
-
-        mat_kz = torch.conj(torch.sqrt(1.0 - mat_kx_kx - mat_ky_ky))
-
-
-        ident_mat_kx_kx = 1.0 - mat_kx_kx
-        ident_mat_ky_ky = 1.0 - mat_ky_ky
-
-        mat_w0 = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
-
-        inv_mat_lam = 1 / (1j*mat_kz)
-        
-        mat_v0 = blockmat2x2([[self.to_diag(mat_kx_ky * inv_mat_lam), self.to_diag(ident_mat_kx_kx * inv_mat_lam)],
-                  [self.to_diag(- ident_mat_ky_ky * inv_mat_lam), self.to_diag(- mat_kx_ky * inv_mat_lam)]])
-
-        # Initialize global scattering matrix
-        smat_global = init_smatrix(shape=(self.n_freqs,
-                          2*n_harmonics, 2*n_harmonics), dtype=self.tcomplex, device=self.device)
-        smat_layer = {}
-
-        # ============================================================================
-        # Main Loop
-        # ============================================================================
-        # Build Eigen Value Problem
-        for n_layer in range(self.layer_manager.nlayer):
-            # Transform dimensions to (n_batches, n_freqs, n_harmonics, n_harmonics)
-            if (self.layer_manager.layers[n_layer].is_solved is False) \
-                or (self.layer_manager.layers[n_layer].is_optimize is True):
-
-                # no need to solve the non-optimized layers in 'opt' mode.
-                if self.solver_mode == 'opt':
-                    self.layer_manager.layers[n_layer].is_solved = True
-
-                if self.layer_manager.layers[n_layer].is_homogeneous is False:
-                    if self.layer_manager.layers[n_layer].is_dispersive is False:
-                        toeplitz_er = self.expand_dims(self.layer_manager.layers[n_layer].kermat)
-                    else:
-                        toeplitz_er = self.layer_manager.layers[n_layer].kermat
-
-                    # assuming permeability always non-dispersive
-                    # Transform dimensions to (n_freqs, n_harmonics, n_harmonics)
-                    toeplitz_ur = self.expand_dims(self.layer_manager.layers[n_layer].kurmat)
-
-                    solve_ter_mky = tsolve(toeplitz_er, mat_ky_diag)
-                    solve_ter_mkx = tsolve(toeplitz_er, mat_kx_diag)
-                    solve_tur_mky = tsolve(toeplitz_ur, mat_ky_diag)
-                    solve_tur_mkx = tsolve(toeplitz_ur, mat_kx_diag)
-
-                    p_mat_i = blockmat2x2([[mat_kx_diag @ solve_ter_mky,
-                                       toeplitz_ur - mat_kx_diag @ solve_ter_mkx],
-                                      [mat_ky_diag @ solve_ter_mky - toeplitz_ur,
-                                     - mat_ky_diag @ solve_ter_mkx]])
-
-                    # print(f"Nx = {Nx}")
-                    # print(f"Ny = {Ny}")
-                    #
-                    # ================= calculate NV fields ========================
-                    NXX = self.layer_manager._gen_toeplitz2d(Nx * Nx,
-                                                           nharmonic_1=self.kdim[0],
-                                                           nharmonic_2=self.kdim[1],
-                                                             method='FFT')
-                    NYY = self.layer_manager._gen_toeplitz2d(Ny * Ny,
-                                                           nharmonic_1=self.kdim[0],
-                                                           nharmonic_2=self.kdim[1],
-                                                             method='FFT')
-                    NXY = self.layer_manager._gen_toeplitz2d(Nx * Ny,
-                                                           nharmonic_1=self.kdim[0],
-                                                           nharmonic_2=self.kdim[1],
-                                                             method='FFT')
-                    # print(f"Nxx = {NXX}")
-                    # print(f"Nyy = {NYY}")
-                    # print(f"Nxy = {NXY}")
-                    reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[n_layer].ermat,
-                                                                  nharmonic_1=self.kdim[0],
-                                                                    nharmonic_2=self.kdim[1],
-                                                                                method='FFT')
-                    delta_toeplitz_er = toeplitz_er - tinv(reciprocal_toeplitz_er)
-                    # print(f"delta_toep_er = {delta_toeplitz_er}")
-                    
-                    # q_mat_i = blockmat2x2([[mat_kx_diag @ solve_tur_mky,
-                    #                    toeplitz_er - mat_kx_diag @ solve_tur_mkx],
-                    #                   [mat_ky_diag @ solve_tur_mky - toeplitz_er,
-                    #                  - mat_ky_diag @ solve_tur_mkx]])
-                    q_mat_i = blockmat2x2([[mat_kx_diag @ solve_tur_mky - delta_toeplitz_er @ NXY,
-                                       toeplitz_er - mat_kx_diag @ solve_tur_mkx - delta_toeplitz_er @ NYY],
-                                      [mat_ky_diag @ solve_tur_mky - toeplitz_er + delta_toeplitz_er @ NXX,
-                                     delta_toeplitz_er @ NXY - mat_ky_diag @ solve_tur_mkx]])
-                    smat_layer = self._solve_nonhomo_layer(layer_index=n_layer,
-                                              p_mat_i=p_mat_i,
-                                              q_mat_i=q_mat_i,
-                                              mat_w0=mat_w0,
-                                              mat_v0=mat_v0)
-
-                elif self.layer_manager.layers[n_layer].is_homogeneous is True:
-                    if self.layer_manager.layers[n_layer].is_dispersive is True:
-                        toeplitz_er = torch.tensor(
-                            self._matlib[self.layer_manager.layers[n_layer].material_name].er,
-                            device=self.device).to(self.tcomplex)
-                        toeplitz_ur = torch.tensor(
-                            self._matlib[self.layer_manager.layers[n_layer].material_name].ur,
-                            device=self.device).to(self.tcomplex)
-
-                        # ===========================================================
-                        toep_ur_er = toeplitz_ur * toeplitz_er
-                        conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er)
-
-                        mat_kz_i = torch.conj(torch.sqrt(
-                            conj_toep_ur_er[:, None] - mat_kx ** 2 - mat_ky ** 2) + 0*1j).to(self.tcomplex)
-
-                        inv_dmat_lam_i = 1 / (1j*mat_kz_i)
-                        mat_v_i = 1 / toeplitz_ur * blockmat2x2([[self.to_diag(mat_kx_ky * inv_dmat_lam_i),
-                                                                  self.to_diag((toep_ur_er[:, None] - mat_kx_kx) * inv_dmat_lam_i)],
-                                                                 [self.to_diag((mat_ky_ky - toep_ur_er[:, None]) * inv_dmat_lam_i),
-                                                                  - self.to_diag(mat_ky_kx * inv_dmat_lam_i)]])
-
-
-                        # ===========================================================
-                    else:
-                        toeplitz_er = torch.tensor(
-                            self._matlib[self.layer_manager.layers[n_layer].material_name].er, device=self.device)
-                        toeplitz_ur = torch.tensor(
-                            self._matlib[self.layer_manager.layers[n_layer].material_name].ur, device=self.device)
-                        # ===========================================================
-                        toep_ur_er = toeplitz_ur * toeplitz_er
-                        conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er)
-
-                        mat_kz_i = torch.conj(torch.sqrt(
-                            conj_toep_ur_er - mat_kx ** 2 - mat_ky ** 2) + 0*1j).to(self.tcomplex)
-
-                        inv_dmat_lam_i = 1 / (1j*mat_kz_i)
-                        mat_v_i = 1 / toeplitz_ur * blockmat2x2([[self.to_diag(mat_kx_ky * inv_dmat_lam_i),
-                                                                  self.to_diag((toep_ur_er - mat_kx_kx) * inv_dmat_lam_i)],
-                                                                 [self.to_diag((mat_ky_ky - toep_ur_er) * inv_dmat_lam_i),
-                                                                  - self.to_diag(mat_ky_kx * inv_dmat_lam_i)]])
-
-
-                        # ===========================================================
-
-                    mat_x_i = - 1j*mat_kz_i * self.k_0[:, None] \
-                        * self.layer_manager.layers[n_layer].thickness.to(self.device).to(self.tcomplex)
-                    mat_x_i_diag = torch.concat([mat_x_i, mat_x_i], dim=1)
-                    mat_x_i = self.to_diag(torch.exp(mat_x_i_diag))
-
-                    # Calculate Layer Scattering Matrix
-                    atwi = mat_w0
-                    atvi = tsolve(mat_v_i, mat_v0)
-                    mat_a_i = atwi + atvi
-                    mat_b_i = atwi - atvi
-
-                    solve_ai_xi = tsolve(mat_a_i, mat_x_i)           
-
-                    mat_xi_bi = mat_x_i @ mat_b_i
-
-                    mat_d_i = mat_a_i - mat_xi_bi @ solve_ai_xi @ mat_b_i
-
-                    smat_layer['S11'] = tsolve(
-                        mat_d_i, mat_xi_bi @ solve_ai_xi @ mat_a_i - mat_b_i)
-                    smat_layer['S12'] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tsolve(mat_a_i, mat_b_i))
-                    smat_layer['S21'] = smat_layer['S12']
-                    smat_layer['S22'] = smat_layer['S11']
-
-                self.smat_layers[n_layer] = smat_layer
-
-            # Update global scattering matrix
-            smat_global = redhstar(smat_global, self.smat_layers[n_layer])
-        # ============================================================================
-        # End Main Loop
-        # ============================================================================
-        # Connect to reflection region
-        inv_mat_lam_ref = 1 / (1j * mat_kz_ref)
-
-        if self.layer_manager.is_ref_dispersive is False:
-            mat_v_ref = (1/self.ur1) * blockmat2x2([[self.to_diag(mat_kx_ky * inv_mat_lam_ref),
-                                             self.to_diag((self.ur1 * self.er1 - mat_kx_kx) * inv_mat_lam_ref)],
-                                            [self.to_diag((mat_ky_ky - self.ur1 * self.er1) * inv_mat_lam_ref),
-                                            - self.to_diag(mat_ky_kx * inv_mat_lam_ref)]])
-        else:
-            mat_v_ref = (1/self.ur1) * blockmat2x2([[self.to_diag(mat_kx_ky * inv_mat_lam_ref),
-                                             self.to_diag(((self.ur1 * self.er1)[:, None] - mat_kx_kx) * inv_mat_lam_ref)],
-                                            [self.to_diag((mat_ky_ky - (self.ur1 * self.er1)[:, None]) * inv_mat_lam_ref),
-                                            - self.to_diag(mat_ky_kx * inv_mat_lam_ref)]])
-        mat_w_ref = self.ident_mat_k2[None, :, :].expand(self.n_freqs, -1, -1)
-
-        smat_ref = {}
-        atw1 = mat_w_ref
-        atv1 = tsolve(mat_v0, mat_v_ref)
-
-        mat_a_1 = atw1 + atv1
-        mat_b_1 = atw1 - atv1
-        inv_mat_a_1 = tinv(mat_a_1)
-        inv_mat_a_1_mat_b_1 = inv_mat_a_1 @ mat_b_1
-        smat_ref['S11'] = - inv_mat_a_1_mat_b_1
-        smat_ref['S12'] = 2 * inv_mat_a_1
-        smat_ref['S21'] = 0.5 * (mat_a_1 - mat_b_1 @ inv_mat_a_1_mat_b_1)
-        smat_ref['S22'] = mat_b_1 @ inv_mat_a_1
-
-        smat_global = redhstar(smat_ref, smat_global)
-
-        # Connect to transmission region
-        inv_mat_lam_trn = 1 / (1j * mat_kz_trn) 
-
-        if self.layer_manager.is_trn_dispersive is False:
-            mat_v_trn = (1/self.ur2) * blockmat2x2([[self.to_diag(mat_kx_ky * inv_mat_lam_trn),
-                                            self.to_diag((self.ur2 * self.er2 - mat_kx_kx) * inv_mat_lam_trn)],
-                                            [self.to_diag((mat_ky_ky - self.ur2 * self.er2) * inv_mat_lam_trn),
-                                            - self.to_diag(mat_ky_kx * inv_mat_lam_trn)]])
-        else:
-            mat_v_trn = (1/self.ur2) * blockmat2x2([[self.to_diag(mat_kx_ky * inv_mat_lam_trn),
-                                                     self.to_diag(((self.ur2 * self.er2)[:, None] - mat_kx_kx) * inv_mat_lam_trn)],
-                                                    [self.to_diag((mat_ky_ky - (self.ur2 * self.er2)[:, None]) * inv_mat_lam_trn),
-                                            - self.to_diag(mat_ky_kx * inv_mat_lam_trn)]])
-
-        mat_w_trn = mat_w_ref
-        smat_trn = {}
-        # atw2 = tsolve(mat_w0, mat_w_trn)
-        atw2 = mat_w_trn
-        atv2 = tsolve(mat_v0, mat_v_trn)
-
-        mat_a_2 = atw2 + atv2
-        mat_b_2 = atw2 - atv2
-        inv_mat_a_2 = tinv(mat_a_2)
-        inv_mat_a_2_mat_b_2 = inv_mat_a_2 @ mat_b_2
-        smat_trn['S11'] = mat_b_2 @ inv_mat_a_2
-        smat_trn['S12'] = 0.5 * (mat_a_2 - mat_b_2 @ inv_mat_a_2_mat_b_2)
-        smat_trn['S21'] = 2 * inv_mat_a_2
-        smat_trn['S22'] = - inv_mat_a_2_mat_b_2
-
-        smat_global = redhstar(smat_global, smat_trn)
-
-
-        # Compute polarization vector
-        norm_vec = torch.tensor(
-            [0.0, 0.0, 1.0], dtype=self.tcomplex, device=self.device)
-
-        ate = torch.empty_like(norm_vec)
-        if np.abs(self.src['theta']) < 1e-3:
-            if self.src['norm_te_dir'] == 'y':
-                ate = torch.tensor(
-                    [0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
-            elif self.src['norm_te_dir'] == 'x':
-                ate = torch.tensor(
-                    [1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
-        else:
-            ate = torch.cross(self.kinc, norm_vec[None, :].repeat(self.n_freqs, 1))
-            ate = ate / torch.norm(ate, dim=1).unsqueeze(-1)
-
-        atm = torch.cross(ate, self.kinc, dim=1)
-        atm = atm / torch.norm(atm)
-
-        pol_vec = self.src['pte'] * ate + self.src['ptm'] * atm
-        pol_vec = pol_vec / torch.norm(pol_vec, dim=1).unsqueeze(-1)
-
-        # Calculate electric field source vector
-        delta = torch.zeros(
-            size=(self.n_freqs, n_harmonics), dtype=self.tcomplex, device=self.device)
-
-        delta[:, (self.kdim[1] // 2) * self.kdim[0] +(self.kdim[0] // 2)] = 1
-        esrc = torch.cat((pol_vec[:, 0].unsqueeze(-1) * delta,
-                         pol_vec[:, 1].unsqueeze(-1) * delta), dim=1)
-
-        # Calculate source vectors
-        csrc = tsolve(mat_w_ref, esrc.unsqueeze(-1))
-
-        # Calculate reflected fields
-        cref = smat_global['S11'] @ csrc
-        eref = mat_w_ref @ cref
-
-        ref_field_x = eref[:, 0: n_harmonics, :]
-        ref_field_y = eref[:, n_harmonics: 2*n_harmonics, :]
-
-        ref_field_z = - mat_kx_diag @ tsolve(self.to_diag(mat_kz_ref), ref_field_x) \
-             - mat_ky_diag @ tsolve(self.to_diag(mat_kz_ref), ref_field_y)
-
-        # Calculate transmitted fields
-        ctrn = smat_global['S21'] @ csrc
-        etrn = mat_w_trn @ ctrn
-        trn_field_x = etrn[:, 0: n_harmonics, :]
-        trn_field_y = etrn[:, n_harmonics: 2*n_harmonics, :]
-        trn_field_z = - mat_kx_diag @ tsolve(self.to_diag(mat_kz_trn), trn_field_x) \
-             - mat_ky_diag @ tsolve(self.to_diag(mat_kz_trn), trn_field_y)
-
-        # Calculate diffraction efficiences
-        ref_diff_efficiency = torch.reshape(torch.real(self.ur2/self.ur1*self.to_diag(mat_kz_ref) / \
-            self.kinc[:, 2, None, None]) @
-                            (torch.real(ref_field_x) ** 2 + torch.imag(ref_field_x) ** 2 +
-                             torch.real(ref_field_y) ** 2 + torch.imag(ref_field_y) ** 2 +
-                             + torch.real(ref_field_z) ** 2 + torch.imag(ref_field_z) ** 2),
-                            shape=(self.n_freqs,
-                                   self.kdim[0],
-                                   self.kdim[1])).transpose(dim0=-2, dim1=-1)
-
-        trn_diff_efficiency = torch.reshape(torch.real(self.ur1/self.ur2*self.to_diag(mat_kz_trn) / \
-            self.kinc[:, 2, None, None]) @
-                            (torch.real(trn_field_x) ** 2 + torch.imag(trn_field_x) ** 2 +
-                             torch.real(trn_field_y) ** 2 + torch.imag(trn_field_y) ** 2 +
-                             + torch.real(trn_field_z) ** 2 + torch.imag(trn_field_z) ** 2),
-                            shape=(self.n_freqs,
-                                   self.kdim[0],
-                                   self.kdim[1])).transpose(dim0=-2, dim1=-1)
-
-
-        # Calculate overall reflectance & Transmittance
-        total_ref_efficiency = torch.sum(ref_diff_efficiency, dim=(-1, -2))
-        total_trn_efficiency = torch.sum(trn_diff_efficiency, dim=(-1, -2))
-
-        # Store output data
-        data = {}
-        data['rx'] = torch.reshape(ref_field_x, shape=(
-            self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
-        data['ry'] = torch.reshape(ref_field_y, shape=(
-            self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
-        data['rz'] = torch.reshape(ref_field_z, shape=(
-            self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
-        data['tx'] = torch.reshape(trn_field_x, shape=(
-            self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
-        data['ty'] = torch.reshape(trn_field_y, shape=(
-            self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
-        data['tz'] = torch.reshape(trn_field_z, shape=(
-            self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
-        data['RDE'] = ref_diff_efficiency
-        data['TDE'] = trn_diff_efficiency
-        data['REF'] = total_ref_efficiency
-        data['TRN'] = total_trn_efficiency
-        data['kzref'] = mat_kz_ref
-        data['kztrn'] = mat_kz_trn
-        data['kinc'] = self.kinc
-        data['kx'] = torch.squeeze(kx_0)
-        data['ky'] = torch.squeeze(ky_0)
-        return data
 
 class RCWASolver(FourierBaseSover):
     """RCWASolver.
@@ -1290,28 +1343,14 @@ class RCWASolver(FourierBaseSover):
 
         return smat_layer
 
-class RCWASolverFFF(FourierBaseSoverFFF):
-    """RCWASolver.
 
-    This is the implemented solver class for RCWA.
-    """
-    def __init__(self,
-                 lam0: np.ndarray = np.ndarray([]),
-                 lengthunit: str = 'um',
-                 rdim: list = [512, 512],  # dimensions in real space: (H, W)
-                 kdim: list = [3,3],  # dimensions in k space: (kH, kW)
-                 materiallist: list = [],  # list of materials
-                 t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
-                 t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
-                 device: Union[str, torch.device] = 'cpu') -> None:
-        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
-
-    def _solve_nonhomo_layer(self,
+    def _solve_nonhomo_layer_single_frequency(self,
                              layer_index: int,
                              p_mat_i: torch.Tensor,
                              q_mat_i: torch.Tensor,
                              mat_w0: torch.Tensor,
-                             mat_v0: torch.Tensor) -> dict:
+                             mat_v0: torch.Tensor,
+                            freq_index: int) -> dict:
         """_solve_nonhomo_layer.
 
         Solves the non-homogenous layer using RCWA methods.
@@ -1333,10 +1372,10 @@ class RCWASolverFFF(FourierBaseSoverFFF):
 
         inv_dmat_lam_i = self.to_diag(1 / torch.sqrt(mat_lam_i))
 
-
         mat_v_i = q_mat_i @ mat_w_i @ inv_dmat_lam_i
-        mat_x_i = torch.linalg.matrix_exp(self.to_diag(- torch.sqrt(mat_lam_i) * self.k_0[:, None] \
+        mat_x_i = torch.linalg.matrix_exp(self.to_diag(- torch.sqrt(mat_lam_i) * self.k_0[freq_index] \
             * self.layer_manager.layers[layer_index].thickness.to(self.device))).to(self.tcomplex)
+
 
         # Calculate Layer Scattering Matrix
         mat_a_i = tsolve(mat_w_i, mat_w0) + tsolve(mat_v_i, mat_v0)
@@ -1352,8 +1391,6 @@ class RCWASolverFFF(FourierBaseSoverFFF):
         smat_layer['S22'] = smat_layer['S11']
 
         return smat_layer
-
-
 
 class RCWARolverFloat(RCWASolver):
     """RCWASolver.
@@ -1469,6 +1506,86 @@ class RDITSolver(FourierBaseSover):
         smat_layer['S12'] = mat_zzi / 2.0
         smat_layer['S21'] = smat_layer['S12']
         smat_layer['S22'] = smat_layer['S11']
+        return smat_layer
+    
+    def _solve_nonhomo_layer_single_frequency(self,
+                                             layer_index: int,
+                                             p_mat_i: torch.Tensor,
+                                             q_mat_i: torch.Tensor,
+                                             mat_w0: torch.Tensor,
+                                             mat_v0: torch.Tensor,
+                                              freq_index: int) -> dict:
+        """_solve_nonhomo_layer.
+
+        Solves the non-homogenous layer using R-DIT methods.
+
+        Args:
+            layer_index (int): layer_index
+            p_mat_i (torch.Tensor): p_mat_i
+            q_mat_i (torch.Tensor): q_mat_i
+            mat_w0 (torch.Tensor): mat_w0
+            mat_v0 (torch.Tensor): mat_v0
+
+        Returns:
+            dict:
+        """
+        n_harmonics = self.kdim[0] * self.kdim[1]
+
+        smat_layer = {}
+
+        # Construct T matrix
+        delta_h = self.k_0[freq_index] * self.layer_manager.layers[layer_index].thickness.to(self.device) / 2.0
+        tmat_a_i = torch.eye(2*n_harmonics, 2*n_harmonics, dtype=self.tcomplex,
+                        device=self.device)
+        tmat_b_i = torch.zeros(size=(2*n_harmonics, 2*n_harmonics), dtype=self.tcomplex,
+                          device=self.device)
+        tmat_c_i = torch.zeros(size=(2*n_harmonics, 2*n_harmonics), dtype=self.tcomplex,
+                          device=self.device)
+        tmat_d_i = torch.eye(2*n_harmonics, 2*n_harmonics, dtype=self.tcomplex,
+                        device=self.device)
+        
+
+        p_fcoef = torch.eye(2*n_harmonics, 2*n_harmonics, dtype=self.tcomplex,
+                            device=self.device)
+        q_fcoef = torch.eye(2*n_harmonics, 2*n_harmonics, dtype=self.tcomplex,
+                            device=self.device)
+        
+        
+        for irdit_order in range(1, self._rdit_orders + 1):
+            if (irdit_order % 2) == 0:  # even orders
+                p_fcoef = p_fcoef @ q_mat_i
+                q_fcoef = q_fcoef @ p_mat_i
+                fac = (delta_h.to(self.tfloat)**irdit_order / np.math.factorial(irdit_order))
+                tmat_a_i = tmat_a_i + fac * p_fcoef
+                tmat_d_i = tmat_d_i + fac * q_fcoef
+            else:  # odd orders
+                p_fcoef = p_fcoef @ p_mat_i
+                q_fcoef = q_fcoef @ q_mat_i
+                fac = (delta_h.to(self.tfloat)**irdit_order / np.math.factorial(irdit_order))
+                tmat_b_i = tmat_b_i + fac * p_fcoef
+                tmat_c_i = tmat_c_i + fac * q_fcoef
+
+                
+        # Construct some helper functions
+        a_i_w0 = tmat_a_i @ mat_w0
+        b_i_v0 = tmat_b_i @ mat_v0
+        c_i_w0 = tmat_c_i @ mat_w0
+        d_i_v0 = tmat_d_i @ mat_v0
+
+        mat_g1 = a_i_w0 + b_i_v0
+        mat_g2 = -c_i_w0 - d_i_v0
+
+        mat_xx1 = tsolve(mat_g2, c_i_w0 - d_i_v0)
+        mat_xx2 = tsolve(mat_g1, a_i_w0 - b_i_v0)
+
+        mat_yyi = mat_xx1 - mat_xx2
+        mat_zzi = mat_xx1 + mat_xx2
+
+        smat_layer['S11'] = mat_yyi / 2.0
+        smat_layer['S12'] = mat_zzi / 2.0
+        smat_layer['S21'] = smat_layer['S12']
+        smat_layer['S22'] = smat_layer['S11']
+        
         return smat_layer
 
     def set_rdit_order(self, rdit_order: int) -> None:

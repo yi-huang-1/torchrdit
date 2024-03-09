@@ -159,14 +159,25 @@ def init_smatrix(shape: Tuple, dtype: torch.dtype , device : Union[str, torch.de
         device (Union[str, torch.device]): device
     """
     smatrix = {}
-    smatrix['S11'] = torch.zeros(
-        size=shape, dtype=dtype, device=device)
-    smatrix['S12'] = torch.eye(shape[-2], shape[-1], dtype=dtype,
-                               device=device).unsqueeze(0).repeat(shape[0], 1, 1)
-    smatrix['S21'] = torch.eye(shape[-2], shape[-1], dtype=dtype,
-                               device=device).unsqueeze(0).repeat(shape[0], 1, 1)
-    smatrix['S22'] = torch.zeros(
-        size=shape, dtype=dtype, device=device)
+    if len(shape) == 3:
+        smatrix['S11'] = torch.zeros(
+            size=shape, dtype=dtype, device=device)
+        smatrix['S12'] = torch.eye(shape[-2], shape[-1], dtype=dtype,
+                                   device=device).unsqueeze(0).repeat(shape[0], 1, 1)
+        smatrix['S21'] = torch.eye(shape[-2], shape[-1], dtype=dtype,
+                                   device=device).unsqueeze(0).repeat(shape[0], 1, 1)
+        smatrix['S22'] = torch.zeros(
+            size=shape, dtype=dtype, device=device)
+    else:
+        smatrix['S11'] = torch.zeros(
+            size=shape, dtype=dtype, device=device)
+        smatrix['S12'] = torch.eye(shape[-2], shape[-1], dtype=dtype,
+                                   device=device)
+        smatrix['S21'] = torch.eye(shape[-2], shape[-1], dtype=dtype,
+                                   device=device)
+        smatrix['S22'] = torch.zeros(
+            size=shape, dtype=dtype, device=device)
+        
     return smatrix
 
 
@@ -185,7 +196,10 @@ def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64
 
     # Input dimensions (n_batches, n_freqs, n_harmonics, n_harmonics)
     # Construct identity matrix
-    _, harmonic_m, harmonic_n = smat_a['S11'].shape
+    if smat_a['S11'].ndim == 3:
+        _, harmonic_m, harmonic_n = smat_a['S11'].shape
+    else:
+        harmonic_m, harmonic_n = smat_a['S11'].shape
     device = smat_a['S11'].device
     identity_mat = torch.eye(harmonic_m, harmonic_n, dtype=tcomplex, device=device)
 
@@ -197,7 +211,6 @@ def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64
     # woodbury matrix identity
     cycle_2 = identity_mat + smat_a['S22'] @ cycle_1_smat_b_11
     smat_b_21_cycle_2 = smat_b['S21'] @ cycle_2
-
     # Compute combined scattering matrix
     smatrix = {}
     smatrix['S11'] = smat_a['S11'] + smat_a['S12'] @ cycle_1_smat_b_11 @ smat_a['S21']
