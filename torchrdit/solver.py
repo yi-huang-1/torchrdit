@@ -9,7 +9,83 @@ from torch.linalg import solve as tsolve
 from torch.nn.functional import conv2d as tconv2d
 from .cell import Cell3D, CellType
 from .utils import blockmat2x2, redhstar, EigComplex, init_smatrix, blur_filter
+from .constants import Algorithm, Precision
 
+class SolverConstructer():
+            
+    def __init__(self) -> None:
+        pass
+
+    @staticmethod
+    def creat_sovler(algorithm: Algorithm = Algorithm.RDIT,
+                     precision: Precision = Precision.SINGLE,
+                     lam0: np.ndarray = np.array([1.0]),
+                     lengthunit: str = 'um',  # length unit used in the solver
+                     rdim: list = [512, 512],  # dimensions in real space: (H, W)
+                     kdim: list = [3,3],  # dimensions in k space: (kH, kW)
+                     materiallist: list = [],  # list of materials
+                     t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
+                     t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
+                     is_use_FFF: bool = True, # if use Fast Fourier Factorization
+                     device: Union[str, torch.device] = 'cpu'):
+            
+        if precision == Precision.SINGLE:
+            if algorithm == Algorithm.RCWA:
+                inst = RCWARolverFloat(lam0=lam0,
+                                lengthunit=lengthunit,
+                                rdim=rdim,
+                                kdim=kdim,
+                                materiallist=materiallist,
+                                t1=t1,
+                                t2=t2,
+                                is_use_FFF=is_use_FFF,
+                                device=device)
+            else:
+                if algorithm != Algorithm.RDIT:
+                    print(f"Unknown selected algorithm, set to [R-DIT]")
+                    
+                inst = RDITSolverFloat(lam0=lam0,
+                                lengthunit=lengthunit,
+                                rdim=rdim,
+                                kdim=kdim,
+                                materiallist=materiallist,
+                                t1=t1,
+                                t2=t2,
+                                is_use_FFF=is_use_FFF,
+                                device=device)
+        else: 
+            if precision != Precision.DOUBLE:
+                print(f"Unknown precision, set to [double]")
+            
+            if algorithm == Algorithm.RCWA:
+                inst = RCWASolverDouble(lam0=lam0,
+                                lengthunit=lengthunit,
+                                rdim=rdim,
+                                kdim=kdim,
+                                materiallist=materiallist,
+                                t1=t1,
+                                t2=t2,
+                                is_use_FFF=is_use_FFF,
+                                device=device)
+            else:
+                if algorithm != Algorithm.RDIT:
+                    print(f"Unknown selected algorithm, set to [R-DIT]")
+                    
+                inst = RDITSolverDouble(lam0=lam0,
+                                lengthunit=lengthunit,
+                                rdim=rdim,
+                                kdim=kdim,
+                                materiallist=materiallist,
+                                t1=t1,
+                                t2=t2,
+                                is_use_FFF=is_use_FFF,
+                                device=device)
+            
+
+        return inst
+        
+        
+        
 class FourierBaseSover(Cell3D):
     """Base Class of Fourier Domain Solver"""
 
@@ -33,6 +109,7 @@ class FourierBaseSover(Cell3D):
                  materiallist: list = [],  # list of materials
                  t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
                  t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
+                 is_use_FFF: bool = True, # if use Fast Fourier Factorization
                  device: Union[str, torch.device] = 'cpu') -> None:
         super().__init__(lengthunit, rdim,
                          kdim, materiallist, t1, t2, device)
@@ -53,6 +130,7 @@ class FourierBaseSover(Cell3D):
 
         # solver mode: [eval] [opt]
         self.solver_mode = 'eval'
+        self.is_use_FFF = is_use_FFF
 
     @property
     def lam0(self):
@@ -257,16 +335,16 @@ class FourierBaseSover(Cell3D):
                                      - mat_ky_diag @ solve_ter_mkx]])
 
                     if self.is_use_FFF is True: 
-                        _, _, n_xx, n_yy, n_xy = self._calculate_nv_field(mask=self.layer_manager.layers[n_layer].mask_format.squeeze())
-                        reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[n_layer].ermat,
-                                                                      nharmonic_1=self.kdim[0],
-                                                                        nharmonic_2=self.kdim[1],
-                                                                                    method='FFT')
-                        delta_toeplitz_er = toeplitz_er - tinv(reciprocal_toeplitz_er)
-                        q_mat_i = blockmat2x2([[mat_kx_diag @ solve_tur_mky - delta_toeplitz_er @ n_xy,
-                                           toeplitz_er - mat_kx_diag @ solve_tur_mkx - delta_toeplitz_er @ n_yy],
-                                          [mat_ky_diag @ solve_tur_mky - toeplitz_er + delta_toeplitz_er @ n_xx,
-                                         delta_toeplitz_er @ n_xy - mat_ky_diag @ solve_tur_mkx]])
+                        # _, _, n_xx, n_yy, n_xy = self._calculate_nv_field(mask=self.layer_manager.layers[n_layer].mask_format.squeeze())
+                        # reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[n_layer].ermat,
+                        #                                               nharmonic_1=self.kdim[0],
+                        #                                                 nharmonic_2=self.kdim[1],
+                        #                                                             method='FFT')
+                        delta_toeplitz_er = toeplitz_er - tinv(self.reciprocal_toeplitz_er)
+                        q_mat_i = blockmat2x2([[mat_kx_diag @ solve_tur_mky - delta_toeplitz_er @ self.n_xy,
+                                           toeplitz_er - mat_kx_diag @ solve_tur_mkx - delta_toeplitz_er @ self.n_yy],
+                                          [mat_ky_diag @ solve_tur_mky - toeplitz_er + delta_toeplitz_er @ self.n_xx,
+                                         delta_toeplitz_er @ self.n_xy - mat_ky_diag @ solve_tur_mkx]])
                     else:
                         q_mat_i = blockmat2x2([[mat_kx_diag @ solve_tur_mky,
                                            toeplitz_er - mat_kx_diag @ solve_tur_mkx],
@@ -638,22 +716,24 @@ class FourierBaseSover(Cell3D):
                         
 
                         if self.is_use_FFF is True: 
-                            _, _, n_xx, n_yy, n_xy = self._calculate_nv_field(mask=self.layer_manager.layers[n_layer].mask_format.squeeze())
+                            # _, _, n_xx, n_yy, n_xy = self._calculate_nv_field(mask=self.layer_manager.layers[n_layer].mask_format.squeeze())
                             if self.layer_manager.layers[n_layer].is_dispersive is False:
-                                reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[n_layer].ermat,
-                                                                              nharmonic_1=self.kdim[0],
-                                                                                nharmonic_2=self.kdim[1],
-                                                                                            method='FFT')
+                                # reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[n_layer].ermat,
+                                #                                               nharmonic_1=self.kdim[0],
+                                #                                                 nharmonic_2=self.kdim[1],
+                                #                                                             method='FFT')
+                                delta_toeplitz_er = toeplitz_er - tinv(self.reciprocal_toeplitz_er)
                             else:
-                                reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[n_layer].ermat,
-                                                                              nharmonic_1=self.kdim[0],
-                                                                                nharmonic_2=self.kdim[1],
-                                                                                            method='FFT')[ind_freq,:,:]
-                            delta_toeplitz_er = toeplitz_er - tinv(reciprocal_toeplitz_er)
-                            q_mat_i = blockmat2x2([[mat_kx_diag[ind_freq,:,:] @ solve_tur_mky - delta_toeplitz_er @ n_xy,
-                                               toeplitz_er - mat_kx_diag[ind_freq,:,:] @ solve_tur_mkx - delta_toeplitz_er @ n_yy],
-                                              [mat_ky_diag[ind_freq,:,:] @ solve_tur_mky - toeplitz_er + delta_toeplitz_er @ n_xx,
-                                             delta_toeplitz_er @ n_xy - mat_ky_diag[ind_freq,:,:] @ solve_tur_mkx]])
+                                # reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[n_layer].ermat,
+                                #                                               nharmonic_1=self.kdim[0],
+                                #                                                 nharmonic_2=self.kdim[1],
+                                #                                                             method='FFT')[ind_freq,:,:]
+                                delta_toeplitz_er = toeplitz_er - tinv(self.reciprocal_toeplitz_er[ind_freq,:,:])
+                            # delta_toeplitz_er = toeplitz_er - tinv(reciprocal_toeplitz_er)
+                            q_mat_i = blockmat2x2([[mat_kx_diag[ind_freq,:,:] @ solve_tur_mky - delta_toeplitz_er @ self.n_xy,
+                                               toeplitz_er - mat_kx_diag[ind_freq,:,:] @ solve_tur_mkx - delta_toeplitz_er @ self.n_yy],
+                                              [mat_ky_diag[ind_freq,:,:] @ solve_tur_mky - toeplitz_er + delta_toeplitz_er @ self.n_xx,
+                                             delta_toeplitz_er @ self.n_xy - mat_ky_diag[ind_freq,:,:] @ solve_tur_mkx]])
                         else:
                             q_mat_i = blockmat2x2([[mat_kx_diag[ind_freq,:,:] @ solve_tur_mky,
                                                toeplitz_er - mat_kx_diag[ind_freq,:,:] @ solve_tur_mkx],
@@ -961,7 +1041,6 @@ class FourierBaseSover(Cell3D):
     
     def solve(self,
               source: dict,
-              is_use_FFF: bool = True,
               is_sovle_batch: bool = True,
               **kwargs) -> dict:
         """solve.
@@ -977,7 +1056,6 @@ class FourierBaseSover(Cell3D):
 
         # self.n_freqs = len(source.lam0)
         self.src = source
-        self.is_use_FFF = is_use_FFF
         self.is_solve_batch = is_sovle_batch
 
         if self.n_solve == 0:
@@ -1136,6 +1214,14 @@ class FourierBaseSover(Cell3D):
             self.layer_manager.gen_toeplitz_matrix(
                 layer_index=layer_index, n_harmonic1=self.kdim[0], n_harmonic2=self.kdim[1], param='ur', method=method)
 
+        
+        if self.is_use_FFF is True: 
+            _, _, self.n_xx, self.n_yy, self.n_xy = self._calculate_nv_field(mask=self.layer_manager.layers[layer_index].mask_format.squeeze())
+            self.reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[layer_index].ermat,
+                                                          nharmonic_1=self.kdim[0],
+                                                            nharmonic_2=self.kdim[1],
+                                                                        method='FFT')
+
     def _calculate_nv_field(self, mask: torch.Tensor):
         # Sobel filters
         sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=self.tfloat, device=self.device)[None, None, :, :]
@@ -1280,7 +1366,7 @@ class FourierBaseSover(Cell3D):
         return ret
 
 
-class RCWASolver(FourierBaseSover):
+class RCWASolverDouble(FourierBaseSover):
     """RCWASolver.
 
     This is the implemented solver class for RCWA.
@@ -1293,8 +1379,9 @@ class RCWASolver(FourierBaseSover):
                  materiallist: list = [],  # list of materials
                  t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
                  t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
+                 is_use_FFF: bool = True,
                  device: Union[str, torch.device] = 'cpu') -> None:
-        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
+        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, is_use_FFF, device)
 
     def _solve_nonhomo_layer(self,
                              layer_index: int,
@@ -1391,8 +1478,21 @@ class RCWASolver(FourierBaseSover):
         smat_layer['S22'] = smat_layer['S11']
 
         return smat_layer
+    
+    def set_rdit_order(self, rdit_order: int) -> None:
+        """set_rdit_order.
 
-class RCWARolverFloat(RCWASolver):
+        Set the order of R-DIT.
+
+        Args:
+            rdit_order (int): rdit_order
+
+        Returns:
+            None:
+        """
+        raise NotImplementedError("Invalid parameter for RCWA")
+
+class RCWARolverFloat(RCWASolverDouble):
     """RCWASolver.
 
     This is the implemented solver class for RCWA.
@@ -1405,6 +1505,7 @@ class RCWARolverFloat(RCWASolver):
                  materiallist: list = [],  # list of materials
                  t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
                  t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
+                 is_use_FFF: bool = True,
                  device: Union[str, torch.device] = 'cpu') -> None:
 
         self.tcomplex = torch.complex64
@@ -1412,9 +1513,9 @@ class RCWARolverFloat(RCWASolver):
         self.tint = torch.int32
         self.nfloat = np.float32
 
-        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
+        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, is_use_FFF, device)
 
-class RDITSolver(FourierBaseSover):
+class RDITSolverDouble(FourierBaseSover):
     """RDITSolver.
 
     This is the implemented solver class for R-DIT.
@@ -1429,8 +1530,9 @@ class RDITSolver(FourierBaseSover):
                  materiallist: list = [],  # list of materials
                  t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
                  t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
+                 is_use_FFF: bool = True,
                  device: Union[str, torch.device] = 'cpu') -> None:
-        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
+        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, is_use_FFF, device)
         self._rdit_orders = 10
 
     def _solve_nonhomo_layer(self,
@@ -1601,7 +1703,7 @@ class RDITSolver(FourierBaseSover):
         """
         self._rdit_orders = rdit_order
 
-class RDITSolverFloat(RDITSolver):
+class RDITSolverFloat(RDITSolverDouble):
     """RDITSolver.
 
     This is the implemented solver class for R-DIT.
@@ -1614,6 +1716,7 @@ class RDITSolverFloat(RDITSolver):
                  materiallist: list = [],  # list of materials
                  t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
                  t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
+                 is_use_FFF: bool = True,
                  device: Union[str, torch.device] = 'cpu') -> None:
 
         self.tcomplex = torch.complex64
@@ -1621,4 +1724,4 @@ class RDITSolverFloat(RDITSolver):
         self.tint = torch.int32
         self.nfloat = np.float32
 
-        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, device)
+        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, is_use_FFF, device)

@@ -1,6 +1,8 @@
 """Module defines some constants."""
 import numpy as np
 
+from enum import Enum, auto, unique
+
 # define constant values
 EPS_0 = 8.85418782e-12          # vacuum permittivity
 MU_0 = 1.25663706e-6            # vacuum permeability
@@ -28,3 +30,13 @@ lengthunit_dict = {
     'pm': 1.0e-12,
     'angstrom': 1.0e-10,
 }
+
+@unique
+class Algorithm(Enum):
+    RCWA = auto()
+    RDIT = auto()
+
+@unique
+class Precision(Enum):
+    SINGLE = auto()
+    DOUBLE = auto()
