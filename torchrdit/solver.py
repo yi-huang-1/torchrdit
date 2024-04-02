@@ -1247,20 +1247,20 @@ class FourierBaseSover(Cell3D):
         bondary_vec_x = norm_vec_x[index_bond_vec[:, 0], index_bond_vec[:, 1]]
         bondary_vec_y = norm_vec_y[index_bond_vec[:, 0], index_bond_vec[:, 1]]
 
-        field_ind_i = self.XO[index_field_vec[:, 0], index_field_vec[:, 1]]
-        field_ind_j = self.YO[index_field_vec[:, 0], index_field_vec[:, 1]]
-        bond_ind_i = self.XO[index_bond_vec[:, 0], index_bond_vec[:, 1]]
-        bond_ind_j = self.YO[index_bond_vec[:, 0], index_bond_vec[:, 1]]
-        denom = torch.sqrt((field_ind_i[:, None] - bond_ind_i[None, :])**2 + (field_ind_j[:, None] - bond_ind_j[None, :])**2)
+        field_ind_i = index_field_vec[:, 0]
+        field_ind_j = index_field_vec[:, 1]
+        bond_ind_i = index_bond_vec[:, 0]
+        bond_ind_j = index_bond_vec[:, 1]
+        denom = torch.sqrt((field_ind_i[:, None] - bond_ind_i[None, :])**2 + (field_ind_j[:, None] - bond_ind_j[None, :])**2) + 1e-6
         # denom = torch.sqrt((index_field_vec[:, 0][:, None] - index_bond_vec[:, 0][None, :])**2 + (index_field_vec[:,1][:, None] - index_bond_vec[:,1][None, :])**2)
         
         norm_vec_x[index_field_vec[:,0], index_field_vec[:, 1]] = torch.sum(bondary_vec_x[None, :] / denom, dim=1)
         norm_vec_y[index_field_vec[:,0], index_field_vec[:, 1]] = torch.sum(bondary_vec_y[None, :] / denom, dim=1)
 
-        denom_normal = torch.sqrt(norm_vec_x ** 2 + norm_vec_y ** 2)
+        denom_normal = torch.sqrt(norm_vec_x ** 2 + norm_vec_y ** 2) + 1e-6
         norm_vec_x = norm_vec_x / denom_normal
         norm_vec_y = norm_vec_y / denom_normal
-                
+
         n_xx = self.layer_manager._gen_toeplitz2d(norm_vec_x * norm_vec_x,
                                                nharmonic_1=self.kdim[0],
                                                nharmonic_2=self.kdim[1],

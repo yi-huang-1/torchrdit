@@ -2,7 +2,8 @@
 
 `TorchRDIT` is a software package for the paper:
 
-[Inverse Design of Photonic Structures Using Automatic Differentiable Rigorous Diffraction Interface Theory](https://doi.org/10.1364/CLEO_AT.2023.JTu2A.119)
+- [Eigendecomposition-free inverse design of meta-optics devices](https://opg.optica.org/oe/fulltext.cfm?uri=oe-32-8-13986&id=548527)
+- [Inverse Design of Photonic Structures Using Automatic Differentiable Rigorous Diffraction Interface Theory](https://doi.org/10.1364/CLEO_AT.2023.JTu2A.119)
 
 
 The EM algorithms used in this package are Rigorous Coupled Wave Analysis (RCWA) and Rigorous Diffraction
@@ -26,25 +27,32 @@ Please find the demo jupyter noteboks for more information.
 - `./Demo-02.ipynb`
 - `./Demo-03.ipynb`
 
+## Related Works
+
+- [Eigendecomposition-free inverse design of meta-optics devices](https://opg.optica.org/oe/fulltext.cfm?uri=oe-32-8-13986&id=548527)
+- [Inverse Design of Photonic Structures Using Automatic Differentiable Rigorous Diffraction Interface Theory](https://opg.optica.org/abstract.cfm?uri=CLEO_AT-2023-JTu2A.119)
+
 ## Citation
 
 The package contains the work from multiple publicatinos. Please consider to cithe the following paper for the R-DIT solver:
 
 ```
-Y. Huang, H. Tang, B. Zheng, Y. Dong, M. Haerinia, V. Podolskiy, and H. Zhang, "Inverse Design of Photonic Structures Using Automatic Differentiable Rigorous Diffraction Interface Theory," in CLEO 2023, Technical Digest Series (Optica Publishing Group, 2023), paper JTu2A.119.
+Yi Huang, Ziwei Zhu, Yunxi Dong, Hong Tang, Bowen Zheng, Viktor A. Podolskiy, and Hualiang Zhang, "Eigendecomposition-free inverse design of meta-optics devices," Opt. Express 32, 13986-13997 (2024)
 ```
 
 ```
-@inproceedings{Huang:23,
-author = {Yi Huang and Hong Tang and Bowen Zheng and Yunxi Dong and Mohammad Haerinia and Viktor A. Podolskiy and Hualiang Zhang},
-booktitle = {CLEO 2023},
-journal = {CLEO 2023},
-keywords = {Diffraction optics; Diffraction theory; Inverse design; Machine learning; Rigorous coupled wave analysis; Waveguide modes},
-pages = {JTu2A.119},
+@article{Huang:24,
+author = {Yi Huang and Ziwei Zhu and Yunxi Dong and Hong Tang and Bowen Zheng and Viktor A. Podolskiy and Hualiang Zhang},
+journal = {Opt. Express},
+keywords = {Diffraction theory; Finite-difference time-domain method; Inverse design; Machine learning; Neural networks; Refractive index},
+number = {8},
+pages = {13986--13997},
 publisher = {Optica Publishing Group},
-title = {Inverse Design of Photonic Structures Using Automatic Differentiable Rigorous Diffraction Interface Theory},
-year = {2023},
-url = {https://opg.optica.org/abstract.cfm?URI=CLEO_AT-2023-JTu2A.119},
-doi = {10.1364/CLEO_AT.2023.JTu2A.119},
-}
-```
+title = {Eigendecomposition-free inverse design of meta-optics devices},
+volume = {32},
+month = {Apr},
+year = {2024},
+url = {https://opg.optica.org/oe/abstract.cfm?URI=oe-32-8-13986},
+doi = {10.1364/OE.514347},
+abstract = {The inverse design of meta-optics has received much attention in recent years. In this paper, we propose a GPU-friendly inverse design framework based on improved eigendecomposition-free rigorous diffraction interface theory, which offers up to 16.2\&\#x2009;\&\#x00D7; speedup over the traditional inverse design based on rigorous coupled-wave analysis. We further improve the framework\&\#x2019;s flexibility by introducing a hybrid parameterization combining neural-implicit and traditional shape optimization. We demonstrate the effectiveness of our framework through intricate tasks, including the inverse design of reconfigurable free-form meta-atoms.},
+}`
