@@ -1,6 +1,7 @@
 """ This file defines the material class to manage all materials. """
 import warnings
 import numpy as np
+import torch
 
 from .constants import frequnit_dict, lengthunit_dict, C_0
 
@@ -32,7 +33,7 @@ class MaterialClass():
         if dielectric_dispersion is False:
             self._isdiedispersive = False
             self._loadeder = None
-            self._er = permittivity
+            self._er = torch.tensor(permittivity)
         else:
             self._isdiedispersive = True
             if user_dielectric_file is not None:
@@ -43,7 +44,7 @@ class MaterialClass():
                 raise ValueError(
                     'File path of the dispersive data must be defined!')
 
-        self._ur = permeability
+        self._ur = torch.tensor(permeability)
 
     @staticmethod
     def _check_header(filename):
@@ -212,5 +213,5 @@ class MaterialClass():
         self._fitted_data['fitted_crv1'] = pe1
         self._fitted_data['fitted_crv2'] = pe2
 
-        self._er = pe1(lam0) - 1j*pe2(lam0)
+        self._er = torch.tensor(pe1(lam0) - 1j*pe2(lam0))
 

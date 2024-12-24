@@ -262,8 +262,8 @@ class Cell3D():
         print("------------------------------------")
         print("layer # Reflection")
         print(f"\tmaterial name: {self.layer_manager.ref_material_name}")
-        print(f"\tpermittivity: {torch.mean(self.er1)}")
-        print(f"\tpermeability: {torch.mean(self.ur1)}")
+        print(f"\tpermittivity: {self.er1}")
+        print(f"\tpermeability: {self.ur1}")
 
         # structure layers
         print("------------------------------------")
@@ -278,8 +278,8 @@ class Cell3D():
 
         print("layer # Transmission")
         print(f"\tmaterial name: {self.layer_manager.trn_material_name}")
-        print(f"\tpermittivity: {torch.mean(self.er2)}")
-        print(f"\tpermeability: {torch.mean(self.ur2)}")
+        print(f"\tpermittivity: {self.er2}")
+        print(f"\tpermeability: {self.ur2}")
         print("------------------------------------")
 
     def get_layout(self) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -299,32 +299,29 @@ class Cell3D():
         """er1.
         attribute.
         """
-        return torch.tensor(self._matlib[self.layer_manager.ref_material_name].er,
-                            dtype=self.tcomplex, device=self.device)
+        return self._matlib[self.layer_manager.ref_material_name].er.to(self.tcomplex).detach().clone().to(self.device)
 
     @property
     def er2(self):
         """er2.
         attribute.
         """
-        return torch.tensor(self._matlib[self.layer_manager.trn_material_name].er,
-                            dtype=self.tcomplex, device=self.device)
+        return self._matlib[self.layer_manager.trn_material_name].er.to(self.tcomplex).detach().clone().to(self.device)
+
 
     @property
     def ur1(self):
         """ur1.
         attribute.
         """
-        return torch.tensor(self._matlib[self.layer_manager.ref_material_name].ur,
-                            dtype=self.tcomplex, device=self.device)
+        return self._matlib[self.layer_manager.ref_material_name].ur.to(self.tcomplex).detach().clone().to(self.device)
 
     @property
     def ur2(self):
         """ur2.
         attribute.
         """
-        return torch.tensor(self._matlib[self.layer_manager.trn_material_name].ur,
-                            dtype=self.tcomplex, device=self.device)
+        return self._matlib[self.layer_manager.trn_material_name].ur.to(self.tcomplex).detach().clone().to(self.device)
 
     def get_cell_type(self):
         if self.lattice_t1[0] == 0 and self.lattice_t1[1] != 0 and self.lattice_t2[0] != 0 and self.lattice_t2[1] == 0:
