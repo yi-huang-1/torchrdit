@@ -125,7 +125,6 @@ class FourierBaseSover(Cell3D):
 
         self.src = {}
 
-        self.n_solve = 0
         self.smat_layers = {}
 
         # solver mode: [eval] [opt]
@@ -359,12 +358,14 @@ class FourierBaseSover(Cell3D):
 
                 elif self.layer_manager.layers[n_layer].is_homogeneous is True:
                     if self.layer_manager.layers[n_layer].is_dispersive is True:
-                        toeplitz_er = torch.tensor(
-                            self._matlib[self.layer_manager.layers[n_layer].material_name].er,
-                            device=self.device).to(self.tcomplex)
-                        toeplitz_ur = torch.tensor(
-                            self._matlib[self.layer_manager.layers[n_layer].material_name].ur,
-                            device=self.device).to(self.tcomplex)
+                        # toeplitz_er = torch.tensor(
+                        #     self._matlib[self.layer_manager.layers[n_layer].material_name].er,
+                        #     device=self.device).to(self.tcomplex)
+                        # toeplitz_ur = torch.tensor(
+                        #     self._matlib[self.layer_manager.layers[n_layer].material_name].ur,
+                        #     device=self.device).to(self.tcomplex)
+                        toeplitz_er = self._matlib[self.layer_manager.layers[n_layer].material_name].er.detach().to(self.tcomplex).to(self.device)
+                        toeplitz_ur = self._matlib[self.layer_manager.layers[n_layer].material_name].ur.detach().to(self.tcomplex).to(self.device)
 
                         # ===========================================================
                         toep_ur_er = toeplitz_ur * toeplitz_er
@@ -382,10 +383,12 @@ class FourierBaseSover(Cell3D):
 
                         # ===========================================================
                     else:
-                        toeplitz_er = torch.tensor(
-                            self._matlib[self.layer_manager.layers[n_layer].material_name].er, device=self.device)
-                        toeplitz_ur = torch.tensor(
-                            self._matlib[self.layer_manager.layers[n_layer].material_name].ur, device=self.device)
+                        # toeplitz_er = torch.tensor(
+                        #     self._matlib[self.layer_manager.layers[n_layer].material_name].er, device=self.device)
+                        # toeplitz_ur = torch.tensor(
+                        #     self._matlib[self.layer_manager.layers[n_layer].material_name].ur, device=self.device)
+                        toeplitz_er = self._matlib[self.layer_manager.layers[n_layer].material_name].er.detach().clone().to(self.device)
+                        toeplitz_ur = self._matlib[self.layer_manager.layers[n_layer].material_name].ur.detach().clone().to(self.device)
                         # ===========================================================
                         toep_ur_er = toeplitz_ur * toeplitz_er
                         conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er)
@@ -429,6 +432,7 @@ class FourierBaseSover(Cell3D):
 
             # Update global scattering matrix
             smat_global = redhstar(smat_global, self.smat_layers[n_layer])
+
         # ============================================================================
         # End Main Loop
         # ============================================================================
@@ -492,6 +496,8 @@ class FourierBaseSover(Cell3D):
         smat_trn['S22'] = - inv_mat_a_2_mat_b_2
 
         smat_global = redhstar(smat_global, smat_trn)
+
+        smat_structure = {key: value.detach().clone() for key, value in smat_global.items()}
 
 
         # Compute polarization vector
@@ -571,6 +577,8 @@ class FourierBaseSover(Cell3D):
 
         # Store output data
         data = {}
+        data['smat_structure'] = smat_structure 
+        data['smat_layers'] = self.smat_layers
         data['rx'] = torch.reshape(ref_field_x, shape=(
             self.n_freqs, self.kdim[0], self.kdim[1])).transpose(dim0=-2, dim1=-1)
         data['ry'] = torch.reshape(ref_field_y, shape=(
@@ -895,6 +903,8 @@ class FourierBaseSover(Cell3D):
 
             smat_global = redhstar(smat_global, smat_trn)
 
+            smat_structure = {key: value.detach().clone() for key, value in smat_global.items()}
+
 
             # Compute polarization vector
             norm_vec = torch.tensor(
@@ -928,7 +938,6 @@ class FourierBaseSover(Cell3D):
             delta[(self.kdim[1] // 2) * self.kdim[0] +(self.kdim[0] // 2)] = 1
             esrc = torch.cat((pol_vec[0] * delta,
                              pol_vec[1] * delta), dim=0)
-
 
             # Calculate source vectors
             csrc = tsolve(mat_w_ref, esrc.unsqueeze(-1))
@@ -1030,6 +1039,8 @@ class FourierBaseSover(Cell3D):
                 
             
                 # raise RuntimeError("Debug")
+        data['smat_structure'] = smat_structure 
+        data['smat_layers'] = self.smat_layers
         data['kzref'] = mat_kz_ref
         data['kztrn'] = mat_kz_trn
         data['kinc'] = self.kinc
@@ -1058,15 +1069,12 @@ class FourierBaseSover(Cell3D):
         self.src = source
         self.is_solve_batch = is_sovle_batch
 
-        if self.n_solve == 0:
-            self._pre_solve()
+        self._pre_solve()
 
         if self.is_solve_batch is True:
             data = self._solve_batch_frequencies()
         else:
             data = self._solve_single_frequency()
-
-        self.n_solve = self.n_solve + 1
 
         return data
 
@@ -1120,7 +1128,6 @@ class FourierBaseSover(Cell3D):
                     # if not homogenous material, must be with a pattern.
                     # if no pattern assigned before solving, the material will be set as homogeneous
                     self.layer_manager.replace_layer_to_homogeneous(layer_index=n_layer)
-                    self.n_solve = 0
 
                     print(
                         f"Warning: Layer {n_layer} has no pattern assigned, and was changed to homogeneous")
@@ -1176,7 +1183,6 @@ class FourierBaseSover(Cell3D):
 
         if self.layer_manager.layers[layer_index].is_homogeneous:
             self.layer_manager.replace_layer_to_grating(layer_index=layer_index)
-            self.n_solve = 0
 
         er_bg = self._get_bg(layer_index=layer_index, param='er')
 
@@ -1190,7 +1196,86 @@ class FourierBaseSover(Cell3D):
         if bg_material == 'air':
             self.layer_manager.layers[layer_index].ermat = 1 + (er_bg - 1) * mask_format
         else:
-            self.layer_manager.layers[layer_index].ermat = torch.tensor(self._matlib[bg_material].er, device=self.device)[:, None, None] * (1 - mask_format) + \
+            if self._matlib[bg_material].er.ndim == 0:
+                self.layer_manager.layers[layer_index].ermat = self._matlib[bg_material].er * (1 - mask_format) + \
+                    (er_bg - 1) * mask_format
+            else:
+                self.layer_manager.layers[layer_index].ermat = self._matlib[bg_material].er[:, None, None] * (1 - mask_format) + \
+                (er_bg - 1) * mask_format
+        if set_grad is True:
+            self.layer_manager.layers[layer_index].ermat.requires_grad = True
+        
+        if method == 'Analytical':
+            if self.cell_type != CellType.Cartesian:
+                print(f"method [{method}] does not support the cell type [{self.cell_type}], will use FFT instead.")
+                method = 'FFT'
+        elif method != 'Analytical' and method != 'FFT':
+            method = 'FFT'
+
+        self.layer_manager.gen_toeplitz_matrix(
+            layer_index=layer_index, n_harmonic1=self.kdim[0], n_harmonic2=self.kdim[1], param='er', method=method)
+
+        # permeability always 1.0 for current version
+        # currently no support for magnetic materials
+        self.layer_manager.layers[layer_index].urmat = self._get_bg(
+            layer_index=layer_index, param='ur')
+        self.layer_manager.gen_toeplitz_matrix(
+            layer_index=layer_index, n_harmonic1=self.kdim[0], n_harmonic2=self.kdim[1], param='ur', method=method)
+
+        
+        if self.is_use_FFF is True: 
+            _, _, self.n_xx, self.n_yy, self.n_xy = self._calculate_nv_field(mask=self.layer_manager.layers[layer_index].mask_format.squeeze())
+            self.reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[layer_index].ermat,
+                                                          nharmonic_1=self.kdim[0],
+                                                            nharmonic_2=self.kdim[1],
+                                                                        method='FFT')
+
+    def update_er_with_mask_extern_NV(self,
+                            mask: torch.Tensor,
+                            nv_vectors: tuple,
+                            layer_index: int,
+                            bg_material: str = 'air',
+                            method: str = 'FFT',
+                            set_grad: bool = False) -> None:
+        """update_er_with_mask.
+
+        To update the layer permittivity (or permeability) distribution in a specified layer.
+
+        Args:
+            mask (torch.Tensor): mask, the new binary pattern mask to be updated.
+            layer_index (int): layer_index
+            bg_material (str): bg_material, the background material of the pattern (mask == 0).
+            method (str): method of computing Toeplitz matrix. ['FFT': for all cell type; 'Analytical': only for Cartesian]
+            set_grad (bool): set_grad, manually set the requires_grad True of the pattern.
+
+        Returns:
+            None:
+        """
+
+        ndim1, ndim2 = mask.size()
+        if (ndim1 != self.rdim[0]) or (ndim2 != self.rdim[1]):
+            raise ValueError("Mask dims don't match!")
+
+        if self.layer_manager.layers[layer_index].is_homogeneous:
+            self.layer_manager.replace_layer_to_grating(layer_index=layer_index)
+
+        er_bg = self._get_bg(layer_index=layer_index, param='er')
+
+        if self.layer_manager.layers[layer_index].is_dispersive is False:
+            mask_format = mask
+        else:
+            mask_format = mask.unsqueeze(-3)
+
+        self.layer_manager.layers[layer_index].mask_format = mask_format.to(self.tfloat)
+
+        if bg_material == 'air':
+            self.layer_manager.layers[layer_index].ermat = 1 + (er_bg - 1) * mask_format
+        else:
+            if self._matlib[bg_material].er.ndim == 0:
+                self.layer_manager.layers[layer_index].ermat = self._matlib[bg_material].er * (1 - mask_format) + \
+                    (er_bg - 1) * mask_format
+            else:
+                self.layer_manager.layers[layer_index].ermat = self._matlib[bg_material].er * (1 - mask_format) + \
                 (er_bg - 1) * mask_format
 
         if set_grad is True:
@@ -1208,15 +1293,27 @@ class FourierBaseSover(Cell3D):
 
         # permeability always 1.0 for current version
         # currently no support for magnetic materials
-        if self.n_solve == 0:
-            self.layer_manager.layers[layer_index].urmat = self._get_bg(
-                layer_index=layer_index, param='ur')
-            self.layer_manager.gen_toeplitz_matrix(
-                layer_index=layer_index, n_harmonic1=self.kdim[0], n_harmonic2=self.kdim[1], param='ur', method=method)
+        self.layer_manager.layers[layer_index].urmat = self._get_bg(
+            layer_index=layer_index, param='ur')
+        self.layer_manager.gen_toeplitz_matrix(
+            layer_index=layer_index, n_harmonic1=self.kdim[0], n_harmonic2=self.kdim[1], param='ur', method=method)
 
         
         if self.is_use_FFF is True: 
-            _, _, self.n_xx, self.n_yy, self.n_xy = self._calculate_nv_field(mask=self.layer_manager.layers[layer_index].mask_format.squeeze())
+            norm_vec_x = nv_vectors[0]
+            norm_vec_y = nv_vectors[1]
+            self.n_xx = self.layer_manager._gen_toeplitz2d(norm_vec_x * norm_vec_x,
+                                                   nharmonic_1=self.kdim[0],
+                                                   nharmonic_2=self.kdim[1],
+                                                     method='FFT')
+            self.n_yy = self.layer_manager._gen_toeplitz2d(norm_vec_y * norm_vec_y,
+                                                   nharmonic_1=self.kdim[0],
+                                                   nharmonic_2=self.kdim[1],
+                                                     method='FFT')
+            self.n_xy = self.layer_manager._gen_toeplitz2d(norm_vec_x * norm_vec_y,
+                                                   nharmonic_1=self.kdim[0],
+                                                   nharmonic_2=self.kdim[1],
+                                                     method='FFT')
             self.reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[layer_index].ermat,
                                                           nharmonic_1=self.kdim[0],
                                                             nharmonic_2=self.kdim[1],
