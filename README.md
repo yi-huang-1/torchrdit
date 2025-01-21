@@ -50,7 +50,7 @@ Please find the demo jupyter noteboks for more information.
 - `examples/Demo-03.py`
 - `examples/Demo-04.ipynb`
 
---
+---
 
 ## Related Works
 
@@ -95,7 +95,7 @@ This project is licensed under the GPL-3.0 License. See the [LICENSE](https://ww
 
 ## Feedback and Support
 
-If you have any questions, issues, or suggestions, please open an [issue](https://github.com/yi-huang-1/torchrdit/issues) or email us at `yi_huang@student.uml.edu`.
+If you have any questions, issues, or suggestions, please open an [issue](https://github.com/yi-huang-1/torchrdit/issues) or email us at `yi_huang at student dot uml dot edu`.
 
 ---
 
