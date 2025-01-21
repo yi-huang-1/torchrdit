@@ -3,8 +3,19 @@
 ![PyPI - Version](https://img.shields.io/pypi/v/torchrdit)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/torchrdit)
 ![PyPI - License](https://img.shields.io/pypi/l/torchrdit)
+[![Upload Python Package](https://github.com/yi-huang-1/torchrdit/actions/workflows/python-publish.yml/badge.svg)](https://github.com/yi-huang-1/torchrdit/actions/workflows/python-publish.yml)
 
-`TorchRDIT` is a software package for the paper:
+`TorchRDIT` is an advanced software package designed for the inverse design of meta-optics devices, utilizing an eigendecomposition-free implementation of Rigorous Diffraction Interface Theory (R-DIT). It provides a GPU-accelerated and fully differentiable framework powered by PyTorch, enabling the efficient optimization of photonic structures.
+
+This framework achieves up to 16.2× speedup compared to traditional inverse design methods based on Rigorous Coupled-Wave Analysis (RCWA). By integrating differentiable R-DIT with topology optimization techniques and neural networks (e.g., SIREN), TorchRDIT facilitates the design of complex meta-optics devices, including:
+
+- Parameter-constrained and free-form meta-atoms.
+- Reconfigurable photonic structures using optical phase-change materials.
+- High-performance meta-lenses and beam deflectors.
+
+With its focus on computational efficiency and flexibility, TorchRDIT lays the foundation for next-generation metasurface design workflows, offering capabilities for the creation of intricate and multifunctional photonic devices.
+
+`TorchRDIT` is used for the papers:
 
 - [Eigendecomposition-free inverse design of meta-optics devices](https://opg.optica.org/oe/fulltext.cfm?uri=oe-32-8-13986&id=548527)
 - [Inverse Design of Photonic Structures Using Automatic Differentiable Rigorous Diffraction Interface Theory](https://doi.org/10.1364/CLEO_AT.2023.JTu2A.119)
@@ -94,10 +105,3 @@ This project is licensed under the GPL-3.0 License. See the [LICENSE](https://ww
 ## Feedback and Support
 
 If you have any questions, issues, or suggestions, please open an [issue](https://github.com/yi-huang-1/torchrdit/issues) or email us at `yi_huang at student dot uml dot edu`.
-
----
-
-## Release History
-
-- **0.1.0**
-  - Initial release.
