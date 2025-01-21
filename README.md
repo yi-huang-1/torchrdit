@@ -13,9 +13,7 @@
 
 ## Features
 
-The EM algorithms used in this package are Rigorous Coupled Wave Analysis (RCWA) and Rigorous Diffraction
-Interface Theory (R-DIT). The solver is developed on an automatic differentiable
-framework (PyTorch) and is fully differentiable for more advanced applications.
+The EM algorithms used in this package are **Rigorous Diffraction Interface Theory (R-DIT)** and **Rigorous Coupled Wave Analysis (RCWA)** . The solver is developed on an automatic differentiable framework (PyTorch) and is fully differentiable for more advanced applications.
 
 ---
 
