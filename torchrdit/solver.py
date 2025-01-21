@@ -3,6 +3,7 @@ from typing import Union, Optional
 
 import numpy as np
 import torch
+import math
 
 from torch.linalg import inv as tinv
 from torch.linalg import solve as tsolve
@@ -757,12 +758,14 @@ class FourierBaseSover(Cell3D):
 
                     elif self.layer_manager.layers[n_layer].is_homogeneous is True:
                         if self.layer_manager.layers[n_layer].is_dispersive is True:
-                            toeplitz_er = torch.tensor(
-                                self._matlib[self.layer_manager.layers[n_layer].material_name].er,
-                                device=self.device).to(self.tcomplex)[ind_freq]
-                            toeplitz_ur = torch.tensor(
-                                self._matlib[self.layer_manager.layers[n_layer].material_name].ur,
-                                device=self.device).to(self.tcomplex)
+                            # toeplitz_er = torch.tensor(
+                            #     self._matlib[self.layer_manager.layers[n_layer].material_name].er,
+                            #     device=self.device).to(self.tcomplex)[ind_freq]
+                            # toeplitz_ur = torch.tensor(
+                            #     self._matlib[self.layer_manager.layers[n_layer].material_name].ur,
+                            #     device=self.device).to(self.tcomplex)
+                            toeplitz_er = self._matlib[self.layer_manager.layers[n_layer].material_name].er.detach().to(self.tcomplex).to(self.device)[ind_freq]
+                            toeplitz_ur = self._matlib[self.layer_manager.layers[n_layer].material_name].ur.detach().to(self.tcomplex).to(self.device)[ind_freq]
 
                             
                             # ===========================================================
@@ -780,10 +783,12 @@ class FourierBaseSover(Cell3D):
 
                             # ===========================================================
                         else:
-                            toeplitz_er = torch.tensor(
-                                self._matlib[self.layer_manager.layers[n_layer].material_name].er, device=self.device)
-                            toeplitz_ur = torch.tensor(
-                                self._matlib[self.layer_manager.layers[n_layer].material_name].ur, device=self.device)
+                            # toeplitz_er = torch.tensor(
+                            #     self._matlib[self.layer_manager.layers[n_layer].material_name].er, device=self.device)
+                            # toeplitz_ur = torch.tensor(
+                            #     self._matlib[self.layer_manager.layers[n_layer].material_name].ur, device=self.device)
+                            toeplitz_er = self._matlib[self.layer_manager.layers[n_layer].material_name].er.detach().clone().to(self.device)
+                            toeplitz_ur = self._matlib[self.layer_manager.layers[n_layer].material_name].ur.detach().clone().to(self.device)
                             # ===========================================================
                             toep_ur_er = toeplitz_ur * toeplitz_er
                             conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er)
@@ -1415,10 +1420,11 @@ class FourierBaseSover(Cell3D):
             if self.layer_manager.layers[layer_index].is_dispersive is True:
                 material_name = self.layer_manager.layers[layer_index].material_name
                 if param == 'er':
-                    ret_mat = torch.tensor(self._matlib[material_name].er).unsqueeze(1)\
-                    .unsqueeze(1).repeat(1, self.rdim[0], self.rdim[1]).to(self.device).to(self.tcomplex)
+                    # ret_mat = torch.tensor(self._matlib[material_name].er).unsqueeze(1)\
+                    # .unsqueeze(1).repeat(1, self.rdim[0], self.rdim[1]).to(self.device).to(self.tcomplex)
+                    ret_mat = self._matlib[material_name].er.detach().clone().unsqueeze(1).unsqueeze(1).repeat(1, self.rdim[0], self.rdim[1]).to(self.device).to(self.tcomplex)
                 elif param == 'ur':
-                    param_val = self._matlib[material_name].ur
+                    param_val = self._matlib[material_name].ur.detach().clone()
                     ret_mat = param_val * torch.ones(size=(self.rdim[0], self.rdim[1]),
                                                   dtype=self.tcomplex, device=self.device)
                 else:
@@ -1427,9 +1433,9 @@ class FourierBaseSover(Cell3D):
             else:
                 material_name = self.layer_manager.layers[layer_index].material_name
                 if param == 'er':
-                    param_val = self._matlib[material_name].er
+                    param_val = self._matlib[material_name].er.detach().clone()
                 elif param == 'ur':
-                    param_val = self._matlib[material_name].ur
+                    param_val = self._matlib[material_name].ur.detach().clone()
                 else:
                     raise ValueError(f"Input parameter [{param}] is illeagal.")
 
@@ -1676,13 +1682,13 @@ class RDITSolverDouble(FourierBaseSover):
             if (irdit_order % 2) == 0:  # even orders
                 p_fcoef = p_fcoef @ q_mat_i
                 q_fcoef = q_fcoef @ p_mat_i
-                fac = (delta_h.to(self.tfloat)**irdit_order / np.math.factorial(irdit_order))
+                fac = (delta_h.to(self.tfloat)**irdit_order / math.factorial(irdit_order))
                 tmat_a_i = tmat_a_i + fac * p_fcoef
                 tmat_d_i = tmat_d_i + fac * q_fcoef
             else:  # odd orders
                 p_fcoef = p_fcoef @ p_mat_i
                 q_fcoef = q_fcoef @ q_mat_i
-                fac = (delta_h.to(self.tfloat)**irdit_order / np.math.factorial(irdit_order))
+                fac = (delta_h.to(self.tfloat)**irdit_order / math.factorial(irdit_order))
                 tmat_b_i = tmat_b_i + fac * p_fcoef
                 tmat_c_i = tmat_c_i + fac * q_fcoef
 
@@ -1754,13 +1760,13 @@ class RDITSolverDouble(FourierBaseSover):
             if (irdit_order % 2) == 0:  # even orders
                 p_fcoef = p_fcoef @ q_mat_i
                 q_fcoef = q_fcoef @ p_mat_i
-                fac = (delta_h.to(self.tfloat)**irdit_order / np.math.factorial(irdit_order))
+                fac = (delta_h.to(self.tfloat)**irdit_order / math.factorial(irdit_order))
                 tmat_a_i = tmat_a_i + fac * p_fcoef
                 tmat_d_i = tmat_d_i + fac * q_fcoef
             else:  # odd orders
                 p_fcoef = p_fcoef @ p_mat_i
                 q_fcoef = q_fcoef @ q_mat_i
-                fac = (delta_h.to(self.tfloat)**irdit_order / np.math.factorial(irdit_order))
+                fac = (delta_h.to(self.tfloat)**irdit_order / math.factorial(irdit_order))
                 tmat_b_i = tmat_b_i + fac * p_fcoef
                 tmat_c_i = tmat_c_i + fac * q_fcoef
 

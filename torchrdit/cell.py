@@ -1,5 +1,5 @@
 """ This file defines classes for models to be simulated. """
-from typing import Callable, Tuple, Union, Any
+from typing import Callable, Tuple, Union, List, Any
 
 import numpy as np
 import torch
@@ -34,9 +34,9 @@ class Cell3D():
 
     def __init__(self,
                  lengthunit: str = 'um',  # length unit used in the solver
-                 rdim: list = [512, 512],  # dimensions in real space: (H, W)
-                 kdim: list = [3,3],  # dimensions in k space: (kH, kW)
-                 materiallist: list = [],  # list of materials
+                 rdim: List[int] = [512, 512],  # dimensions in real space: (H, W)
+                 kdim: List[int] = [3,3],  # dimensions in k space: (kH, kW)
+                 materiallist: List[MaterialClass] = [],  # list of materials
                  t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
                  t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
                  device: Union[str, torch.device] = 'cpu') -> None:
@@ -50,18 +50,17 @@ class Cell3D():
             raise ValueError(f"Invalid input rdim [{rdim}]")
         self.rdim = rdim
 
-        if kdim is None:
-            self.kdim = [3,3]
-        else:
-            self.kdim = kdim
+        if isinstance(kdim, list) is False or len(kdim) != 2:
+            raise ValueError(f"Invalid input kdim [{kdim}]")
+        self.kdim = kdim
 
         if t1 is None:
-            self.lattice_t1 = self._add_lattice_vectors(torch.tensor([1.0, 0.0]))
+            raise ValueError(f"Invalid input t1 [{t1}]")
         else:
             self.lattice_t1 = self._add_lattice_vectors(t1)
 
         if t2 is None:
-            self.lattice_t2 = self._add_lattice_vectors(torch.tensor([0.0, 1.0]))
+            raise ValueError(f"Invalid input t2 [{t2}]")
         else:
             self.lattice_t2 = self._add_lattice_vectors(t2)
             
@@ -322,6 +321,13 @@ class Cell3D():
         attribute.
         """
         return self._matlib[self.layer_manager.trn_material_name].ur.to(self.tcomplex).detach().clone().to(self.device)
+
+    @property
+    def lengthunit(self):
+        """lengthunit.
+        attribute.
+        """
+        return self._lenunit
 
     def get_cell_type(self):
         if self.lattice_t1[0] == 0 and self.lattice_t1[1] != 0 and self.lattice_t2[0] != 0 and self.lattice_t2[1] == 0:

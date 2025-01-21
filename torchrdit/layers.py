@@ -12,7 +12,16 @@ class Layer(metaclass=ABCMeta):
     """
 
     @abstractmethod
-    def __init__(self, thickness = 0.0, material_name = '', is_optimize = False, **kwargs) -> None:
+    def __init__(self, thickness: float = 0.0, material_name: str = '', is_optimize: bool = False, **kwargs) -> None:
+        """
+        Initialize the Layer instance.
+
+        Args:
+            thickness (float): Thickness of the layer.
+            material_name (str): Name of the material.
+            is_optimize (bool): Flag indicating if the layer is optimized.
+            **kwargs: Additional keyword arguments.
+        """
         self._thickness = thickness
         self._material_name = material_name
         self._is_homogeneous = True
@@ -27,100 +36,82 @@ class Layer(metaclass=ABCMeta):
         self.mask_format = None
 
     @abstractmethod
-    def __str__(self) -> None:
+    def __str__(self) -> str:
+        """Return a string representation of the layer."""
         pass
 
     @property
-    def thickness(self):
-        """thickness.
-        returns thickness of the layer.
-        """
+    def thickness(self) -> float:
+        """Return the thickness of the layer."""
         return self._thickness
 
     @thickness.setter
-    def thickness(self, thickness):
-        """thickness.
-        update thickness.
+    def thickness(self, thickness: float):
+        """Update the thickness of the layer.
 
         Args:
-            thickness:
+            thickness (float): Thickness of the layer.
         """
         self._thickness = thickness
 
     @property
-    def material_name(self):
-        """material_name.
-        returns material name.
-        """
+    def material_name(self) -> str:
+        """Return the name of the material."""
         return self._material_name
 
     @material_name.setter
-    def material_name(self, material_name):
-        """material_name.
-        updates material name.
+    def material_name(self, material_name: str):
+        """Update the name of the material.
 
         Args:
-            material_name:
+            material_name (str): Name of the material.
         """
         self._material_name = material_name
 
-    # read-only property
     @property
-    def is_homogeneous(self):
-        """is_homogeneous.
-        returns whether homogenous.
-        """
+    def is_homogeneous(self) -> bool:
+        """Return the homogeneity flag of the layer."""
         return self._is_homogeneous
 
     @property
-    def is_dispersive(self):
-        """is_dispersive.
-        returns whether dispersive.
-        """
+    def is_dispersive(self) -> bool:
+        """Return the dispersive flag of the layer."""
         return self._is_dispersive
 
     @is_dispersive.setter
-    def is_dispersive(self, is_dispersive):
-        """is_dispersive.
-        set material dispersive.
+    def is_dispersive(self, is_dispersive: bool):
+        """Set the dispersive flag of the layer.
 
         Args:
-            is_dispersive:
+            is_dispersive (bool): Dispersive flag.
         """
         self._is_dispersive = is_dispersive
 
     @property
-    def is_optimize(self):
-        """is_optimize.
-        returns whether layer is to be optimized.
-        """
+    def is_optimize(self) -> bool:
+        """Return the optimization flag of the layer."""
         return self._is_optimize
 
     @is_optimize.setter
-    def is_optimize(self, is_optimize):
-        """is_optimize.
-        set layer to be optimized.
+    def is_optimize(self, is_optimize: bool):
+        """Set the optimization flag of the layer.
 
         Args:
-            is_optimize:
+            is_optimize (bool): Optimization flag.
         """
         self._is_optimize = is_optimize
 
     @property
-    def is_solved(self):
-        """is_solved.
-
-        returns whether layer is solved.
-        """
+    def is_solved(self) -> bool:
+        """Return the solved flag of the layer."""
         return self._is_solved
 
     @is_solved.setter
-    def is_solved(self, is_solved):
-        """is_solved.
-        set layer as solved.
+    def is_solved(self, is_solved: bool):
+        """Set the solved flag of the layer.
 
         Args:
-            is_solved:
+            is_solved (bool): Solved flag.
         """
         self._is_solved = is_solved
 
@@ -185,27 +176,46 @@ class LayerBuilder(metaclass=ABCMeta):
 
 class HomogeneousLayer(Layer):
     """HomogeneousLayer.
-    This class defines homogeneous layer.
+    This class represents a homogeneous layer.
     """
 
-    def __init__(self, thickness = 0.0, material_name = '', is_optimize = False) -> None:
-        super().__init__(thickness=thickness, material_name=material_name, is_optimize=is_optimize)
+    def __init__(self, thickness: float = 0.0, material_name: str = '', is_optimize: bool = False, **kwargs) -> None:
+        """
+        Initialize the HomogeneousLayer instance.
+
+        Args:
+            thickness (float): Thickness of the layer.
+            material_name (str): Name of the material.
+            is_optimize (bool): Flag indicating if the layer is optimized.
+            **kwargs: Additional keyword arguments.
+        """
+        super().__init__(thickness, material_name, is_optimize, **kwargs)
 
     def __str__(self) -> str:
-        return "HomogeneousLayer"
+        """Return a string representation of the homogeneous layer."""
+        return f"HomogeneousLayer(thickness={self._thickness}, material_name={self._material_name})"
 
-class GratingLayer(HomogeneousLayer):
+class GratingLayer(Layer):
     """GratingLayer.
-
-    This class defines grating layer.
+    This class represents a grating layer.
     """
 
-    def __init__(self, thickness=0, material_name='', is_optimize=False) -> None:
-        super().__init__(thickness, material_name, is_optimize)
+    def __init__(self, thickness: float = 0.0, material_name: str = '', is_optimize: bool = False, **kwargs) -> None:
+        """
+        Initialize the GratingLayer instance.
+
+        Args:
+            thickness (float): Thickness of the layer.
+            material_name (str): Name of the material.
+            is_optimize (bool): Flag indicating if the layer is optimized.
+            **kwargs: Additional keyword arguments.
+        """
+        super().__init__(thickness, material_name, is_optimize, **kwargs)
         self._is_homogeneous = False
 
     def __str__(self) -> str:
-        return "GratingLayer"
+        """Return a string representation of the grating layer."""
+        return f"GratingLayer(thickness={self._thickness}, material_name={self._material_name})"
 
 class HomogeneousLayerBuilder(LayerBuilder):
     """HomogeneousLayerBuilder.
