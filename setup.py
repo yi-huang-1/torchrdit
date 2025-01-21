@@ -1,5 +1,9 @@
 import re
 from setuptools import setup, find_packages
+# read the contents of your README file
+from pathlib import Path
+this_directory = Path(__file__).parent
+long_description = (this_directory / "README.md").read_text()
 
 # Extract version from __init__.py
 def get_version():
@@ -41,4 +45,6 @@ setup(
         'Source': 'https://github.com/yi-huang-1/torchrdit',
         'Tracker': 'https://github.com/yi-huang-1/torchrdit/issues',
     },
+    long_description=long_description,
+    long_description_content_type='text/markdown'
 )
