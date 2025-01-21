@@ -7,4 +7,4 @@ from . import constants
 from . import logger
 from . import layers
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
