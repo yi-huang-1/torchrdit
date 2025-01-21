@@ -9,7 +9,7 @@
 - [Eigendecomposition-free inverse design of meta-optics devices](https://opg.optica.org/oe/fulltext.cfm?uri=oe-32-8-13986&id=548527)
 - [Inverse Design of Photonic Structures Using Automatic Differentiable Rigorous Diffraction Interface Theory](https://doi.org/10.1364/CLEO_AT.2023.JTu2A.119)
 
---
+---
 
 ## Features
 
@@ -27,7 +27,7 @@ You can install the package directly from [PyPI](https://pypi.org/project/torchr
 pip install torchrdit
 ```
 
---
+---
 
 ## Dependencies
 
@@ -39,15 +39,16 @@ pip install torchrdit
 - tqdm
 - scikit-image
 
---
+---
 
 ## Usage
 
 Please find the demo jupyter noteboks for more information.
 
-- `examples/Demo-01.ipynb`
-- `examples/Demo-02.ipynb`
-- `examples/Demo-03.ipynb`
+- `examples/Demo-01.py`
+- `examples/Demo-02.py`
+- `examples/Demo-03.py`
+- `examples/Demo-04.ipynb`
 
 --
 
@@ -56,7 +57,7 @@ Please find the demo jupyter noteboks for more information.
 - [Eigendecomposition-free inverse design of meta-optics devices](https://opg.optica.org/oe/fulltext.cfm?uri=oe-32-8-13986&id=548527)
 - [Inverse Design of Photonic Structures Using Automatic Differentiable Rigorous Diffraction Interface Theory](https://opg.optica.org/abstract.cfm?uri=CLEO_AT-2023-JTu2A.119)
 
---
+---
 
 ## Citation
 
