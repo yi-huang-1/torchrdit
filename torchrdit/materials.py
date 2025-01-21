@@ -22,7 +22,19 @@ class MaterialClass():
                  data_unit: str = 'thz',  # unit of frequency or wavelength
                  max_poly_fit_order: int = 10,  # max polynomial fit order
                  ) -> None:
+        """
+        Initialize the MaterialClass instance.
 
+        Args:
+            name (str): Name of the material.
+            permittivity (float): Relative permittivity.
+            permeability (float): Relative permeability.
+            dielectric_dispersion (bool): If the permittivity of material is dispersive.
+            user_dielectric_file (str): Path of the user-defined dispersive dielectric data.
+            data_format (str): Format of the user-defined data.
+            data_unit (str): Unit of frequency or wavelength.
+            max_poly_fit_order (int): Max polynomial fit order.
+        """
         self._name = name
         self._data_format = data_format
         self._data_unit = data_unit
@@ -49,8 +61,9 @@ class MaterialClass():
     @staticmethod
     def _check_header(filename):
         with open(filename, 'r') as file:
-            first_line = file.readline()
-            return not first_line.lstrip('-').replace('.', '', 1).isdigit()
+            first_line = file.readline().strip()
+            # Check if the first line contains non-numeric characters
+            return not all(char.isdigit() or char in '.- ' for char in first_line)
 
     @property
     def isdispersive_er(self):
@@ -178,7 +191,7 @@ class MaterialClass():
 
         if (lam_min < np.min(wl_list) or (lam_max > np.max(wl_list))):
             raise ValueError(
-                f"Required frequencies of the material [{self.name}] are out of range!")
+                f"Required frequencies of the material [{self.name}] are out of range [{np.min(wl_list):.2f}, {np.max(wl_list):.2f}]!")
 
         def wl_inds(ind_x, array):
             return np.abs(array - ind_x).argmin()
@@ -197,7 +210,7 @@ class MaterialClass():
         data_eps2 = disp_er_sorted[wl_ind1:wl_ind2, 2]
 
         with warnings.catch_warnings():
-            warnings.simplefilter('ignore', np.RankWarning)
+            warnings.simplefilter('ignore', np.exceptions.RankWarning)
             ze1 = np.polyfit(
                 wls, data_eps1, self._max_poly_order)
             ze2 = np.polyfit(

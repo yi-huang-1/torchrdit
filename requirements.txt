@@ -1,9 +1,7 @@
-pytorch
+torch==2.5.1
 torchvision
-numpy
 tensorboard
 matplotlib
 pytest
 pytest-xdist
 scikit-image
-opencv

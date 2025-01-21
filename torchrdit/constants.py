@@ -1,16 +1,17 @@
-"""Module defines some constants."""
-import numpy as np
+"""Module defines some constants used in the electromagnetic solver."""
 
+import numpy as np
 from enum import Enum, auto, unique
 
-# define constant values
-EPS_0 = 8.85418782e-12          # vacuum permittivity
-MU_0 = 1.25663706e-6            # vacuum permeability
-C_0 = 1 / np.sqrt(EPS_0 * MU_0)    # speed of light in vacuum
-ETA_0 = np.sqrt(MU_0 / EPS_0)      # vacuum impeadance
-Q_E = 1.602176634e-19           # fundamental charge
+# Physical constants
+EPS_0: float = 8.85418782e-12          # vacuum permittivity
+MU_0: float = 1.25663706e-6            # vacuum permeability
+C_0: float = 1 / np.sqrt(EPS_0 * MU_0)    # speed of light in vacuum
+ETA_0: float = np.sqrt(MU_0 / EPS_0)      # vacuum impedance
+Q_E: float = 1.602176634e-19           # fundamental charge
 
-frequnit_dict = {
+# Frequency unit conversion factors
+frequnit_dict: dict[str, float] = {
     'hz': 1.0,
     'khz': 1.0e3,
     'mhz': 1.0e6,
@@ -19,7 +20,8 @@ frequnit_dict = {
     'phz': 1.0e15,
 }
 
-lengthunit_dict = {
+# Length unit conversion factors
+lengthunit_dict: dict[str, float] = {
     'meter': 1.0,
     'km': 1.0e3,
     'dm': 1.0e-1,
@@ -33,6 +35,7 @@ lengthunit_dict = {
 
 @unique
 class Algorithm(Enum):
+    """Enumeration of supported algorithms."""
     RCWA = auto()
     RDIT = auto()
 
