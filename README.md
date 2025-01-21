@@ -12,20 +12,21 @@ framework (PyTorch) and is fully differentiable for more advanced applications.
 
 ## Dependencies
 
-- pytorch>=2.0.0
+- pytorch>=2.5.1
 - torchvision
 - numpy
 - tensorboard
 - matplotlib
 - tqdm
+- scikit-image
 
 ## Usage
 
 Please find the demo jupyter noteboks for more information.
 
-- `./Demo-01.ipynb`
-- `./Demo-02.ipynb`
-- `./Demo-03.ipynb`
+- `examples/Demo-01.ipynb`
+- `examples/Demo-02.ipynb`
+- `examples/Demo-03.ipynb`
 
 ## Related Works
 
