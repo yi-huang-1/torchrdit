@@ -19,6 +19,8 @@ With its focus on computational efficiency and flexibility, TorchRDIT lays the f
 
 - [Eigendecomposition-free inverse design of meta-optics devices](https://opg.optica.org/oe/fulltext.cfm?uri=oe-32-8-13986&id=548527)
 - [Inverse Design of Photonic Structures Using Automatic Differentiable Rigorous Diffraction Interface Theory](https://doi.org/10.1364/CLEO_AT.2023.JTu2A.119)
+- [A 3D-Printed Millimeter-Wave Free-Form Metasurface Based on Automatic Differentiable Inverse Design](https://doi.org/10.1109/IMS40175.2024.10600252)
+- [Differentiable Inverse Design of Free- form Meta-optics Using Multiplicative Filter Network](https://ieeexplore.ieee.org/abstract/document/10580810)
 
 ---
 
