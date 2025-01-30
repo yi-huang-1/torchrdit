@@ -97,10 +97,10 @@ src1rdit = dev1rdit.add_source(theta = 0 * degrees,
                  ptm = 0)
 
 # build hexagonal unit cell
-c1 = dev1rdit.shapes.generate_circle_mask(center=[0, b/2], radius=r)
-c2 = dev1rdit.shapes.generate_circle_mask(center=[0, -b/2], radius=r)
-c3 = dev1rdit.shapes.generate_circle_mask(center=[a/2, 0], radius=r)
-c4 = dev1rdit.shapes.generate_circle_mask(center=[-a/2, 0], radius=r)
+c1 = dev1rdit.get_circle_mask(center=[0, b/2], radius=r)
+c2 = dev1rdit.get_circle_mask(center=[0, -b/2], radius=r)
+c3 = dev1rdit.get_circle_mask(center=[a/2, 0], radius=r)
+c4 = dev1rdit.get_circle_mask(center=[-a/2, 0], radius=r)
 
 mask = dev1rdit.combine_masks(mask1=c1, mask2=c2, operation='union')
 mask = dev1rdit.combine_masks(mask1=mask, mask2=c3, operation='union')

@@ -252,11 +252,11 @@ class Cell3D():
         self.update_trn_material(trn_material='air')
         self.update_ref_material(ref_material='air')
 
-    def get_circle_mask(self, radius=20):
-        return self.shapes.generate_circle_mask(radius=radius)
+    def get_circle_mask(self, center=(0, 0), radius=20):
+        return self.shapes.generate_circle_mask(center=center, radius=radius)
     
-    def get_rectangle_mask(self, start_idx=(50, 50), end_idx=(100, 100)):
-        return self.shapes.generate_rectangle_mask(start_idx, end_idx)
+    def get_rectangle_mask(self, bottom_left=(50, 50), top_right=(100, 100)):
+        return self.shapes.generate_rectangle_mask(bottom_left=bottom_left, top_right=top_right)
     
     def get_polygon_mask(self, polygon_points, invert=False):
         return self.shapes.generate_polygon_mask(polygon_points, invert)
