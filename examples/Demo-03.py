@@ -4,16 +4,15 @@ GMRF with hexagonal unit cells with dispersive materials
 This example simulates the guided-mode resonance filter (GMRF) using RCWA with dispersive materials. The device is composed of a dispersive SiC hexagonal grating layer, a SiN waveguide layer and a fused silica substrate.
 """
 
-import torchrdit
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
-import time
+import os
 
 from torchrdit.solver import SolverConstructer
-from torchrdit.utils import operator_proj, create_material
-from tqdm import tqdm, trange
+from torchrdit.utils import create_material
 from torchrdit.constants import Algorithm, Precision
+from torchrdit.viz import display_fitted_permittivity
 
 # units, normalizing all units to 'um'
 um = 1
@@ -91,16 +90,25 @@ src1 = dev1_dispersive.add_source(theta = 0 * degrees,
 dev1_dispersive.get_layer_structure()
 
 # build hexagonal unit cell
-rsq = dev1_dispersive.XO ** 2 + (dev1_dispersive.YO - b / 2) ** 2
-mask = (rsq <= r ** 2)
-rsq = dev1_dispersive.XO ** 2 + (dev1_dispersive.YO + b / 2) ** 2
-mask = mask | (rsq <= r ** 2)
-rsq = (dev1_dispersive.XO - a / 2) ** 2 + dev1_dispersive.YO ** 2
-mask = mask | (rsq <= r ** 2)
-rsq = (dev1_dispersive.XO + a / 2) ** 2 + dev1_dispersive.YO ** 2
-mask = mask | (rsq <= r ** 2)
+c1 = dev1_dispersive.shapes.generate_circle_mask(center=[0, b/2], radius=r)
+c2 = dev1_dispersive.shapes.generate_circle_mask(center=[0, -b/2], radius=r)
+c3 = dev1_dispersive.shapes.generate_circle_mask(center=[a/2, 0], radius=r)
+c4 = dev1_dispersive.shapes.generate_circle_mask(center=[-a/2, 0], radius=r)
+
+mask = dev1_dispersive.combine_masks(mask1=c1, mask2=c2, operation='union')
+mask = dev1_dispersive.combine_masks(mask1=mask, mask2=c3, operation='union')
+mask = dev1_dispersive.combine_masks(mask1=mask, mask2=c4, operation='union')
+
+mask = 1 - mask
 
 dev1_dispersive.update_er_with_mask(mask=mask, layer_index=0, set_grad = True)
+
+fig, axes = plt.subplots()
+display_fitted_permittivity(dev1_dispersive, fig_ax=axes)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+output_filename = os.path.join(script_dir, f"{os.path.basename(__file__)}_fitted_dispersive.png")
+plt.savefig(output_filename, dpi=300)
+plt.close(fig)
 
 data = dev1_dispersive.solve(src1)# Example 1 - GMRF with hexagonal unit cells
 

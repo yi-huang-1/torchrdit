@@ -10,6 +10,10 @@ from .constants import lengthunit_dict
 from .logger import Logger
 from .layers import LayerManager
 
+from skimage.draw import disk, rectangle, polygon
+from skimage.measure import grid_points_in_poly
+from matplotlib.path import Path
+
 # Function Type
 FuncType = Callable[..., Any]
 
@@ -17,6 +21,154 @@ class CellType:
     Cartesian = 'Cartesian'
     Other = 'Other'
 
+class ShapeGenerator:
+    """ Class to generate binary shape masks """
+    def __init__(self, XO: torch.Tensor, YO: torch.Tensor, rdim: Tuple[int, int]):
+        assert isinstance(XO, torch.Tensor) and isinstance(YO, torch.Tensor), "XO and YO must be torch.Tensor"
+        self.rdim = rdim
+        
+        self.X_real = XO
+        self.Y_real = YO
+    
+    def generate_circle_mask(self, center=None, radius=0.1):
+        """
+        Generate a binary mask for a circle based on real coordinates.
+
+        Parameters:
+            center (tuple): Real coordinates of the circle center (x, y).
+            radius (float): Radius of the circle in real units.
+
+        Returns:
+            torch.Tensor: Binary mask for the circle.
+        """
+        mask = np.zeros(self.rdim, dtype=np.uint8)
+        if center is None:
+            center = (self.X_real.mean().item(), self.Y_real.mean().item())
+
+        # Mask condition based on real coordinates
+        distance = np.sqrt((self.X_real.numpy() - center[0])**2 + (self.Y_real.numpy() - center[1])**2)
+        mask[distance <= radius] = 1
+
+        return torch.tensor(mask, dtype=torch.uint8)
+
+    
+    def generate_rectangle_mask(self, bottom_left=None, top_right=None):
+        """
+        Generate a binary mask for a rectangle based on real coordinates.
+        
+        Parameters:
+            bottom_left (tuple): Real coordinates of the bottom-left corner (x, y).
+            top_right (tuple): Real coordinates of the top-right corner (x, y).
+
+        Returns:
+            torch.Tensor: Binary mask for the rectangle.
+        """
+        mask = np.zeros(self.rdim, dtype=np.uint8)
+        if bottom_left is None:
+            bottom_left = (self.X_real.min().item(), self.Y_real.min().item())
+        if top_right is None:
+            top_right = (self.X_real.max().item(), self.Y_real.max().item())
+
+        # Mask condition based on real coordinates
+        mask[
+            (self.X_real >= bottom_left[0]) & (self.X_real <= top_right[0]) &
+            (self.Y_real >= bottom_left[1]) & (self.Y_real <= top_right[1])
+        ] = 1
+
+        return torch.tensor(mask, dtype=torch.uint8)
+    
+
+    def generate_polygon_mask(self, polygon_points, invert=False):
+        """
+        Generate a binary mask for a polygon based on real coordinates.
+
+        Parameters:
+            polygon_points (list of tuples): List of real coordinates of the polygon vertices [(x1, y1), (x2, y2), ...].
+            invert (bool): If True, inverts the mask to fill the outside region.
+
+        Returns:
+            torch.Tensor: Binary mask for the polygon.
+        """
+        mask = np.zeros(self.rdim, dtype=np.uint8)
+
+        # Create a path object for the polygon in real space
+        poly_path = Path(polygon_points)
+
+        # Flatten the grid points into (x, y) pairs
+        points = np.vstack((self.X_real.ravel(), self.Y_real.ravel())).T
+
+        # Use the Path.contains_points method for efficient point-in-polygon testing
+        inside = poly_path.contains_points(points)
+
+        # Reshape the result back to the grid dimensions
+        mask = inside.reshape(self.rdim)
+
+        if invert:
+            mask = 1 - mask  # Invert the mask
+
+        return torch.tensor(mask, dtype=torch.uint8)
+    
+    def combine_masks(self, mask1, mask2, operation="union"):
+        """
+        Combines two binary masks using a specified boolean operation.
+
+        Parameters:
+            mask1 (torch.Tensor): First binary mask.
+            mask2 (torch.Tensor): Second binary mask.
+            operation (str): Boolean operation ('union', 'intersection', 'difference', 'subtract').
+
+        Returns:
+            torch.Tensor: The combined mask.
+        """
+        if operation == "union":
+            return mask1 | mask2
+        elif operation == "intersection":
+            return mask1 & mask2
+        elif operation == "difference":
+            return mask1 ^ mask2
+        elif operation == "subtract":
+            return mask1 & ~mask2
+        else:
+            raise ValueError("Invalid operation. Choose from 'union', 'intersection', 'difference', or 'subtract'.")
+
+    def _point_in_polygon(self, point, polygon):
+        """
+        Determines if a point is inside a polygon using a vectorized ray-casting algorithm.
+
+        Parameters:
+            point (tuple): Point coordinates (x, y).
+            polygon (np.ndarray or torch.Tensor): Array of polygon vertices [(x1, y1), (x2, y2), ...].
+
+        Returns:
+            bool: True if the point is inside the polygon, False otherwise.
+        """
+        # Ensure inputs are numpy arrays
+        if isinstance(polygon, torch.Tensor):
+            polygon = polygon.numpy()
+        x, y = point
+        if isinstance(x, torch.Tensor):
+            x = x.item()
+        if isinstance(y, torch.Tensor):
+            y = y.item()
+
+        # Vectorized ray-casting
+        x1, y1 = polygon[:-1, 0], polygon[:-1, 1]
+        x2, y2 = polygon[1:, 0], polygon[1:, 1]
+
+        # Check if the point is within the vertical range of each edge
+        within_y_bounds = (y > np.minimum(y1, y2)) & (y <= np.maximum(y1, y2))
+
+        # Avoid horizontal edges where no intersection can occur
+        non_horizontal = y1 != y2
+
+        # Calculate the intersection of the horizontal ray with polygon edges
+        xinters = np.where(non_horizontal, (y - y1) * (x2 - x1) / (y2 - y1) + x1, np.inf)
+
+        # Check if the x-coordinate of the point is less than the intersection
+        intersects = (x <= xinters) & within_y_bounds
+
+        # Determine if the number of intersections is odd
+        return np.sum(intersects) % 2 == 1
 
 class Cell3D():
     """ Base class of unit cell """
@@ -85,6 +237,9 @@ class Cell3D():
             mesh_q * self.lattice_t2[0]
         self.YO = mesh_p * self.lattice_t1[1] +\
             mesh_q * self.lattice_t2[1]
+        
+        # Initialize shape generator
+        self.shapes = ShapeGenerator(self.XO, self.YO, tuple(self.rdim))
 
         # scaling factor of lengths
         self._lenunit = lengthunit.lower()
@@ -96,6 +251,18 @@ class Cell3D():
                                           vec_q=self.vec_q)
         self.update_trn_material(trn_material='air')
         self.update_ref_material(ref_material='air')
+
+    def get_circle_mask(self, radius=20):
+        return self.shapes.generate_circle_mask(radius=radius)
+    
+    def get_rectangle_mask(self, start_idx=(50, 50), end_idx=(100, 100)):
+        return self.shapes.generate_rectangle_mask(start_idx, end_idx)
+    
+    def get_polygon_mask(self, polygon_points, invert=False):
+        return self.shapes.generate_polygon_mask(polygon_points, invert)
+    
+    def combine_masks(self, mask1, mask2, operation="union"):
+        return self.shapes.combine_masks(mask1, mask2, operation)
 
 
     def add_materials(self, material_list: list = []):

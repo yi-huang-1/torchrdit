@@ -6,5 +6,6 @@ from . import materials
 from . import constants
 from . import logger
 from . import layers
+from . import viz
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"

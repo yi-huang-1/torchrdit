@@ -335,11 +335,6 @@ class FourierBaseSover(Cell3D):
                                      - mat_ky_diag @ solve_ter_mkx]])
 
                     if self.is_use_FFF is True: 
-                        # _, _, n_xx, n_yy, n_xy = self._calculate_nv_field(mask=self.layer_manager.layers[n_layer].mask_format.squeeze())
-                        # reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[n_layer].ermat,
-                        #                                               nharmonic_1=self.kdim[0],
-                        #                                                 nharmonic_2=self.kdim[1],
-                        #                                                             method='FFT')
                         delta_toeplitz_er = toeplitz_er - tinv(self.reciprocal_toeplitz_er)
                         q_mat_i = blockmat2x2([[mat_kx_diag @ solve_tur_mky - delta_toeplitz_er @ self.n_xy,
                                            toeplitz_er - mat_kx_diag @ solve_tur_mkx - delta_toeplitz_er @ self.n_yy],
@@ -359,12 +354,6 @@ class FourierBaseSover(Cell3D):
 
                 elif self.layer_manager.layers[n_layer].is_homogeneous is True:
                     if self.layer_manager.layers[n_layer].is_dispersive is True:
-                        # toeplitz_er = torch.tensor(
-                        #     self._matlib[self.layer_manager.layers[n_layer].material_name].er,
-                        #     device=self.device).to(self.tcomplex)
-                        # toeplitz_ur = torch.tensor(
-                        #     self._matlib[self.layer_manager.layers[n_layer].material_name].ur,
-                        #     device=self.device).to(self.tcomplex)
                         toeplitz_er = self._matlib[self.layer_manager.layers[n_layer].material_name].er.detach().to(self.tcomplex).to(self.device)
                         toeplitz_ur = self._matlib[self.layer_manager.layers[n_layer].material_name].ur.detach().to(self.tcomplex).to(self.device)
 
@@ -384,10 +373,6 @@ class FourierBaseSover(Cell3D):
 
                         # ===========================================================
                     else:
-                        # toeplitz_er = torch.tensor(
-                        #     self._matlib[self.layer_manager.layers[n_layer].material_name].er, device=self.device)
-                        # toeplitz_ur = torch.tensor(
-                        #     self._matlib[self.layer_manager.layers[n_layer].material_name].ur, device=self.device)
                         toeplitz_er = self._matlib[self.layer_manager.layers[n_layer].material_name].er.detach().clone().to(self.device)
                         toeplitz_ur = self._matlib[self.layer_manager.layers[n_layer].material_name].ur.detach().clone().to(self.device)
                         # ===========================================================
@@ -725,20 +710,10 @@ class FourierBaseSover(Cell3D):
                         
 
                         if self.is_use_FFF is True: 
-                            # _, _, n_xx, n_yy, n_xy = self._calculate_nv_field(mask=self.layer_manager.layers[n_layer].mask_format.squeeze())
                             if self.layer_manager.layers[n_layer].is_dispersive is False:
-                                # reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[n_layer].ermat,
-                                #                                               nharmonic_1=self.kdim[0],
-                                #                                                 nharmonic_2=self.kdim[1],
-                                #                                                             method='FFT')
                                 delta_toeplitz_er = toeplitz_er - tinv(self.reciprocal_toeplitz_er)
                             else:
-                                # reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(1 / self.layer_manager.layers[n_layer].ermat,
-                                #                                               nharmonic_1=self.kdim[0],
-                                #                                                 nharmonic_2=self.kdim[1],
-                                #                                                             method='FFT')[ind_freq,:,:]
                                 delta_toeplitz_er = toeplitz_er - tinv(self.reciprocal_toeplitz_er[ind_freq,:,:])
-                            # delta_toeplitz_er = toeplitz_er - tinv(reciprocal_toeplitz_er)
                             q_mat_i = blockmat2x2([[mat_kx_diag[ind_freq,:,:] @ solve_tur_mky - delta_toeplitz_er @ self.n_xy,
                                                toeplitz_er - mat_kx_diag[ind_freq,:,:] @ solve_tur_mkx - delta_toeplitz_er @ self.n_yy],
                                               [mat_ky_diag[ind_freq,:,:] @ solve_tur_mky - toeplitz_er + delta_toeplitz_er @ self.n_xx,
@@ -758,12 +733,6 @@ class FourierBaseSover(Cell3D):
 
                     elif self.layer_manager.layers[n_layer].is_homogeneous is True:
                         if self.layer_manager.layers[n_layer].is_dispersive is True:
-                            # toeplitz_er = torch.tensor(
-                            #     self._matlib[self.layer_manager.layers[n_layer].material_name].er,
-                            #     device=self.device).to(self.tcomplex)[ind_freq]
-                            # toeplitz_ur = torch.tensor(
-                            #     self._matlib[self.layer_manager.layers[n_layer].material_name].ur,
-                            #     device=self.device).to(self.tcomplex)
                             toeplitz_er = self._matlib[self.layer_manager.layers[n_layer].material_name].er.detach().to(self.tcomplex).to(self.device)[ind_freq]
                             toeplitz_ur = self._matlib[self.layer_manager.layers[n_layer].material_name].ur.detach().to(self.tcomplex).to(self.device)[ind_freq]
 
@@ -783,10 +752,6 @@ class FourierBaseSover(Cell3D):
 
                             # ===========================================================
                         else:
-                            # toeplitz_er = torch.tensor(
-                            #     self._matlib[self.layer_manager.layers[n_layer].material_name].er, device=self.device)
-                            # toeplitz_ur = torch.tensor(
-                            #     self._matlib[self.layer_manager.layers[n_layer].material_name].ur, device=self.device)
                             toeplitz_er = self._matlib[self.layer_manager.layers[n_layer].material_name].er.detach().clone().to(self.device)
                             toeplitz_ur = self._matlib[self.layer_manager.layers[n_layer].material_name].ur.detach().clone().to(self.device)
                             # ===========================================================
