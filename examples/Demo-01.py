@@ -10,11 +10,14 @@ The GMRF can be found in the following references:
 
 import numpy as np
 import torch
+import os
 
 from torchrdit.solver import SolverConstructer
-from torchrdit.utils import operator_proj, create_material
-from tqdm import tqdm, trange
+from torchrdit.utils import create_material
 from torchrdit.constants import Algorithm, Precision
+from torchrdit.viz import plot_layer
+
+import matplotlib.pyplot as plt
 
 # units, normalizing all units to 'um'
 um = 1
@@ -92,19 +95,28 @@ src1 = dev1.add_source(theta = theta,
                  ptm = ptm)
 
 # build hexagonal unit cell
-rsq = dev1.XO ** 2 + (dev1.YO - b / 2) ** 2
-mask = (rsq <= r ** 2)
-rsq = dev1.XO ** 2 + (dev1.YO + b / 2) ** 2
-mask = mask | (rsq <= r ** 2)
-rsq = (dev1.XO - a / 2) ** 2 + dev1.YO ** 2
-mask = mask | (rsq <= r ** 2)
-rsq = (dev1.XO + a / 2) ** 2 + dev1.YO ** 2
+c1 = dev1.shapes.generate_circle_mask(center=[0, b/2], radius=r)
+c2 = dev1.shapes.generate_circle_mask(center=[0, -b/2], radius=r)
+c3 = dev1.shapes.generate_circle_mask(center=[a/2, 0], radius=r)
+c4 = dev1.shapes.generate_circle_mask(center=[-a/2, 0], radius=r)
 
-mask = mask | (rsq <= r ** 2)
+mask = dev1.combine_masks(mask1=c1, mask2=c2, operation='union')
+mask = dev1.combine_masks(mask1=mask, mask2=c3, operation='union')
+mask = dev1.combine_masks(mask1=mask, mask2=c4, operation='union')
 
-mask = (~ mask)
+mask = 1 - mask
 
-dev1.update_er_with_mask(mask=mask, layer_index=0, set_grad = True)
+layer_index = 0
+
+dev1.update_er_with_mask(mask=mask, layer_index=layer_index, set_grad = True)
+
+# plot the layer and save the figure
+fig, axes = plt.subplots()
+plot_layer(dev1, layer_index=layer_index, func='real', fig_ax=axes, cmap='BuGn', labels=('x (um)','y (um)'), title=f'layer {layer_index}')
+script_dir = os.path.dirname(os.path.abspath(__file__))
+output_filename = os.path.join(script_dir, f"{os.path.basename(__file__)}_layer_{layer_index}.png")
+plt.savefig(output_filename, dpi=300)
+plt.close(fig)
 
 data = dev1.solve(src1)# Example 1 - GMRF with hexagonal unit cells
 

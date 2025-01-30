@@ -9,11 +9,14 @@ The GMRF can be found in the following references:
 """
 import numpy as np
 import torch
+import os
 
 from torchrdit.solver import SolverConstructer
-from torchrdit.utils import operator_proj, create_material
-from tqdm import tqdm, trange
+from torchrdit.utils import create_material
 from torchrdit.constants import Algorithm, Precision
+from torchrdit.viz import plot_layer
+
+import matplotlib.pyplot as plt
 
 # units, normalizing all units to 'um'
 um = 1
@@ -94,18 +97,28 @@ src1rdit = dev1rdit.add_source(theta = 0 * degrees,
                  ptm = 0)
 
 # build hexagonal unit cell
-rsq = dev1rdit.XO ** 2 + (dev1rdit.YO - b / 2) ** 2
-mask = (rsq <= r ** 2)
-rsq = dev1rdit.XO ** 2 + (dev1rdit.YO + b / 2) ** 2
-mask = mask | (rsq <= r ** 2)
-rsq = (dev1rdit.XO - a / 2) ** 2 + dev1rdit.YO ** 2
-mask = mask | (rsq <= r ** 2)
-rsq = (dev1rdit.XO + a / 2) ** 2 + dev1rdit.YO ** 2
-mask = mask | (rsq <= r ** 2)
+c1 = dev1rdit.shapes.generate_circle_mask(center=[0, b/2], radius=r)
+c2 = dev1rdit.shapes.generate_circle_mask(center=[0, -b/2], radius=r)
+c3 = dev1rdit.shapes.generate_circle_mask(center=[a/2, 0], radius=r)
+c4 = dev1rdit.shapes.generate_circle_mask(center=[-a/2, 0], radius=r)
 
-mask = (~ mask)
+mask = dev1rdit.combine_masks(mask1=c1, mask2=c2, operation='union')
+mask = dev1rdit.combine_masks(mask1=mask, mask2=c3, operation='union')
+mask = dev1rdit.combine_masks(mask1=mask, mask2=c4, operation='union')
 
-dev1rdit.update_er_with_mask(mask=mask, layer_index=0, set_grad = True)
+mask = 1 - mask
+
+layer_index = 0
+
+dev1rdit.update_er_with_mask(mask=mask, layer_index=layer_index, set_grad = True)
+
+# plot the layer and save the figure
+fig, axes = plt.subplots()
+plot_layer(dev1rdit, layer_index=layer_index, func='real', fig_ax=axes, cmap='BuGn', labels=('x (um)','y (um)'), title=f'layer {layer_index}')
+script_dir = os.path.dirname(os.path.abspath(__file__))
+output_filename = os.path.join(script_dir, f"{os.path.basename(__file__)}_layer_{layer_index}.png")
+plt.savefig(output_filename, dpi=300)
+plt.close(fig)
 
 data = dev1rdit.solve(src1rdit)# Example 1 - GMRF with hexagonal unit cells
 
