@@ -49,8 +49,8 @@ t2 = torch.tensor([[a/2, a*np.sqrt(3)/2]], dtype=torch.float32)
 
 # creating materials
 # all mateiral objects should be added to the 'materiallist' parameter when initializing the solver
-material_sic = create_material(name='SiC', dielectric_dispersion=True, user_dielectric_file='materials/11242022/Si_C-e.txt', data_format='freq-eps', data_unit='thz')
-material_sio2 = create_material(name='SiO2', dielectric_dispersion=True, user_dielectric_file='materials/11242022/SiO2-e.txt', data_format='freq-eps', data_unit='thz')
+material_sic = create_material(name='SiC', dielectric_dispersion=True, user_dielectric_file=os.path.join(os.path.dirname(__file__), 'Si_C-e.txt'), data_format='freq-eps', data_unit='thz')
+material_sio2 = create_material(name='SiO2', dielectric_dispersion=True, user_dielectric_file=os.path.join(os.path.dirname(__file__), 'SiO2-e.txt'), data_format='freq-eps', data_unit='thz')
 material_sin = create_material(name='SiN', permittivity=n_SiN**2)
 material_fs = create_material(name='FusedSilica', permittivity=n_fs**2)
 
@@ -81,19 +81,19 @@ dev1_dispersive.add_layer(material_name=material_sin,
               is_homogeneous=True,
               is_optimize=False)
 
-src1 = dev1_dispersive.add_source(theta = 0 * degrees,
-                 phi = 0 * degrees,
-                 pte = 1,
-                 ptm = 0)
+src1 = dev1_dispersive.add_source(theta = theta * degrees,
+                 phi = phi * degrees,
+                 pte = pte,
+                 ptm = ptm)
 
 # print layer information
 dev1_dispersive.get_layer_structure()
 
 # build hexagonal unit cell
-c1 = dev1_dispersive.shapes.generate_circle_mask(center=[0, b/2], radius=r)
-c2 = dev1_dispersive.shapes.generate_circle_mask(center=[0, -b/2], radius=r)
-c3 = dev1_dispersive.shapes.generate_circle_mask(center=[a/2, 0], radius=r)
-c4 = dev1_dispersive.shapes.generate_circle_mask(center=[-a/2, 0], radius=r)
+c1 = dev1_dispersive.get_circle_mask(center=[0, b/2], radius=r)
+c2 = dev1_dispersive.get_circle_mask(center=[0, -b/2], radius=r)
+c3 = dev1_dispersive.get_circle_mask(center=[a/2, 0], radius=r)
+c4 = dev1_dispersive.get_circle_mask(center=[-a/2, 0], radius=r)
 
 mask = dev1_dispersive.combine_masks(mask1=c1, mask2=c2, operation='union')
 mask = dev1_dispersive.combine_masks(mask1=mask, mask2=c3, operation='union')

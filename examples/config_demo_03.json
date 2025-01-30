@@ -1,0 +1,50 @@
+{
+    "solver": {
+        "algorithm": "RDIT",
+        "precision": "DOUBLE",
+        "wavelengths": [1.54, 1.55, 1.56, 1.57],
+        "lengthunit": "um",
+        "rdim": [512, 512],
+        "kdim": [21, 21],
+        "is_use_FFF": true
+    },
+    "lattice": {
+        "t1": [0.575, -0.99592921435],
+        "t2": [0.575, 0.99592921435]
+    },
+    "materials": {
+        "SiC": {
+            "dielectric_dispersion": true,
+            "dielectric_file": "Si_C-e.txt",
+            "data_format": "freq-eps",
+            "data_unit": "thz"
+        },
+        "SiO2": {
+            "dielectric_dispersion": true,
+            "dielectric_file": "SiO2-e.txt",
+            "data_format": "freq-eps",
+            "data_unit": "thz"
+        },
+        "SiN": {
+            "permittivity": 3.748096
+        },
+        "FusedSilica": {
+            "permittivity": 2.2801
+        }
+    },
+    "layers": [
+        {
+            "material": "SiC",
+            "thickness": 0.23,
+            "is_homogeneous": false,
+            "is_optimize": true
+        },
+        {
+            "material": "SiN",
+            "thickness": 0.345,
+            "is_homogeneous": true,
+            "is_optimize": false
+        }
+    ],
+    "trn_material": "FusedSilica"
+}

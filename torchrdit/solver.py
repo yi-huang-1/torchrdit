@@ -4,13 +4,120 @@ from typing import Union, Optional
 import numpy as np
 import torch
 import math
+import json
+import os
 
 from torch.linalg import inv as tinv
 from torch.linalg import solve as tsolve
 from torch.nn.functional import conv2d as tconv2d
 from .cell import Cell3D, CellType
-from .utils import blockmat2x2, redhstar, EigComplex, init_smatrix, blur_filter
+from .utils import blockmat2x2, redhstar, EigComplex, init_smatrix, blur_filter, create_material
 from .constants import Algorithm, Precision
+
+
+class TorchrditConfig:
+    def __init__(self):
+        """
+        Initialize an empty TorchrditConfig instance. This class no longer stores
+        configuration or solver state, only provides functionality to create solvers.
+        """
+
+    @staticmethod
+    def create_solver(config):
+        """
+        Create and return a solver based on the provided configuration.
+        """
+        # Check if the input is a string assuming it could be a JSON file path
+        if isinstance(config, str):
+            base_path = os.path.dirname(config)
+            with open(config, 'r') as file:
+                config = json.load(file)
+        else:
+            base_path = os.getcwd()
+
+        # Extract solver settings
+        algorithm = Algorithm[config["solver"]["algorithm"].upper()]
+        precision = Precision[config["solver"]["precision"].upper()]
+        lam0 = np.array(config["solver"]["wavelengths"])
+        lengthunit = config["solver"].get("lengthunit", "um")
+        rdim = config["solver"].get("rdim", [512, 512])
+        kdim = config["solver"].get("kdim", [9, 9])
+        is_use_FFF = config["solver"].get("is_use_FFF", True)
+
+        # Extract lattice vectors
+        t1 = torch.tensor(config["lattice"]["t1"])
+        t2 = torch.tensor(config["lattice"]["t2"])
+
+        # Initialize the solver with the new configuration
+        solver = SolverConstructer.creat_sovler(
+            algorithm=algorithm,
+            precision=precision,
+            lam0=lam0,
+            lengthunit=lengthunit,
+            rdim=rdim,
+            kdim=kdim,
+            t1=t1,
+            t2=t2,
+            is_use_FFF=is_use_FFF,
+            device=config.get("device", "cpu")
+        )
+
+        # Create materials
+        materials = TorchrditConfig._create_materials(config["materials"], base_path=base_path)
+
+        # Add layers dynamically
+        TorchrditConfig._add_layers(solver, config["layers"], materials)
+
+        # Update transmission and reflection materials if specified
+        if "trn_material" in config:
+            trn_material = materials[config["trn_material"]]
+            solver.update_trn_material(trn_material=trn_material)
+        
+        if "ref_material" in config:
+            ref_material = materials[config["ref_material"]]
+            solver.update_ref_material(ref_material=ref_material)
+
+        return solver
+
+    @staticmethod
+    def _create_materials(materials_dict, base_path):
+        """
+        Create material objects from dictionary.
+        """
+        materials = {}
+        for name, props in materials_dict.items():
+            if props.get("dielectric_dispersion", False):
+                materials[name] = create_material(
+                    name=name,
+                    dielectric_dispersion=True,
+                    user_dielectric_file=os.path.join(base_path, props["dielectric_file"]),
+                    data_format=props.get("data_format", "freq-eps"),
+                    data_unit=props.get("data_unit", "thz")
+                )
+            else:
+                materials[name] = create_material(
+                    name=name,
+                    permittivity=props["permittivity"]
+                )
+        return materials
+
+    @staticmethod
+    def _add_layers(solver, layers_list, materials):
+        """
+        Add layers to the solver.
+        """
+        for layer in layers_list:
+            material_name = layer["material"]
+            thickness = torch.tensor(layer["thickness"], dtype=torch.float32)
+            is_homogeneous = layer.get("is_homogeneous", True)
+            is_optimize = layer.get("is_optimize", False)
+
+            solver.add_layer(
+                material_name=materials[material_name],
+                thickness=thickness,
+                is_homogeneous=is_homogeneous,
+                is_optimize=is_optimize
+            )
 
 class SolverConstructer():
             
@@ -492,14 +599,17 @@ class FourierBaseSover(Cell3D):
 
         ate = torch.empty_like(norm_vec)
         if np.abs(self.src['theta']) < 1e-3:
-            if self.src['norm_te_dir'] == 'y':
-                ate = torch.tensor(
-                    [0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
-            elif self.src['norm_te_dir'] == 'x':
-                ate = torch.tensor(
-                    [1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
+            if 'norm_te_dir' not in self.src:
+                ate = torch.tensor([0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
+            else:
+                if self.src['norm_te_dir'] == 'y':
+                    ate = torch.tensor(
+                        [0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
+                elif self.src['norm_te_dir'] == 'x':
+                    ate = torch.tensor(
+                        [1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
         else:
-            ate = torch.cross(self.kinc, norm_vec[None, :].repeat(self.n_freqs, 1))
+            ate = torch.cross(self.kinc, norm_vec[None, :].repeat(self.n_freqs, 1), dim=1)
             ate = ate / torch.norm(ate, dim=1).unsqueeze(-1)
 
         atm = torch.cross(ate, self.kinc, dim=1)
@@ -889,7 +999,7 @@ class FourierBaseSover(Cell3D):
                     ate = torch.tensor(
                         [1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)
             else:
-                ate = torch.cross(self.kinc[ind_freq,:], norm_vec)
+                ate = torch.cross(self.kinc[ind_freq,:], norm_vec, dim=0)
                 ate = ate / torch.norm(ate, dim=0)
             
 
