@@ -23,7 +23,7 @@ class TorchrditConfig:
         """
 
     @staticmethod
-    def create_solver(config):
+    def create_solver(config, flip=False):
         """
         Create and return a solver based on the provided configuration.
         """
@@ -34,6 +34,9 @@ class TorchrditConfig:
                 config = json.load(file)
         else:
             base_path = os.getcwd()
+
+        if flip:
+            config = TorchrditConfig.flip_config(config)
 
         # Extract solver settings
         algorithm = Algorithm[config["solver"]["algorithm"].upper()]
@@ -118,6 +121,24 @@ class TorchrditConfig:
                 is_homogeneous=is_homogeneous,
                 is_optimize=is_optimize
             )
+    
+    @staticmethod
+    def flip_config(config):
+        flipped_config = config.copy()
+        flipped_config["layers"] = list(reversed(config["layers"]))
+
+        if "trn_material" in config and "ref_material" in config:
+            flipped_config["trn_material"], flipped_config["ref_material"] = (
+                config["ref_material"], config["trn_material"]
+            )
+        elif "trn_material" in config:
+            flipped_config["ref_material"] = config["trn_material"]
+            del flipped_config["trn_material"]
+        elif "ref_material" in config:
+            flipped_config["trn_material"] = config["ref_material"]
+            del flipped_config["ref_material"]
+
+        return flipped_config
 
 class SolverConstructer():
             
@@ -597,25 +618,55 @@ class FourierBaseSover(Cell3D):
         norm_vec = torch.tensor(
             [0.0, 0.0, 1.0], dtype=self.tcomplex, device=self.device)
 
-        ate = torch.empty_like(norm_vec)
-        if np.abs(self.src['theta']) < 1e-3:
-            if 'norm_te_dir' not in self.src:
-                ate = torch.tensor([0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
+        
+        if isinstance(self.src['theta'], Union[float, int]):
+            ate = torch.empty_like(norm_vec)
+            if np.abs(self.src['theta']) < 1e-3:
+                if 'norm_te_dir' not in self.src:
+                    ate = torch.tensor([0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
+                else:
+                    if self.src['norm_te_dir'] == 'y':
+                        ate = torch.tensor(
+                            [0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
+                    elif self.src['norm_te_dir'] == 'x':
+                        ate = torch.tensor(
+                            [1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
             else:
-                if self.src['norm_te_dir'] == 'y':
-                    ate = torch.tensor(
-                        [0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
-                elif self.src['norm_te_dir'] == 'x':
-                    ate = torch.tensor(
-                        [1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
+                ate = torch.cross(self.kinc, norm_vec[None, :].repeat(self.n_freqs, 1), dim=1)
+                ate = ate / torch.norm(ate, dim=1).unsqueeze(-1)
         else:
-            ate = torch.cross(self.kinc, norm_vec[None, :].repeat(self.n_freqs, 1), dim=1)
-            ate = ate / torch.norm(ate, dim=1).unsqueeze(-1)
+            ate = torch.zeros((self.n_freqs, 3), dtype=self.tcomplex, device=self.device)
+            theta_mask = np.abs(self.src['theta']) < 1e-3
+            for i in range(self.n_freqs):
+                if theta_mask[i]:
+                    if 'norm_te_dir' not in self.src:
+                        ate[i, :] = torch.tensor([0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)
+                    else:
+                        if self.src['norm_te_dir'] == 'y':
+                            ate[i, :] = torch.tensor([0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)
+                        elif self.src['norm_te_dir'] == 'x':
+                            ate[i, :] = torch.tensor([1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)
+                else:
+                    ate[i, :] = torch.cross(self.kinc[i, :], norm_vec, dim=0)
+                    ate[i, :] = ate[i, :] / torch.norm(ate[i, :])
+        
 
         atm = torch.cross(ate, self.kinc, dim=1)
         atm = atm / torch.norm(atm)
 
-        pol_vec = self.src['pte'] * ate + self.src['ptm'] * atm
+        # pol_vec = self.src['pte'] * ate + self.src['ptm'] * atm
+        if isinstance(self.src['pte'], Union[float, int]):
+            pte_vec = self.src['pte'] * ate
+        else:
+            pte_vec = torch.tensor(self.src['pte'])[:, None] * ate
+
+        if isinstance(self.src['ptm'], Union[float, int]):
+            ptm_vec = self.src['ptm'] * atm
+        else:
+            ptm_vec = torch.tensor(self.src['ptm'])[:, None] * atm
+        
+        pol_vec = pte_vec + ptm_vec
+        
         pol_vec = pol_vec / torch.norm(pol_vec, dim=1).unsqueeze(-1)
 
         # Calculate electric field source vector
@@ -990,17 +1041,34 @@ class FourierBaseSover(Cell3D):
             norm_vec = torch.tensor(
                 [0.0, 0.0, 1.0], dtype=self.tcomplex, device=self.device)
 
-            ate = torch.empty_like(norm_vec)
-            if np.abs(self.src['theta']) < 1e-3:
-                if self.src['norm_te_dir'] == 'y':
-                    ate = torch.tensor(
-                        [0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)
-                elif self.src['norm_te_dir'] == 'x':
-                    ate = torch.tensor(
-                        [1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)
+            if isinstance(self.src['theta'], Union[float, int]):
+                ate = torch.empty_like(norm_vec)
+                if np.abs(self.src['theta']) < 1e-3:
+                    if 'norm_te_dir' not in self.src:
+                        ate = torch.tensor([0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)
+                    else:
+                        if self.src['norm_te_dir'] == 'y':
+                            ate = torch.tensor(
+                                [0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)
+                        elif self.src['norm_te_dir'] == 'x':
+                            ate = torch.tensor(
+                                [1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)
+                else:
+                    ate = torch.cross(self.kinc[ind_freq,:], norm_vec, dim=0)
+                    ate = ate / torch.norm(ate, dim=0)
             else:
-                ate = torch.cross(self.kinc[ind_freq,:], norm_vec, dim=0)
-                ate = ate / torch.norm(ate, dim=0)
+                ate = torch.empty_like(norm_vec)
+                if np.abs(self.src['theta'][ind_freq]) < 1e-3:
+                    if 'norm_te_dir' not in self.src:
+                        ate = torch.tensor([0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)
+                    else:
+                        if self.src['norm_te_dir'] == 'y':
+                            ate = torch.tensor([0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)
+                        elif self.src['norm_te_dir'] == 'x':
+                            ate = torch.tensor([1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)
+                else:
+                    ate = torch.cross(self.kinc[ind_freq, :], norm_vec, dim=0)
+                    ate = ate / torch.norm(ate)
             
 
             atm = torch.cross(ate, self.kinc[ind_freq,:], dim=0)
@@ -1173,12 +1241,23 @@ class FourierBaseSover(Cell3D):
         # refractive_2 = torch.sqrt(self.ur2 * self.er2)
 
         # kinc: dimensions (n_freqs, 3)
-        self.kinc = refractive_1.unsqueeze(-1) * torch.tensor([np.sin(self.src['theta']) * np.cos(self.src['phi']),
-                                                     np.sin(self.src['theta']) *
-                                                     np.sin(self.src['phi']),
-                                                     np.cos(self.src['theta'])],
-                                                    dtype=self.tfloat,
-                                                    device=self.device).unsqueeze(0).repeat(self.n_freqs, 1)
+
+        if isinstance(self.src['theta'], Union[float, int]):
+            theta_src = torch.tensor([self.src['theta']], dtype=self.tfloat, device=self.device)[None].repeat(self.n_freqs, 1)
+        else:
+            theta_src = torch.tensor(self.src['theta'], dtype=self.tfloat, device=self.device)[:, None]
+        
+        if isinstance(self.src['phi'], Union[float, int]):
+            phi_src = torch.tensor([self.src['phi']], dtype=self.tfloat, device=self.device)[None].repeat(self.n_freqs, 1)
+        else:
+            phi_src = torch.tensor(self.src['phi'], dtype=self.tfloat, device=self.device)[:, None]
+
+        self.kinc = refractive_1[None] * torch.cat((
+            torch.sin(theta_src) * torch.cos(phi_src),
+            torch.sin(theta_src) * torch.sin(phi_src),
+            torch.cos(theta_src)
+        ), dim=1)
+        assert self.kinc.shape == (self.n_freqs, 3)
 
         # Calculate reciprocal lattice vectors
         d_v = self.lattice_t1[0] * self.lattice_t2[1] - self.lattice_t2[0] * self.lattice_t1[1]

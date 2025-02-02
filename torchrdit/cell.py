@@ -41,15 +41,15 @@ class ShapeGenerator:
         Returns:
             torch.Tensor: Binary mask for the circle.
         """
-        mask = np.zeros(self.rdim, dtype=np.uint8)
+        mask = torch.zeros(self.rdim, dtype=torch.uint8, device=self.X_real.device)
         if center is None:
             center = (self.X_real.mean().item(), self.Y_real.mean().item())
 
         # Mask condition based on real coordinates
-        distance = np.sqrt((self.X_real.numpy() - center[0])**2 + (self.Y_real.numpy() - center[1])**2)
+        distance = torch.sqrt((self.X_real - center[0])**2 + (self.Y_real - center[1])**2)
         mask[distance <= radius] = 1
 
-        return torch.tensor(mask, dtype=torch.uint8)
+        return mask
 
     
     def generate_rectangle_mask(self, bottom_left=None, top_right=None):

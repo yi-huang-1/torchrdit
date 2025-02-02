@@ -38,11 +38,16 @@ def plot2d(data: Any,
     """
 
     if isinstance(data, torch.Tensor):
-        data = data.detach().resolve_conj().numpy()
+        data = data.detach().resolve_conj().cpu().numpy()
 
     # Unpack layout data
     # shape, res, sdim = layout
     mesh_xo, mesh_yo = layout
+
+    if isinstance(mesh_xo, torch.Tensor):
+        mesh_xo = mesh_xo.detach().cpu().numpy()
+    if isinstance(mesh_yo, torch.Tensor):
+        mesh_yo = mesh_yo.detach().cpu().numpy()
 
     if func == 'abs':
         np_func = np.abs
@@ -66,7 +71,7 @@ def plot2d(data: Any,
 
     if outline is not None:
         if isinstance(outline, torch.Tensor):
-            outline = outline.detach().numpy()
+            outline = outline.detach().cpu().numpy()
         fig_ax.contour(np_func(outline).T, 0, colors='k', alpha=outline_alpha)
 
     fig_ax.set_ylabel(labels[1])
