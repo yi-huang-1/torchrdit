@@ -14,11 +14,6 @@ from .cell import Cell3D, CellType
 from .utils import blockmat2x2, redhstar, EigComplex, init_smatrix, blur_filter, create_material
 from .constants import Algorithm, Precision
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< Updated upstream
-=======
->>>>>>> Stashed changes
 
 class TorchrditConfig:
     def __init__(self):
@@ -28,11 +23,7 @@ class TorchrditConfig:
         """
 
     @staticmethod
-<<<<<<< Updated upstream
-    def create_solver(config):
-=======
     def create_solver(config, flip=False):
->>>>>>> Stashed changes
         """
         Create and return a solver based on the provided configuration.
         """
@@ -44,12 +35,9 @@ class TorchrditConfig:
         else:
             base_path = os.getcwd()
 
-<<<<<<< Updated upstream
-=======
         if flip:
             config = TorchrditConfig.flip_config(config)
 
->>>>>>> Stashed changes
         # Extract solver settings
         algorithm = Algorithm[config["solver"]["algorithm"].upper()]
         precision = Precision[config["solver"]["precision"].upper()]
@@ -133,9 +121,6 @@ class TorchrditConfig:
                 is_homogeneous=is_homogeneous,
                 is_optimize=is_optimize
             )
-<<<<<<< Updated upstream
-
-=======
     
     @staticmethod
     def flip_config(config):
@@ -155,8 +140,6 @@ class TorchrditConfig:
 
         return flipped_config
 
->>>>>>> Stashed changes
->>>>>>> Stashed changes
 class SolverConstructer():
             
     def __init__(self) -> None:
@@ -635,22 +618,6 @@ class FourierBaseSover(Cell3D):
         norm_vec = torch.tensor(
             [0.0, 0.0, 1.0], dtype=self.tcomplex, device=self.device)
 
-<<<<<<< Updated upstream
-        ate = torch.empty_like(norm_vec)
-        if np.abs(self.src['theta']) < 1e-3:
-            if 'norm_te_dir' not in self.src:
-                ate = torch.tensor([0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
-            else:
-                if self.src['norm_te_dir'] == 'y':
-                    ate = torch.tensor(
-                        [0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
-                elif self.src['norm_te_dir'] == 'x':
-                    ate = torch.tensor(
-                        [1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(self.n_freqs, 1)
-        else:
-            ate = torch.cross(self.kinc, norm_vec[None, :].repeat(self.n_freqs, 1), dim=1)
-            ate = ate / torch.norm(ate, dim=1).unsqueeze(-1)
-=======
         
         if isinstance(self.src['theta'], Union[float, int]):
             ate = torch.empty_like(norm_vec)
@@ -683,7 +650,6 @@ class FourierBaseSover(Cell3D):
                     ate[i, :] = torch.cross(self.kinc[i, :], norm_vec, dim=0)
                     ate[i, :] = ate[i, :] / torch.norm(ate[i, :])
         
->>>>>>> Stashed changes
 
         atm = torch.cross(ate, self.kinc, dim=1)
         atm = atm / torch.norm(atm)
@@ -1091,14 +1057,6 @@ class FourierBaseSover(Cell3D):
                     ate = torch.cross(self.kinc[ind_freq,:], norm_vec, dim=0)
                     ate = ate / torch.norm(ate, dim=0)
             else:
-<<<<<<< Updated upstream
-                ate = torch.cross(self.kinc[ind_freq,:], norm_vec, dim=0)
-=======
-<<<<<<< Updated upstream
-                ate = torch.cross(self.kinc[ind_freq,:], norm_vec)
->>>>>>> Stashed changes
-                ate = ate / torch.norm(ate, dim=0)
-=======
                 ate = torch.empty_like(norm_vec)
                 if np.abs(self.src['theta'][ind_freq]) < 1e-3:
                     if 'norm_te_dir' not in self.src:
@@ -1111,7 +1069,6 @@ class FourierBaseSover(Cell3D):
                 else:
                     ate = torch.cross(self.kinc[ind_freq, :], norm_vec, dim=0)
                     ate = ate / torch.norm(ate)
->>>>>>> Stashed changes
             
 
             atm = torch.cross(ate, self.kinc[ind_freq,:], dim=0)
