@@ -658,12 +658,12 @@ class FourierBaseSover(Cell3D):
         if isinstance(self.src['pte'], Union[float, int]):
             pte_vec = self.src['pte'] * ate
         else:
-            pte_vec = torch.tensor(self.src['pte'])[:, None] * ate
+            pte_vec = torch.tensor(self.src['pte'], dtype=self.tcomplex, device=self.device)[:, None] * ate
 
         if isinstance(self.src['ptm'], Union[float, int]):
             ptm_vec = self.src['ptm'] * atm
         else:
-            ptm_vec = torch.tensor(self.src['ptm'])[:, None] * atm
+            ptm_vec = torch.tensor(self.src['ptm'], dtype=self.tcomplex, device=self.device)[:, None] * atm
         
         pol_vec = pte_vec + ptm_vec
         
