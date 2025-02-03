@@ -8,4 +8,4 @@ from . import logger
 from . import layers
 from . import viz
 
-__version__ = "0.1.9"
+__version__ = "0.1.10"
