@@ -210,7 +210,9 @@ class MaterialClass():
         data_eps2 = disp_er_sorted[wl_ind1:wl_ind2, 2]
 
         with warnings.catch_warnings():
-            warnings.simplefilter('ignore', np.exceptions.RankWarning)
+            warnings.simplefilter('ignore', Warning)
+            np.seterr(all='ignore')
+
             ze1 = np.polyfit(
                 wls, data_eps1, self._max_poly_order)
             ze2 = np.polyfit(
