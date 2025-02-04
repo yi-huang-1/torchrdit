@@ -111,7 +111,10 @@ class TorchrditConfig:
         """
         for layer in layers_list:
             material_name = layer["material"]
-            thickness = torch.tensor(layer["thickness"], dtype=torch.float32)
+            if isinstance(layer["thickness"], torch.Tensor):
+                thickness = layer["thickness"]
+            else:
+                thickness = torch.tensor(layer["thickness"], dtype=torch.float32)
             is_homogeneous = layer.get("is_homogeneous", True)
             is_optimize = layer.get("is_optimize", False)
 
