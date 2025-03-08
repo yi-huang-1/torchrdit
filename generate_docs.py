@@ -42,10 +42,38 @@ def main():
         # Run pydoc-markdown for this module
         cmd = ["pydoc-markdown", "-m", module_name, "--render-toc"]
         
-        with open(output_file, "w") as f:
-            subprocess.run(cmd, stdout=f)
-        
-        print(f"  -> Written to {output_file}")
+        try:
+            with open(output_file, "w") as f:
+                result = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, text=True)
+                
+            if result.returncode != 0:
+                print(f"  -> Warning: Failed to generate documentation for {module_name}")
+                # Create a minimal documentation file when module import fails
+                with open(output_file, "w") as f:
+                    f.write(f"""# {module_name}
+
+**Note: Documentation generation for this module failed.**
+
+This could be due to import errors or other issues. Please ensure the module is properly installed and importable.
+
+## Module Structure
+
+This is a placeholder for {module_name} documentation.
+""")
+                print(f"  -> Created placeholder documentation for {module_name}")
+            else:
+                print(f"  -> Written to {output_file}")
+        except Exception as e:
+            print(f"  -> Error generating documentation for {module_name}: {str(e)}")
+            # Create an error documentation file
+            with open(output_file, "w") as f:
+                f.write(f"""# {module_name}
+
+**Error: Documentation generation for this module encountered an error: {str(e)}**
+
+Please check that the module exists and is properly installed.
+""")
+            print(f"  -> Created error documentation for {module_name}")
     
     # Create Home page
     create_home_page(docs_dir)

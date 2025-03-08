@@ -15,14 +15,23 @@ jobs:
       - name: Install dependencies
         run: |
           pip install pydoc-markdown pyyaml
-          python setup.py install
+          pip install -e .
       - name: Generate documentation
         run: |
           mkdir -p wiki
+          # Set PYTHONPATH to help pydoc-markdown find the module
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          python -c "import sys; print('Python path:', sys.path)"
+          python -c "import sys, os; print('Working directory:', os.getcwd())" || echo "getcwd failed"
+          python -c "import os; print(os.listdir('.'))" || echo "listdir failed"
+          # Try to import the module to verify it's available
+          python -c "import torchrdit; print('torchrdit version:', getattr(torchrdit, '__version__', 'unknown'))" || echo "Import torchrdit failed"
+          # Run the documentation generator
           python generate_docs.py
       - name: Deploy to Wiki
         uses: Andrew-Chen-Wang/github-wiki-action@v4
         env:
           WIKI_DIR: wiki/
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_MAIL: ${{ github.actor }}@users.noreply.github.com
           GH_NAME: ${{ github.actor }}
