@@ -10,8 +10,6 @@ from .constants import lengthunit_dict
 from .logger import Logger
 from .layers import LayerManager
 
-from skimage.draw import disk, rectangle, polygon
-from skimage.measure import grid_points_in_poly
 from matplotlib.path import Path
 
 # Function Type
