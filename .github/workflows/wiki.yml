@@ -15,7 +15,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install pydoc-markdown pyyaml
-          pip install -e .
+          python setup.py
       - name: Generate documentation
         run: |
           mkdir -p wiki
@@ -24,6 +24,5 @@ jobs:
         uses: Andrew-Chen-Wang/github-wiki-action@v4
         env:
           WIKI_DIR: wiki/
-          # GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_MAIL: ${{ github.actor }}@users.noreply.github.com
-          GH_NAME: ${{ github.actor }} 
+          GH_NAME: ${{ github.actor }}
