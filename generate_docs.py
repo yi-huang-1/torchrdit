@@ -327,65 +327,87 @@ The examples are organized into several categories:
 ### Basic Usage Examples
 - Basic planar structures
 - Patterned layers
-- Fluent API vs Function-style API
+- Different API styles (fluent, function-based, and standard builder)
 
-### Guided-Mode Resonance Filters (GMRF)
-- Simple GMRFs
-- Hexagonal unit cells
-- Angular sweep
+### Simulation Algorithms
+- RCWA (Rigorous Coupled-Wave Analysis)
+- R-DIT (Rigorous Diffraction Interface Theory) 
 
 ### Material Properties
 - Homogeneous materials
-- Dispersive materials
-- Material fitting
+- Dispersive materials with data loading
+- Material permittivity fitting
 
 ### Advanced Topics
-- Optimization
-- Automatic differentiation
-- Performance comparison
+- Optimization techniques
+- Automatic differentiation and gradient calculation
+- Parameter tuning
 
 ## Example Files Overview
 
 Below is a summary of key example files available in the `examples/` directory:
 
-### Demo-01: Basic Usage
+### Demo-01: Basic Usage and API Styles with RCWA
 
-* **Demo-01a.py**: GMRF with hexagonal unit cells using RCWA
+* **Demo-01a.py**: GMRF with hexagonal unit cells using RCWA (Standard Builder Pattern)
   * Demonstrates basic setup of a guided-mode resonance filter
   * Uses hexagonal unit cells with circular holes
-  * Shows both function and fluent API styles
+  * Shows the standard builder pattern API
+  * Demonstrates back-propagation for gradient calculation
 
-* **Demo-01b.py**: Simpler planar structure examples
-  * Basic multilayer stack simulation
-  * Shows reflection and transmission calculations
+* **Demo-01a-fluent.py**: GMRF with hexagonal unit cells (Fluent Builder Pattern)
+  * Same simulation as Demo-01a but using the fluent API with method chaining
+  * Shows how to configure the solver in a single statement chain
+  * Provides a more concise, readable approach for complex configurations
 
-### Demo-02: Parametric Sweeps
+* **Demo-01a-function.py**: GMRF with hexagonal unit cells (Function-based Builder Pattern)
+  * Demonstrates the function-based approach to solver configuration
+  * Shows how to define reusable configuration functions
+  * Illustrates creating solvers from builder functions
 
-* **Demo-02a.py**: Angle sweep simulation
-  * Shows how to perform parameter sweeps over incident angles
-  * Generates reflection vs angle plots
+* **Demo-01b.py**: Multilayer structure configuration
+  * Shows how to set up and convert from configuration dictionaries
+  * Demonstrates the builder pattern for multilayer devices
+  * Includes explicit configuration dictionary to builder conversion
 
-* **Demo-02b.py**: Wavelength sweep simulation
-  * Demonstrates spectral response calculation
-  * Shows how to analyze resonance features
+* **Demo-01b-fluent.py** and **Demo-01b-function.py**: Alternative API styles
+  * Shows the same multilayer example in both fluent and function-based styles
+  * Provides comparison of different API approaches
+
+### Demo-02: R-DIT Algorithm Examples
+
+* **Demo-02a.py**: GMRF with hexagonal unit cells using R-DIT
+  * Similar to Demo-01a but uses the R-DIT algorithm instead of RCWA
+  * Demonstrates the same geometry but with a different solver approach
+  * Shows how to configure the R-DIT algorithm parameters
+
+* **Demo-02b.py**: R-DIT with fluent API style
+  * Demonstrates the R-DIT algorithm using fluent API style
+  * Shows the same structure as Demo-02a but with a different coding style
+  * Provides a comparison of solver performance with R-DIT
 
 ### Demo-03: Dispersive Materials
 
 * **Demo-03a.py**: GMRF with dispersive materials
-  * Shows how to load and use dispersive material data
-  * Demonstrates permittivity fitting
-  * Uses SiC and SiO2 data files
+  * Shows how to load and use dispersive material data from files
+  * Demonstrates permittivity fitting for realistic material models
+  * Uses SiC and SiO2 data files with frequency-dependent properties
+  * Includes visualization of fitted permittivity
 
 * **Demo-03b.py**: Spectral analysis with dispersive materials
   * Performs wavelength sweep with realistic material models
   * Shows how dispersion affects resonance features
+  * Calculates and visualizes spectra with material dispersion effects
 
-### Demo-04: Performance Benchmark
+### Demo-04: Design Optimization
 
-* **Demo-04.py**: Performance comparison
-  * Compares different algorithm configurations
-  * Provides timing and accuracy benchmarks
-  * Shows scaling with problem size
+* **Demo-04.py**: GMRF parameter optimization
+  * Demonstrates how to set up and perform automatic design optimization
+  * Uses gradient descent to tune the radius of the holes in a GMRF
+  * Shows how to define an objective function for optimization
+  * Shifts the resonance wavelength to a target value (1537 nm)
+  * Includes visualization of optimization results showing the spectral shift
+  * Provides a complete workflow for parameter tuning using automatic differentiation
 
 ## Running the Examples
 
@@ -395,9 +417,73 @@ To run any of the examples, navigate to the repository root and run:
 python examples/Demo-01a.py
 ```
 
-Most examples generate visualization outputs automatically, which are saved to the same directory.
+Most examples generate visualization outputs automatically, which are saved to the same directory. The examples use relative imports, so they must be run from the repository root.
+
+## Required Dependencies
+
+The examples require the following dependencies:
+- PyTorch
+- NumPy
+- Matplotlib
+- tqdm (for progress bars in optimization examples)
+
+Some examples also require the data files included in the `examples` directory:
+- `Si_C-e.txt` - Silicon Carbide permittivity data
+- `SiO2-e.txt` - Silicon Dioxide permittivity data
 
 ## Key Features Demonstrated
+
+### Different API Styles
+
+#### Standard Builder Pattern
+```python
+# Initialize the solver using the builder pattern
+builder = get_solver_builder()
+builder.with_algorithm(Algorithm.RCWA)
+builder.with_precision(Precision.DOUBLE)
+builder.with_real_dimensions([512, 512])
+# ... configure more parameters
+builder.add_material(material_sio)
+builder.add_layer({
+    "material": "SiO",
+    "thickness": h1.item(),
+    "is_homogeneous": False,
+    "is_optimize": True
+})
+# Build the solver
+dev1 = builder.build()
+```
+
+#### Fluent Builder Pattern
+```python
+# Initialize and configure the solver with fluent method chaining
+dev1 = (get_solver_builder()
+        .with_algorithm(Algorithm.RCWA)
+        .with_precision(Precision.DOUBLE)
+        .with_real_dimensions([512, 512])
+        # ... configure more parameters
+        .add_material(material_sio)
+        .add_layer({
+            "material": "SiO",
+            "thickness": h1.item(),
+            "is_homogeneous": False,
+            "is_optimize": True
+        })
+        .build())
+```
+
+#### Function-Based Pattern
+```python
+# Define a builder configuration function
+def configure_gmrf_solver(builder):
+    return (builder
+            .with_algorithm(Algorithm.RCWA)
+            # ... configure more parameters
+            )
+
+# Create the solver using the configuration function
+dev1 = create_solver_from_builder(configure_gmrf_solver)
+```
 
 ### Structure Building
 
@@ -408,15 +494,19 @@ c2 = device.get_circle_mask(center=[0, -b/2], radius=r)
 c3 = device.get_circle_mask(center=[a/2, 0], radius=r)
 c4 = device.get_circle_mask(center=[-a/2, 0], radius=r)
 
+# Combine masks using boolean operations
 mask = device.combine_masks(mask1=c1, mask2=c2, operation='union')
 mask = device.combine_masks(mask1=mask, mask2=c3, operation='union')
 mask = device.combine_masks(mask1=mask, mask2=c4, operation='union')
+
+# Update permittivity with mask
+device.update_er_with_mask(mask=mask, layer_index=0)
 ```
 
 ### Dispersive Materials
 
 ```python
-# Creating materials with dispersion
+# Creating materials with dispersion from data files
 material_sic = create_material(
     name='SiC', 
     dielectric_dispersion=True, 
@@ -424,49 +514,51 @@ material_sic = create_material(
     data_format='freq-eps', 
     data_unit='thz'
 )
+
+# Visualize fitted permittivity
+display_fitted_permittivity(device, fig_ax=axes)
 ```
 
-### Visualization
+### Automatic Differentiation
 
 ```python
-# Visualizing layer patterns
-plot_layer(device, layer_index=0, func='real', fig_ax=axes, cmap='BuGn', 
-           labels=('x (um)','y (um)'), title='layer 0')
+# Enable gradient tracking on the mask
+mask.requires_grad = True
 
-# Visualizing fitted permittivity for dispersive materials
-display_fitted_permittivity(device, fig_ax=axes)
+# Solve and calculate efficiencies
+data = device.solve(src)
+
+# Compute backward pass for optimization
+torch.sum(data['TRN'][0]).backward()
+
+# Access gradients
+print(f"The gradient with respect to the mask is {torch.mean(mask.grad)}")
 ```
 
 ### Optimization
 
 ```python
-# Enable gradient calculation for optimization
-mask.requires_grad = True
+# Define an objective function
+def objective_GMRF(dev, src, radius):
+    # ... calculation logic
+    return loss
 
-# Run simulation
-data = device.solve(source)
-
-# Backpropagation
-torch.sum(data['TRN'][0]).backward()
-
-# Update design based on gradients
-# ...
+# Optimization loop
+for epoch in trange(num_epochs):
+    # Zero gradients
+    optimizer.zero_grad()
+    
+    # Forward pass
+    loss = objective_GMRF(dev, src, radius)
+    
+    # Backward pass
+    loss.backward()
+    
+    # Update parameters
+    optimizer.step()
 ```
 
-## Example Results
-
-Many examples produce visualizations of the simulated structures and their optical responses. Here are some examples of what you might see:
-
-- Layer permittivity patterns
-- Reflection and transmission spectra
-- Field distributions
-- Fitted material dispersion curves
-
-To see these examples in action, refer to the images in the `examples/` directory, such as:
-- `Demo-01a_layer_0.png`
-- `Demo-03a_fitted_dispersive.png`
-- `Demo-03b_spectrum.png`
-""")
+These examples demonstrate the key capabilities of TorchRDIT, including differentiable simulation, optimization, and support for complex geometries and materials.""")
         print("  -> Created Examples.md")
 
 def create_readme(docs_dir):
