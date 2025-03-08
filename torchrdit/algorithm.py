@@ -4,23 +4,65 @@ from .solver import tsolve
 from .utils import EigComplex, to_diag_util
 import math
 class SolverAlgorithm(ABC):
-    """Abstract base class defining the interface for solver algorithms."""
+    """Abstract base class defining the interface for electromagnetic solver algorithms.
+    
+    This class defines the common interface that all solver algorithm implementations
+    must adhere to. It follows the Strategy pattern, allowing different algorithms
+    (RCWA and R-DIT) to be used interchangeably with the same solver interface.
+    
+    Concrete implementations of this abstract class must implement the required
+    methods for solving electromagnetic problems, particularly for handling
+    non-homogeneous layers which is where the algorithms differ most significantly.
+    """
     
     @abstractmethod
     def solve_nonhomo_layer(self, layer_index, p_mat, q_mat, w0_mat, v0_mat):
-        """Solve equations for non-homogeneous layer."""
+        """Solve equations for non-homogeneous layer.
+        
+        This abstract method defines the interface for solving the electromagnetic
+        field equations within a non-homogeneous layer. Different algorithm
+        implementations (RCWA, R-DIT) will provide different approaches for
+        this calculation.
+        
+        Args:
+            layer_index: Index of the layer to solve
+            p_mat: P matrix for the layer
+            q_mat: Q matrix for the layer
+            w0_mat: W0 matrix
+            v0_mat: V0 matrix
+            
+        Returns:
+            Results of the non-homogeneous layer calculation, typically a
+            scattering matrix for the layer.
+        """
         pass
     
     @property
     @abstractmethod
     def name(self):
-        """Return the name of the algorithm."""
+        """Return the name of the algorithm.
+        
+        This property provides a human-readable identifier for the algorithm.
+        
+        Returns:
+            str: The name of the algorithm (e.g., 'RCWA', 'R-DIT')
+        """
         pass
 
 
 
 class RCWAAlgorithm(SolverAlgorithm):
-    """Rigorous Coupled Wave Analysis algorithm implementation."""
+    """Rigorous Coupled Wave Analysis (RCWA) algorithm implementation.
+    
+    This class implements the traditional RCWA method, which solves Maxwell's
+    equations in the frequency domain by expanding the electromagnetic fields
+    and material properties in Fourier series and matching boundary conditions
+    at layer interfaces.
+    
+    While the TorchRDIT package primarily emphasizes the eigendecomposition-free
+    R-DIT method for improved performance, this RCWA implementation is provided
+    for comparison and for cases where RCWA may be preferred.
+    """
     
     def __init__(self, solver):
         self.solver = solver
@@ -31,7 +73,25 @@ class RCWAAlgorithm(SolverAlgorithm):
         return "RCWA"
     
     def solve_nonhomo_layer(self, layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, kdim, k_0, **kwargs):
-        """RCWA implementation for solving non-homogeneous layer."""
+        """RCWA implementation for solving non-homogeneous layer.
+        
+        This method implements the traditional approach for calculating the scattering
+        matrix of a non-homogeneous layer using eigenmode decomposition in the
+        Rigorous Coupled Wave Analysis (RCWA) algorithm.
+        
+        Args:
+            layer_thickness: Thickness of the layer
+            p_mat_i: P matrix for the layer
+            q_mat_i: Q matrix for the layer
+            mat_w0: W0 matrix
+            mat_v0: V0 matrix
+            kdim: Dimensions in k-space [kheight, kwidth]
+            k_0: Wave number
+            **kwargs: Additional parameters
+            
+        Returns:
+            Dictionary containing the scattering matrix for the layer
+        """
         # Implementation from RCWASolver._solve_nonhomo_layer
         # ...
         # Compute Eigen Modes
@@ -61,12 +121,26 @@ class RCWAAlgorithm(SolverAlgorithm):
         return smat_layer
     
     def set_rdit_order(self, rdit_order):
-        """Set RDIT order for compatibility."""
+        """Set R-DIT order for compatibility with RDITAlgorithm.
+        
+        This method is provided for API compatibility with the R-DIT algorithm,
+        allowing for easy switching between algorithms.
+        
+        Args:
+            rdit_order: The order of the R-DIT algorithm. This parameter has
+                       minimal effect in the RCWA implementation.
+        """
         self._rdit_order = rdit_order
 
 
 class RDITAlgorithm(SolverAlgorithm):
-    """Recursive Differential implementation of T-Matrix algorithm."""
+    """Rigorous Diffraction Interface Theory (R-DIT) algorithm implementation.
+    
+    This class implements the eigendecomposition-free R-DIT algorithm, which offers
+    improved numerical stability and computational efficiency compared to the
+    traditional RCWA approach. The R-DIT method achieves up to 16.2× speedup
+    in inverse design applications.
+    """
     
     def __init__(self, solver):
         self.solver = solver
@@ -74,10 +148,33 @@ class RDITAlgorithm(SolverAlgorithm):
     
     @property
     def name(self):
-        return "RDIT"
+        """Return the name of the algorithm.
+        
+        Returns:
+            str: The name of the algorithm ('R-DIT')
+        """
+        return "R-DIT"
     
     def solve_nonhomo_layer(self, layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, kdim, k_0, **kwargs):
-        """RDIT implementation for solving non-homogeneous layer."""
+        """R-DIT implementation for solving non-homogeneous layer.
+        
+        This method implements the eigendecomposition-free approach for calculating
+        the scattering matrix of a non-homogeneous layer using the Rigorous Diffraction
+        Interface Theory algorithm.
+        
+        Args:
+            layer_thickness: Thickness of the layer
+            p_mat_i: P matrix for the layer
+            q_mat_i: Q matrix for the layer
+            mat_w0: W0 matrix
+            mat_v0: V0 matrix
+            kdim: Dimensions in k-space [kheight, kwidth]
+            k_0: Wave number
+            **kwargs: Additional parameters
+            
+        Returns:
+            Dictionary containing the scattering matrix for the layer
+        """
         # Implementation from RDITSolver._solve_nonhomo_layer
         # ...
         n_harmonics = kdim[0] * kdim[1]
@@ -130,5 +227,15 @@ class RDITAlgorithm(SolverAlgorithm):
         return smat_layer
     
     def set_rdit_order(self, rdit_order):
-        """Set RDIT order."""
+        """Set the order of the R-DIT algorithm.
+        
+        The R-DIT order determines the approximation used in the diffraction
+        interface theory. Higher orders generally provide better accuracy but
+        may be computationally more expensive.
+        
+        Args:
+            rdit_order: The order of the algorithm (typically 1-10). Higher values
+                       provide more accurate results at the cost of computational
+                       efficiency.
+        """
         self._rdit_order = rdit_order

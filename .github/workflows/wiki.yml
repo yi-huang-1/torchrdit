@@ -1,7 +1,7 @@
 name: Deploy to Wiki
 on:
   push:
-    branches: [release/0.1.12]
+    branches: [main]
 permissions:
   contents: write
 jobs:
@@ -32,6 +32,5 @@ jobs:
         uses: Andrew-Chen-Wang/github-wiki-action@v4
         env:
           WIKI_DIR: wiki/
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_MAIL: ${{ github.actor }}@users.noreply.github.com
           GH_NAME: ${{ github.actor }}

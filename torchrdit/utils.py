@@ -12,15 +12,37 @@ from .materials import MaterialClass
 FuncType = Callable[..., Any]
 
 def tensor_params_check(func: Optional[FuncType] = None, check_start_index: int = 1, check_stop_index:int = 1) -> FuncType:
-    """tensor_params_check. This function is used for checking input parameters.
-
+    """Decorator for validating that function parameters are PyTorch tensors.
+    
+    This decorator checks that the specified positional and keyword arguments of
+    the decorated function are PyTorch tensor objects. If any of the checked parameters
+    are not tensors, a TypeError is raised.
+    
+    This is particularly useful for functions that perform tensor operations and 
+    require tensor inputs, ensuring type safety at runtime.
+    
     Args:
-        func (Optional[FuncType]): func, fucntions to be checked.
-        check_start_index (int): check_start_index, index of the first parameter to be checked.
-        check_stop_index (int): check_stop_index, index of the last parameter to be checked.
-
+        func: The function to be decorated. If None, returns a partial 
+              function that can be used as a decorator with parameters.
+        check_start_index: Index of the first parameter to check. Default is 1,
+                         which skips the first parameter (typically 'self' in methods).
+        check_stop_index: Index of the last parameter to check. Default is 1,
+                       meaning only the parameter at check_start_index is checked.
+    
     Returns:
-        FuncType:
+        The decorated function if func is provided, otherwise a partial function
+        that will decorate the function when applied.
+    
+    Raises:
+        TypeError: If any of the checked parameters are not PyTorch tensors.
+        
+    Example:
+        ```python
+        @tensor_params_check(check_start_index=1, check_stop_index=3)
+        def add_tensors(self, a, b, c, d=None):
+            # This will check that parameters a, b, and c are tensors
+            return a + b + c
+        ```
     """
 
     if func is None:
@@ -52,14 +74,48 @@ def tensor_params_check(func: Optional[FuncType] = None, check_start_index: int 
     return tensor_warpper
 
 class EigComplex(torch.autograd.Function):
-    """EigComplex.
-    This class are used for differentiable eigen-decomposition.
-    Reference: https://doi.org/10.1038/s42005-021-00568-6
+    """Differentiable complex eigendecomposition for PyTorch.
+    
+    This class implements a custom autograd function that enables differentiable
+    eigendecomposition of complex matrices in PyTorch. It provides the forward
+    computation and the corresponding backward gradients required for automatic
+    differentiation in optimization tasks.
+    
+    The implementation is based on the analytical gradient formulation described in:
+    https://doi.org/10.1038/s42005-021-00568-6
+    
+    This is particularly important for the R-DIT algorithm which replaces traditional
+    eigendecomposition with other numerical approaches for improved efficiency.
+    
+    Example:
+        ```python
+        # Apply differentiable eigendecomposition to a complex matrix
+        eigen_values, eigen_vectors = EigComplex.apply(complex_matrix)
+        
+        # Use the results in a differentiable computation
+        result = torch.matmul(eigen_vectors, torch.diag(eigen_values))
+        
+        # Backward pass will compute gradients through the eigendecomposition
+        loss = compute_loss(result)
+        loss.backward()
+        ```
     """
-
 
     @staticmethod
     def forward(ctx, input_matrix, eps=1E-6):
+        """Forward pass computing eigenvalues and eigenvectors.
+        
+        Computes the eigendecomposition of the input complex matrix and saves
+        the necessary tensors for the backward pass.
+        
+        Args:
+            ctx: Context object for saving tensors for the backward pass
+            input_matrix: Complex matrix to decompose
+            eps: Small value for numerical stability (default: 1E-6)
+            
+        Returns:
+            tuple: (eigenvalues, eigenvectors) of the input matrix
+        """
         # Perform the eigendecomposition
         eigenvalues, eigenvectors = torch.linalg.eig(input_matrix)
         shape = torch.tensor(input_matrix.shape)
@@ -71,6 +127,20 @@ class EigComplex(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_matrix_d, grad_matrix_u):
+        """Backward pass computing gradients for eigendecomposition.
+        
+        Computes the gradients of the loss with respect to the input matrix
+        based on the gradients of the loss with respect to the eigenvalues
+        and eigenvectors.
+        
+        Args:
+            ctx: Context object containing saved tensors from the forward pass
+            grad_matrix_d: Gradient of the loss with respect to eigenvalues
+            grad_matrix_u: Gradient of the loss with respect to eigenvectors
+            
+        Returns:
+            Gradient of the loss with respect to the input matrix and None for eps
+        """
         # matrix_d -> eigenvalues, matrix_u -> eigenvectors
         matrix_d, matrix_u, shape, eps = ctx.saved_tensors
         device = matrix_d.device
@@ -113,18 +183,63 @@ def create_material(
     data_unit: str = 'thz',  # unit of frequency or wavelength
     max_poly_fit_order: int = 10,  # max polynomial fit order
 ):
-    """create_material.
-    This function returns material objects for solver.
-
+    """Create a material object for use in electromagnetic simulations.
+    
+    This function creates and returns a MaterialClass instance that can be used
+    in TorchRDIT simulations. Materials can be defined with either constant
+    properties (non-dispersive) or wavelength-dependent properties (dispersive).
+    
+    For non-dispersive materials, simple constant values for permittivity and
+    permeability are sufficient. For dispersive materials, data can be loaded
+    from a file containing wavelength or frequency-dependent properties.
+    
     Args:
-        name (str): name of the material.
-        permittivity (float): permittivity of the material (if non-dispersive)
-        permeability (float): permeability of the material (if non-dispersive)
-        dielectric_dispersion (bool): dielectric_dispersion (true if meterial is dispersive)
-        user_dielectric_file (str): user_dielectric_file (valid for dispersive material)
-        data_format (str): data_format ['freq-eps', 'wl-eps', 'freq-nk', 'wl-nk']
-        data_unit (str): data_unit, unit of the frequency of wavelength
-        max_poly_fit_order (int): max_poly_fit_order, max polynomial fitting order
+        name: Unique identifier for the material. This name is used when 
+              referencing the material in other functions.
+              Default is 'material1'.
+        permittivity: Relative permittivity (εᵣ) of the material for non-dispersive
+                    materials. Default is 1.0 (vacuum).
+        permeability: Relative permeability (μᵣ) of the material for non-dispersive
+                    materials. Default is 1.0 (vacuum).
+        dielectric_dispersion: Whether the material has frequency-dependent
+                             permittivity. If True, data must be provided through
+                             user_dielectric_file. Default is False.
+        user_dielectric_file: Path to a file containing the dispersive material data.
+                            Required if dielectric_dispersion is True.
+                            Default is None.
+        data_format: Format of the data in the dispersive material file.
+                   Options are:
+                   - 'freq-eps': Frequency and complex permittivity
+                   - 'wl-eps': Wavelength and complex permittivity
+                   - 'freq-nk': Frequency and complex refractive index
+                   - 'wl-nk': Wavelength and complex refractive index
+                   Default is 'freq-eps'.
+        data_unit: Unit of frequency or wavelength in the dispersive material file.
+                 Common values include 'thz', 'ghz', 'mhz', 'um', 'nm'.
+                 Default is 'thz'.
+        max_poly_fit_order: Maximum order of polynomial fitting for dispersive
+                          materials. Higher values can capture more complex
+                          dispersive behavior but may lead to overfitting.
+                          Default is 10.
+    
+    Returns:
+        MaterialClass: A material object that can be used in TorchRDIT simulations.
+    
+    Example:
+        ```python
+        # Create simple materials with constant properties
+        air = create_material(name='air', permittivity=1.0)
+        silicon = create_material(name='silicon', permittivity=11.7)
+        
+        # Create a dispersive material from data file
+        gold = create_material(
+            name='gold',
+            dielectric_dispersion=True,
+            user_dielectric_file='gold_data.txt',
+            data_format='wl-nk',
+            data_unit='um'
+        )
+        ```
     """
     return MaterialClass(name=name,
                      permittivity=permittivity,
@@ -137,26 +252,81 @@ def create_material(
 
 
 def blockmat2x2(mlist: list):
-    """Concatnates block matrices from the given 2 x 2 list.
-
+    """Create a block matrix from a 2×2 list of sub-matrices.
+    
+    This function concatenates four matrices into a single block matrix in a 2×2 pattern:
+    
+    ```
+    [ mlist[0][0]  mlist[0][1] ]
+    [ mlist[1][0]  mlist[1][1] ]
+    ```
+    
+    This is commonly used in electromagnetic simulations to construct matrices
+    that have a natural 2×2 block structure, such as scattering matrices that
+    relate forward and backward propagating waves.
+    
     Args:
-        mlist (list): list with tensors.
-
-        X = [xa, xb;
-            xc,  xd]
+        mlist: A 2×2 list containing the four sub-matrices to concatenate.
+               All matrices must be compatible for concatenation, meaning
+               mlist[0][0] and mlist[0][1] must have the same number of rows,
+               mlist[1][0] and mlist[1][1] must have the same number of rows,
+               mlist[0][0] and mlist[1][0] must have the same number of columns,
+               and mlist[0][1] and mlist[1][1] must have the same number of columns.
+    
+    Returns:
+        torch.Tensor: The concatenated block matrix.
+        
+    Example:
+        ```python
+        # Create four 2×2 matrices
+        A = torch.tensor([[1, 2], [3, 4]])
+        B = torch.tensor([[5, 6], [7, 8]])
+        C = torch.tensor([[9, 10], [11, 12]])
+        D = torch.tensor([[13, 14], [15, 16]])
+        
+        # Combine them into a block matrix
+        block_matrix = blockmat2x2([[A, B], [C, D]])
+        
+        # Result is a 4×4 matrix:
+        # [[1, 2, 5, 6],
+        #  [3, 4, 7, 8],
+        #  [9, 10, 13, 14],
+        #  [11, 12, 15, 16]]
+        ```
     """
     return torch.cat((torch.cat((mlist[0][0], mlist[0][1]), -1),
                       torch.cat((mlist[1][0], mlist[1][1]), -1)),
                      -2)
 
-def init_smatrix(shape: Tuple, dtype: torch.dtype , device : Union[str, torch.device] ='cpu'):
-    """init_smatrix.
-    This function initializes and returns a scattering matrix
-
+def init_smatrix(shape: Tuple, dtype: torch.dtype, device: Union[str, torch.device] = 'cpu'):
+    """Initialize a scattering matrix with identity transmission and zero reflection.
+    
+    This function creates a dictionary representing an S-matrix for a layer or structure
+    with perfect transmission (identity matrices for S12 and S21) and zero reflection
+    (zero matrices for S11 and S22). This corresponds to an initial state with no
+    reflections at the interfaces.
+    
+    In electromagnetic simulations, S-matrices relate incoming and outgoing waves:
+    [b1] = [S11 S12] [a1]
+    [b2]   [S21 S22] [a2]
+    
+    where a1, a2 are incoming waves and b1, b2 are outgoing waves.
+    
     Args:
-        shape (Tuple): shape
-        dtype (torch.dtype): dtype
-        device (Union[str, torch.device]): device
+        shape: Tuple specifying the dimensions of the S-matrix components.
+              For batch processing, this is typically (batch_size, n_harmonics, n_harmonics).
+        dtype: PyTorch data type for the matrices (typically torch.complex64 or torch.complex128).
+        device: Device to create the tensors on ('cpu' or 'cuda').
+               Default is 'cpu'.
+    
+    Returns:
+        dict: S-matrix dictionary with keys 'S11', 'S12', 'S21', 'S22' mapping to the
+             corresponding blocks of the scattering matrix.
+    
+    Note:
+        The default initialization represents a non-reflecting layer, where incoming
+        waves pass through without reflection (S11=S22=0) and without modification
+        (S12=S21=I, where I is the identity matrix).
     """
     smatrix = {}
     if len(shape) == 3:
@@ -182,16 +352,35 @@ def init_smatrix(shape: Tuple, dtype: torch.dtype , device : Union[str, torch.de
 
 
 def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64) -> dict:
-    """redhstar.
-    This fucntion returns the Redheffer star product of two s-matrices.
-
+    """Compute the Redheffer star product of two scattering matrices.
+    
+    The Redheffer star product (⋆) combines the scattering matrices of two adjacent
+    layers or structures to produce the scattering matrix of the combined system.
+    This is a fundamental operation in the transfer matrix method for solving
+    multilayer electromagnetic problems.
+    
+    For two S-matrices A and B, the Redheffer star product C = A ⋆ B is given by:
+    - C11 = A11 + A12 B11 (I - A22 B11)^(-1) A21
+    - C12 = A12 (I - B11 A22)^(-1) B12
+    - C21 = B21 (I - A22 B11)^(-1) A21
+    - C22 = B22 + B21 A22 (I - B11 A22)^(-1) B12
+    
     Args:
-        smat_a (dict): smat_a
-        smat_b (dict): smat_b
-        tcomplex (torch.dtype): tcomplex
-
+        smat_a: First scattering matrix (dictionary with keys 'S11', 'S12', 'S21', 'S22')
+               This represents the layer or structure closer to the reference medium.
+        smat_b: Second scattering matrix (dictionary with keys 'S11', 'S12', 'S21', 'S22')
+               This represents the layer or structure closer to the transmission medium.
+        tcomplex: PyTorch complex data type to use for intermediate calculations.
+                Default is torch.complex64.
+    
     Returns:
-        dict:
+        dict: Combined scattering matrix as a dictionary with keys 'S11', 'S12', 'S21', 'S22'
+             representing the four blocks of the scattering matrix of the combined system.
+    
+    Note:
+        The function assumes that the S-matrices are properly formatted and have compatible
+        dimensions for matrix operations. For batch processing, both S-matrices should
+        have the same batch dimensions.
     """
 
     # Input dimensions (n_batches, n_freqs, n_harmonics, n_harmonics)
@@ -221,12 +410,23 @@ def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64
     return smatrix
 
 def _create_blur_kernel(radius: int, device: torch.device = torch.device('cpu'), tfloat: torch.dtype = torch.float32):
-    """_create_blur_kernel.
-    Helper function used below for creating the conv kernel.
+    """Create a circular blur kernel for convolution operations.
+    
+    This internal helper function creates a normalized circular kernel with the specified
+    radius that can be used for blurring operations via convolution. The kernel has
+    uniform weights (all pixels within the disk have the same value) and is normalized
+    so that the sum of all weights equals 1.
+    
     Args:
-        radius (int): radius
-        device (torch.device): device
-        tfloat (torch.dtype): tfloat
+        radius: Radius of the circular kernel in pixels. The resulting kernel
+               will have dimensions (2*radius+1) × (2*radius+1).
+        device: PyTorch device to create the kernel on ('cpu' or 'cuda').
+               Default is 'cpu'.
+        tfloat: PyTorch floating-point data type for the kernel.
+               Default is torch.float32.
+    
+    Returns:
+        torch.Tensor: Normalized circular convolution kernel.
     """
     row_ind, col_ind = skdraw.disk(center=(radius, radius), radius=radius+1)
     kernel = torch.zeros(size=(2*radius+1, 2*radius+1),
@@ -240,17 +440,32 @@ def operator_blur(rho: torch.Tensor,
                   num_blur: int = 1,
                   device: torch.device = torch.device('cpu'),
                   tfloat: torch.dtype = torch.float32) -> torch.Tensor:
-    """operator_blur.
-    Blur operator implemented via two-dimensional convolution
+    """Apply a blur filter to a tensor using 2D convolution.
+    
+    This function applies a circular blur filter to the input tensor using
+    2D convolution. The blur can be applied multiple times in sequence to
+    achieve stronger blurring effects. This is commonly used in topology
+    optimization to enforce minimum feature sizes and improve manufacturability.
+    
     Args:
-        rho (torch.Tensor): rho
-        radius (int): radius
-        num_blur (int): num_blur
-        device (torch.device): device
-        tfloat (torch.dtype): tfloat
-
+        rho: Input tensor to be blurred. Should be a 2D tensor of shape [height, width]
+            or a batch of 2D tensors of shape [batch_size, height, width].
+        radius: Radius of the circular blur kernel in pixels. Larger values
+               create stronger blurring effects. Default is 2.
+        num_blur: Number of times to apply the blur operation sequentially.
+                Higher values create stronger blurring. Default is 1.
+        device: PyTorch device to perform the operation on ('cpu' or 'cuda').
+               Default is 'cpu'.
+        tfloat: PyTorch floating-point data type for the operation.
+               Default is torch.float32.
+    
     Returns:
-        torch.Tensor:
+        torch.Tensor: Blurred tensor with the same shape as the input.
+        
+    Note:
+        This function is often used in conjunction with projection operations
+        in topology optimization to enforce minimum feature sizes and improve
+        the manufacturability of optimized designs.
     """
 
     in_ch = rho.shape[1]
@@ -267,17 +482,37 @@ def operator_blur(rho: torch.Tensor,
     return rho
 
 def operator_proj(rho: torch.Tensor, eta: float = 0.5, beta: int = 100, num_proj: int = 1) -> torch.Tensor:
-    """operator_proj.
-    This function makes the density projection.
-
+    """Apply a projection filter to a tensor for binary optimization.
+    
+    This function applies a sigmoid-based projection to push values in the input tensor
+    toward either 0 or 1, which is useful in topology optimization to enforce binary
+    designs. The projection is controlled by two parameters:
+    
+    - eta: The threshold value (values above eta tend toward 1, below toward 0)
+    - beta: The projection strength (higher values create sharper transitions)
+    
+    The projection can be applied multiple times to strengthen the effect.
+    
+    The projection function is defined as:
+    ρ̂ = (tanh(β·η) + tanh(β·(ρ-η))) / (tanh(β·η) + tanh(β·(1-η)))
+    
     Args:
-        rho (torch.Tensor): rho
-        eta (float): eta, the center of the projection between 0 and 1.
-        beta (int): beta, strength of the projection.
-        num_proj (int): num_proj, number of projections to be applied.
-
+        rho: Input tensor with values ideally between 0 and 1.
+        eta: Threshold value for the projection. Values above eta tend toward 1,
+            while values below eta tend toward 0. Default is 0.5.
+        beta: Projection strength parameter. Higher values create sharper
+             transitions between 0 and 1. Default is 100.
+        num_proj: Number of times to apply the projection sequentially.
+                Higher values create more binary results. Default is 1.
+    
     Returns:
-        torch.Tensor:
+        torch.Tensor: Projected tensor with the same shape as the input, with
+                   values pushed toward 0 or 1.
+    
+    Note:
+        This function is commonly used in topology optimization to enforce binary
+        designs (e.g., material/no material) while maintaining differentiability
+        for gradient-based optimization.
     """
     eta = torch.tensor(eta)
     beta = torch.tensor(beta)
@@ -297,18 +532,46 @@ def blur_filter(rho: torch.Tensor,
                 num_proj: int = 1,
                 device: torch.device = torch.device('cpu'),
                 tfloat: torch.dtype = torch.float32):
-    """blur_filter.
-    This function makes the blur filtering and projections.
-
+    """Apply combined blur and projection filtering for topology optimization.
+    
+    This function combines blurring and projection operations commonly used in
+    topology optimization to enforce minimum feature sizes and binary designs.
+    It first applies a blur filter to smooth the input, then applies a projection
+    filter to push values toward 0 or 1.
+    
+    The combined effect helps to:
+    1. Enforce minimum feature sizes through blurring
+    2. Create binary designs through projection
+    3. Maintain differentiability for gradient-based optimization
+    
+    This is particularly useful in the inverse design of photonic structures
+    where both manufacturability constraints and binary material distributions
+    are important.
+    
     Args:
-        rho (torch.Tensor): rho
-        radius (int): radius
-        num_blur (int): num_blur
-        beta (int): beta, strength of the projection.
-        eta (float): eta, the center of the projection between 0 and 1.
-        num_proj (int): num_proj, number of projections to be applied.
-        device (torch.device): device
-        tfloat (torch.dtype): tfloat
+        rho: Input tensor with values ideally between 0 and 1.
+        radius: Radius of the circular blur kernel in pixels.
+               Larger values create stronger blurring. Default is 2.
+        num_blur: Number of times to apply the blur operation.
+                Higher values create stronger blurring. Default is 1.
+        beta: Projection strength parameter. Higher values create sharper
+             transitions between 0 and 1. Default is 100.
+        eta: Threshold value for the projection. Values above eta tend toward 1,
+            while values below eta tend toward 0. Default is 0.5.
+        num_proj: Number of times to apply the projection.
+                Higher values create more binary results. Default is 1.
+        device: PyTorch device to perform the operations on ('cpu' or 'cuda').
+               Default is 'cpu'.
+        tfloat: PyTorch floating-point data type for the operations.
+               Default is torch.float32.
+    
+    Returns:
+        torch.Tensor: Filtered tensor with the same shape as the input.
+    
+    Note:
+        This function is a convenience wrapper that combines the operator_blur
+        and operator_proj functions into a single operation commonly used in
+        topology optimization workflows.
     """
 
     rho = operator_blur(rho, radius=radius, num_blur=num_blur, device=device, tfloat=tfloat)
@@ -317,14 +580,33 @@ def blur_filter(rho: torch.Tensor,
     return rho
 
 def to_diag_util(input_mat: torch.Tensor, kdim: List[int]) -> torch.Tensor:
-    """Convert a vector to a diagonal matrix.
+    """Convert a vector to a diagonal matrix for electromagnetic calculations.
+    
+    This utility function creates a diagonal matrix from a vector, which is a common
+    operation in electromagnetic simulations when converting material properties or
+    field components to matrix form for calculations.
+    
+    The function handles both regular harmonics (n_harmonics) and cases where the
+    input represents both polarizations (2*n_harmonics), automatically determining
+    the appropriate size based on the input dimensions.
     
     Args:
-        input_mat (torch.Tensor): Input matrix/vector to be converted to diagonal
-        kdim (List[int]): Dimensions in k space [kH, kW]
+        input_mat: Input tensor to be converted to a diagonal matrix. This is typically
+                 a vector of length n_harmonics or 2*n_harmonics, where n_harmonics
+                 is the product of the k-space dimensions.
+        kdim: Dimensions in Fourier space as [kheight, kwidth]. These determine
+             the number of harmonics used in the calculation.
     
     Returns:
-        torch.Tensor: Diagonal matrix representation
+        torch.Tensor: Diagonal matrix with the input values along the diagonal.
+                   If input_mat has shape [..., n_harmonics], the output will have
+                   shape [..., n_harmonics, n_harmonics]. If input_mat has shape
+                   [..., 2*n_harmonics], the output will have shape
+                   [..., 2*n_harmonics, 2*n_harmonics].
+    
+    Note:
+        This function is used extensively in the RCWA and R-DIT algorithms when
+        constructing matrices for eigenvalue problems and field calculations.
     """
     n_harmonics = kdim[0] * kdim[1]
     if input_mat.shape[-1] == n_harmonics:

@@ -1,4 +1,47 @@
-""" This file defines all operations related to solver computations."""
+"""
+TorchRDIT solver module for electromagnetic simulations and inverse design.
+
+This module provides core solver implementations for electromagnetic wave propagation 
+through complex layered structures using both Rigorous Coupled-Wave Analysis (RCWA) and 
+eigendecomposition-free Rigorous Diffraction Interface Theory (R-DIT) methods.
+
+TorchRDIT is an advanced software package designed for the inverse design of meta-optics 
+devices. It provides a GPU-accelerated and fully differentiable framework powered by 
+PyTorch, enabling efficient optimization of photonic structures. The R-DIT implementation 
+achieves up to 16.2× speedup compared to traditional RCWA-based inverse design methods.
+
+The solvers handle:
+- Multiple wavelength simulations
+- Arbitrary incident angles
+- Heterogeneous material layers
+- Computation of reflection/transmission coefficients
+- Field calculations
+- Efficiency calculations
+- Automatic differentiation for gradient-based optimization
+
+Key applications include:
+- Parameter-constrained and free-form meta-atoms
+- Reconfigurable photonic structures using optical phase-change materials
+- High-performance meta-lenses and beam deflectors
+
+Key classes:
+- FourierBaseSolver: Base class implementing common Fourier-based calculations
+- RCWASolver: Implementation of the RCWA algorithm
+- RDITSolver: Eigendecomposition-free implementation of the R-DIT algorithm
+- SolverObserver: Interface for tracking solver progress
+- SolverSubjectMixin: Enables solvers to notify observers
+
+Helper functions:
+- create_solver: Factory function to create solver instances
+- create_solver_from_config: Creates solver from configuration dictionary or file
+- create_solver_from_builder: Creates solver using the builder pattern
+
+References:
+- Huang et al., "Eigendecomposition-free inverse design of meta-optics devices," 
+  Opt. Express 32, 13986-13997 (2024)
+- Huang et al., "Inverse Design of Photonic Structures Using Automatic Differentiable 
+  Rigorous Diffraction Interface Theory," CLEO (2023)
+"""
 from typing import Union, Optional, Dict, List, Any, Callable
 import numpy as np
 import torch
@@ -14,29 +57,91 @@ from .algorithm import RCWAAlgorithm, RDITAlgorithm, SolverAlgorithm
 import time
 
 class SolverObserver:
-    """Interface for observers that track solver progress."""
+    """Interface for observers that track solver progress.
+    
+    This class defines the Observer interface in the Observer design pattern
+    for monitoring the progress and state of solvers. Concrete observer
+    implementations should inherit from this class and implement the update
+    method to receive and process notifications from solvers.
+    
+    Typical event types include:
+    - 'iteration_complete': Triggered after each iteration in iterative methods
+    - 'layer_processed': Triggered when a layer has been processed
+    - 'solve_started': Triggered when the solve process begins
+    - 'solve_completed': Triggered when the solve process completes
+    
+    Example:
+        ```python
+        class ProgressObserver(SolverObserver):
+            def update(self, event_type: str, data: dict) -> None:
+                if event_type == 'iteration_complete':
+                    print(f"Completed iteration {data['iteration']} with error {data['error']}")
+        
+        solver = RCWASolver(...)
+        solver.add_observer(ProgressObserver())
+        ```
+    """
     
     def update(self, event_type: str, data: dict) -> None:
         """Called when the solver notifies of an event.
         
+        This method is called by the solver when an event occurs. Concrete
+        observer implementations should override this method to process
+        notifications from the solver.
+        
         Args:
-            event_type: The type of event that occurred
-            data: Additional data related to the event
+            event_type: The type of event that occurred (e.g., 'iteration_complete',
+                        'layer_processed', 'solve_started', 'solve_completed')
+            data: Additional data related to the event. The exact contents depend
+                  on the event_type, but typically include relevant information
+                  about the solver's state at the time of the event.
         """
         pass
         
 class SolverSubjectMixin:
-    """Mixin class that allows a solver to notify observers of progress."""
+    """Mixin class that allows a solver to notify observers of progress.
+    
+    This class implements the Subject role in the Observer design pattern.
+    It maintains a list of observers and provides methods to add, remove,
+    and notify observers of events. Classes that inherit from this mixin
+    can easily support observer notifications without reimplementing the
+    observer management logic.
+    
+    The mixin handles:
+    - Maintaining a list of registered observers
+    - Adding and removing observers
+    - Notifying all observers when events occur
+    
+    Example:
+        ```python
+        class MySolver(BaseSolver, SolverSubjectMixin):
+            def __init__(self):
+                BaseSolver.__init__(self)
+                SolverSubjectMixin.__init__(self)
+                
+            def solve(self):
+                self.notify_observers('solve_started', {'timestamp': time.time()})
+                # Solve logic here
+                self.notify_observers('solve_completed', {'result': result})
+        ```
+    """
     
     def __init__(self):
-        """Initialize the observer list."""
+        """Initialize the observer list.
+        
+        Creates an empty list to store observer objects. This method should be
+        called in the constructor of any class that inherits from this mixin.
+        """
         self._observers = []
         
     def add_observer(self, observer: SolverObserver) -> None:
         """Add an observer to the notification list.
         
+        Registers an observer to receive notifications when events occur.
+        If the observer is already registered, it will not be added again.
+        
         Args:
-            observer: The observer to add
+            observer: The observer object to add. Must implement the SolverObserver interface.
         """
         if observer not in self._observers:
             self._observers.append(observer)
@@ -44,8 +149,11 @@ class SolverSubjectMixin:
     def remove_observer(self, observer: SolverObserver) -> None:
         """Remove an observer from the notification list.
         
+        Unregisters an observer so it no longer receives notifications.
+        If the observer is not in the list, no action is taken.
+        
         Args:
-            observer: The observer to remove
+            observer: The observer object to remove.
         """
         if observer in self._observers:
             self._observers.remove(observer)
@@ -53,9 +161,33 @@ class SolverSubjectMixin:
     def notify_observers(self, event_type: str, data: dict = None) -> None:
         """Notify all observers of an event.
         
+        This method calls the update method on all registered observers,
+        passing the event type and data to each observer. This is the main
+        mechanism for broadcasting events to all observers.
+        
+        Common event types include:
+        - 'solve_started': Triggered when solving begins
+        - 'solve_completed': Triggered when solving completes
+        - 'iteration_complete': Triggered after each iteration
+        - 'layer_processed': Triggered when a layer has been processed
+        
         Args:
-            event_type: The type of event that occurred
-            data: Additional data related to the event (default: None)
+            event_type: The type of event that occurred. This is a string that
+                        identifies the type of event, allowing observers to handle
+                        different events differently.
+            data: Additional data related to the event (default: None). This is a
+                  dictionary that contains event-specific information that might be
+                  useful to observers, such as iteration counts, error values, or
+                  timing information.
+        
+        Example:
+            ```python
+            # In a solver method
+            def solve(self):
+                self.notify_observers('solve_started', {'time': time.time()})
+                # Solving logic...
+                self.notify_observers('solve_completed', {'result': result})
+            ```
         """
         if data is None:
             data = {}
@@ -64,7 +196,40 @@ class SolverSubjectMixin:
             observer.update(event_type, data)
 
 def create_solver_from_config(config: Union[str, Dict[str, Any]], flip: bool = False) -> Union["RCWASolver", "RDITSolver"]:
-    """Create a solver from a configuration file or dictionary."""
+    """Create a solver from a configuration file or dictionary.
+    
+    This function creates a solver instance based on a configuration specified
+    either as a dictionary or a path to a JSON/YAML configuration file. It uses
+    the SolverBuilder pattern internally to construct the solver.
+    
+    Args:
+        config: Either a path to a configuration file (string) or a dictionary
+               containing the configuration parameters. The configuration should
+               specify all necessary parameters for the solver.
+        flip: Whether to flip the coordinate system (default: False). When True,
+              the solver will use a flipped coordinate system, which can be useful
+              for certain types of simulations or to match other software conventions.
+    
+    Returns:
+        A solver instance (either RCWASolver or RDITSolver) configured according
+        to the provided parameters.
+    
+    Example:
+        ```python
+        # From dictionary
+        config = {
+            'algorithm': 'RDIT',
+            'wavelengths': [1.55],
+            'lengthunit': 'um',
+            'rdim': [512, 512],
+            'kdim': [5, 5]
+        }
+        solver = create_solver_from_config(config)
+        
+        # From file
+        solver = create_solver_from_config('my_config.json')
+        ```
+    """
     # Lazy import to avoid circular dependencies
     from .builder import SolverBuilder
     return SolverBuilder().from_config(config, flip).build()
@@ -80,7 +245,64 @@ def create_solver(algorithm: Algorithm = Algorithm.RDIT,
                  t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),
                  is_use_FFF: bool = True,
                  device: Union[str, torch.device] = 'cpu') -> Union["RCWASolver", "RDITSolver"]:
-    """Create a solver with the given parameters."""
+    """Create a solver with the given parameters.
+    
+    This is the main factory function for creating solver instances with custom
+    parameters. It provides a convenient way to create a solver without having to
+    directly instantiate the solver classes or use the builder pattern.
+    
+    By default, this function creates an R-DIT solver, which is TorchRDIT's
+    eigendecomposition-free implementation offering up to 16.2× speedup compared
+    to traditional RCWA-based methods. The R-DIT solver is recommended for inverse
+    design applications due to its computational efficiency and stable gradients.
+    
+    Args:
+        algorithm: The algorithm to use for solving (RCWA or RDIT). Default is RDIT,
+                 which is recommended for most applications, especially inverse design.
+        precision: Numerical precision to use (SINGLE or DOUBLE). Default is SINGLE.
+        lam0: Wavelength(s) to simulate, in the specified length unit. Default is [1.0].
+        lengthunit: The unit of length used in the simulation (e.g., 'um', 'nm').
+                   Default is 'um' (micrometers).
+        rdim: Dimensions of the real space grid [height, width]. Default is [512, 512].
+        kdim: Dimensions in Fourier space [kheight, kwidth]. Default is [3, 3].
+              This determines the number of Fourier harmonics used.
+        materiallist: List of materials used in the simulation. Default is empty list.
+        t1: First lattice vector. Default is [[1.0, 0.0]] (unit vector in x-direction).
+        t2: Second lattice vector. Default is [[0.0, 1.0]] (unit vector in y-direction).
+        is_use_FFF: Whether to use Fast Fourier Factorization. Default is True.
+                   This improves convergence for high-contrast material interfaces.
+        device: The device to run the solver on ('cpu', 'cuda', etc.). Default is 'cpu'.
+               For optimal performance, especially with the R-DIT solver, using 'cuda'
+               is highly recommended for GPU acceleration.
+    
+    Returns:
+        A solver instance (either RCWASolver or RDITSolver) configured according
+        to the provided parameters. The returned solver is fully differentiable,
+        enabling gradient-based optimization for inverse design tasks.
+    
+    Example:
+        ```python
+        # Create a basic R-DIT solver with default parameters
+        solver = create_solver()  # Default is R-DIT algorithm
+        
+        # Create an R-DIT solver with custom settings for meta-optics design
+        solver = create_solver(
+            algorithm=Algorithm.RDIT,
+            lam0=np.array([1.55]),
+            rdim=[1024, 1024],
+            kdim=[5, 5],
+            device='cuda'  # Use GPU acceleration for faster computation
+        )
+        
+        # Create an RCWA solver for comparison or specific use cases
+        solver = create_solver(
+            algorithm=Algorithm.RCWA,
+            lam0=np.array([1.55]),
+            rdim=[512, 512],
+            kdim=[3, 3]
+        )
+        ```
+    """
     # Lazy import to avoid circular dependencies
     from .builder import SolverBuilder
     
@@ -102,7 +324,27 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
     """Base Class of Fourier Domain Solver.
     
     This class serves as the foundation for Fourier-based electromagnetic solvers,
-    providing common functionality and interface for derived solver implementations.
+    providing common functionality and interface for derived solver implementations
+    such as RCWASolver and RDITSolver.
+    
+    The FourierBaseSolver implements the core computational methods for:
+    - Setting up the simulation environment and parameters
+    - Managing the layer stack and material properties
+    - Computing Fourier transforms and harmonic expansions
+    - Constructing matrices for electromagnetic field calculation
+    - Calculating S-matrices for multilayer structures
+    - Computing reflection and transmission coefficients
+    - Determining field distributions
+    - Calculating diffraction efficiencies
+    
+    This class inherits from Cell3D to manage the geometric and material properties
+    of the structure, and SolverSubjectMixin to enable observer notifications
+    during the solving process.
+    
+    Note:
+        This is an abstract base class and should not be instantiated directly.
+        Use RCWASolver or RDITSolver for concrete implementations, or the
+        create_solver() function to create an appropriate solver instance.
     """
 
     def __init__(self,
@@ -218,19 +460,54 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                    pte: float,
                    ptm: float,
                    norm_te_dir: str = 'y') -> dict:
-        """Create and return a source configuration.
+        """Create and return a source configuration for the incident electromagnetic wave.
 
-        Configures the incident electromagnetic wave source for simulation.
+        This method configures the incident electromagnetic wave source for simulation.
+        The source is defined by its incident angles and polarization components.
+        The returned dictionary can be passed directly to the solve() method.
+        
+        The incident wave direction is specified using spherical coordinates:
+        - theta: Polar angle measured from the z-axis (0° = normal incidence)
+        - phi: Azimuthal angle measured in the xy-plane from the x-axis
+        
+        The polarization is specified using TE (transverse electric) and TM 
+        (transverse magnetic) components. These can be complex values to represent
+        phase differences between the components.
 
         Args:
-            theta: Incident angle (polar angle) in degrees
-            phi: Azimuthal angle in degrees
-            pte: TE polarization amplitude
-            ptm: TM polarization amplitude
-            norm_te_dir: Direction of normal component for TE wave ('x', 'y', or 'z')
+            theta: Incident angle (polar angle) in degrees. 0° corresponds to normal
+                  incidence along the z-axis, 90° corresponds to grazing incidence
+                  in the xy-plane.
+            phi: Azimuthal angle in degrees, measured in the xy-plane from the x-axis.
+                 0° corresponds to the x-axis, 90° corresponds to the y-axis.
+            pte: TE polarization amplitude (complex value). The TE component has its
+                 electric field perpendicular to the plane of incidence.
+            ptm: TM polarization amplitude (complex value). The TM component has its
+                 magnetic field perpendicular to the plane of incidence.
+            norm_te_dir: Direction of normal component for TE wave ('x', 'y', or 'z').
+                        This defines the reference direction for the TE polarization.
+                        Default is 'y', meaning the TE component is perpendicular to
+                        the y-axis.
 
         Returns:
-            Dictionary containing source parameters
+            Dictionary containing source parameters that can be passed to the solve() method:
+            - 'theta': Polar angle in degrees
+            - 'phi': Azimuthal angle in degrees
+            - 'pte': TE polarization amplitude
+            - 'ptm': TM polarization amplitude
+            - 'norm_te_dir': Direction of normal component for TE wave
+        
+        Example:
+            ```python
+            # Normal incidence with pure TE polarization
+            source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+            
+            # 45-degree incidence with mixed polarization
+            source = solver.add_source(theta=45, phi=0, pte=0.7071, ptm=0.7071)
+            
+            # Use the source in a solve operation
+            result = solver.solve(source)
+            ```
         """
         source_dict = {}
         source_dict['theta'] = theta
@@ -588,15 +865,106 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
               **kwargs) -> dict:
         """Solve the electromagnetic problem using the configured algorithm.
 
-        This function prepares the parameters and calls the solving method
-        for all frequencies.
+        This is the main entry point for running simulations. The function prepares 
+        the parameters, performs validation, and executes the electromagnetic calculation
+        for all specified wavelengths. It calculates reflection/transmission coefficients,
+        diffraction efficiencies, and field distributions.
+        
+        The solver handles all aspects of the calculation, including:
+        - Setting up k-vectors based on incident angles
+        - Computing layer eigenmodes and eigenvalues
+        - Building the S-matrix for the entire structure
+        - Calculating fields in each layer
+        - Computing diffraction efficiencies
+        
+        The TorchRDIT implementation is fully differentiable, enabling gradient-based
+        optimization for inverse design of photonic structures. This makes it suitable
+        for integration with optimization frameworks, neural networks, and topology
+        optimization techniques.
+        
+        Before calling solve(), you should:
+        1. Configure the solver with appropriate parameters
+        2. Define your material layers using add_layer() and related methods
+        3. Set up your source using add_source()
 
         Args:
-            source: Source configuration dictionary
-            **kwargs: Additional parameters that may be required by specific solvers
+            source: Source configuration dictionary containing the incident wave parameters.
+                   This should be created using the add_source() method, which returns
+                   a properly formatted source dictionary with:
+                   - 'theta': Polar angle of incidence (in degrees)
+                   - 'phi': Azimuthal angle of incidence (in degrees)
+                   - 'pte': Complex amplitude of the TE polarization component
+                   - 'ptm': Complex amplitude of the TM polarization component
+                  
+            **kwargs: Additional parameters that may be required by specific solvers or to
+                     customize the solution process:
+                     - 'compute_fields': Whether to compute field distributions (default: False)
+                     - 'compute_modes': Whether to return mode information (default: False)
+                     - 'store_matrices': Whether to store system matrices (default: False)
+                     - 'return_all': Whether to return all calculation results (default: False)
 
         Returns:
-            Dictionary containing the solution results
+            Dictionary containing the solution results with keys:
+            - 'R': Reflection coefficients for each diffraction order and wavelength
+            - 'T': Transmission coefficients for each diffraction order and wavelength
+            - 'R_total': Total reflection efficiency for each wavelength
+            - 'T_total': Total transmission efficiency for each wavelength
+            - 'wavelengths': List of wavelengths solved
+            - 'kx_inc': x-component of incident k-vector
+            - 'ky_inc': y-component of incident k-vector
+            - 'kz_inc': z-component of incident k-vector
+            - 'theta': Incident polar angle (degrees)
+            - 'phi': Incident azimuthal angle (degrees)
+            - 'fields': Field distributions (if compute_fields=True)
+            - 'modes': Mode information (if compute_modes=True)
+            - 'matrices': System matrices (if store_matrices=True)
+        
+        Example:
+            ```python
+            # Create and configure solver
+            solver = create_solver(algorithm=Algorithm.RDIT, 
+                                  lam0=np.array([1.55]),
+                                  rdim=[512, 512], 
+                                  kdim=[3, 3],
+                                  device='cuda')
+            
+            # Add layers to the solver
+            solver.add_layer(thickness=0.5, material='Air')
+            solver.add_layer(thickness=0.2, material='Si')
+            solver.add_layer(thickness=1.0, material='SiO2')
+            
+            # Set up the source
+            source = solver.add_source(theta=45, phi=0, pte=1.0, ptm=0.0)
+            
+            # Run the solver
+            result = solver.solve(source, compute_fields=True)
+            
+            # Get reflection efficiency
+            R_total = result['R_total']
+            
+            # For inverse design using automatic differentiation
+            import torch.optim as optim
+            
+            # Define parameters to optimize (example: layer thickness)
+            thickness = torch.nn.Parameter(torch.tensor(0.2))
+            optimizer = optim.Adam([thickness], lr=0.01)
+            
+            def forward():
+                # Update the layer with current parameters
+                solver.update_layer_thickness(layer_index=1, thickness=thickness)
+                # Solve and compute loss (e.g., maximize transmission at target wavelength)
+                result = solver.solve(source)
+                loss = -result['T_total'][0]  # Negative because we want to maximize
+                return loss
+                
+            # Optimization loop
+            for i in range(100):
+                optimizer.zero_grad()
+                loss = forward()
+                loss.backward()  # Automatic differentiation
+                optimizer.step()
+                print(f"Iteration {i}, Loss: {loss.item()}")
+            ```
         """
         self.src = source
         self._pre_solve()
@@ -672,18 +1040,127 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                             layer_index: int,
                             bg_material: str = 'air',
                             method: str = 'FFT') -> None:
-        """update_er_with_mask.
-
-        To update the layer permittivity (or permeability) distribution in a specified layer.
+        """Update the permittivity distribution in a layer using a binary mask.
+        
+        This method allows you to define the spatial distribution of materials in a layer
+        using a binary mask. The mask defines regions where the foreground material (mask=1)
+        and background material (mask=0) are located. This is particularly useful for
+        defining complex patterns, gratings, or arbitrary shapes within a layer.
+        
+        This functionality is a key component for meta-optics design, enabling the creation of:
+        - Parameter-constrained and free-form meta-atoms
+        - Reconfigurable photonic structures
+        - Meta-lenses and beam deflectors
+        - Complex diffractive elements
+        
+        When combined with automatic differentiation, this method enables gradient-based
+        optimization for the inverse design of meta-optics devices, as demonstrated in
+        "Eigendecomposition-free inverse design of meta-optics devices" (Huang et al., 2024).
+        
+        If the specified layer is currently homogeneous, it will be automatically
+        converted to a grating (patterned) layer. The method computes the Fourier
+        transform of the pattern to obtain the permittivity distribution in k-space,
+        which is required for the RCWA/R-DIT calculations.
+        
+        The method supports two approaches for computing the Toeplitz matrix:
+        - 'FFT': Uses Fast Fourier Transform, suitable for all cell types
+        - 'Analytical': Uses analytical expressions, only available for Cartesian cells
 
         Args:
-            mask (torch.Tensor): mask, the new binary pattern mask to be updated.
-            layer_index (int): layer_index
-            bg_material (str): bg_material, the background material of the pattern (mask == 0).
-            method (str): method of computing Toeplitz matrix. ['FFT': for all cell type; 'Analytical': only for Cartesian]
+            mask: Binary tensor representing the pattern mask, where:
+                 - 1 (or True) represents the foreground material (from the layer's material)
+                 - 0 (or False) represents the background material (specified by bg_material)
+                 The mask dimensions must match the real-space dimensions (rdim) of the solver.
+                 
+                 For inverse design applications, this mask can be a differentiable tensor
+                 generated from a neural network or optimization process.
+            
+            layer_index: Index of the layer to update. This should be a valid index in the
+                        layer stack (0 to nlayer-1).
+            
+            bg_material: Name of the background material to use where mask=0. Default is 'air'.
+                        This must be a valid material name that exists in the solver's material list.
+            
+            method: Method for computing the Toeplitz matrix:
+                   - 'FFT': Fast Fourier Transform method (works for all cell types)
+                   - 'Analytical': Analytical method (only works for Cartesian cells)
+                   Default is 'FFT'.
 
         Returns:
-            None:
+            None
+            
+        Raises:
+            ValueError: If the mask dimensions don't match the solver's real-space dimensions.
+            KeyError: If the specified background material doesn't exist in the material list.
+            
+        Example:
+            ```python
+            # Basic usage: Create a binary mask for a simple grating pattern
+            mask = torch.zeros(512, 512)
+            mask[:, :256] = 1.0  # Half the domain has the foreground material
+            
+            # Update layer 1 with the mask, using air as background
+            solver.update_er_with_mask(mask=mask, layer_index=1, bg_material='air')
+            
+            # Inverse design usage: Using a neural network to generate a mask
+            import torch.nn as nn
+            
+            # Define a simple network to generate a mask
+            class MaskGenerator(nn.Module):
+                def __init__(self, dim=512):
+                    super().__init__()
+                    self.layers = nn.Sequential(
+                        nn.Linear(2, 128),
+                        nn.ReLU(),
+                        nn.Linear(128, 1),
+                        nn.Sigmoid()  # Output in [0, 1] range
+                    )
+                    # Create normalized coordinate grid
+                    x = torch.linspace(-1, 1, dim)
+                    y = torch.linspace(-1, 1, dim)
+                    self.X, self.Y = torch.meshgrid(x, y, indexing='ij')
+                
+                def forward(self):
+                    # Stack coordinates
+                    coords = torch.stack([self.X.flatten(), self.Y.flatten()], dim=1)
+                    # Generate mask values
+                    mask_flat = self.layers(coords)
+                    # Reshape to 2D
+                    return mask_flat.reshape(self.X.shape)
+            
+            # Create and use the mask generator
+            mask_gen = MaskGenerator(dim=512).to(device)
+            optimizer = torch.optim.Adam(mask_gen.parameters(), lr=0.001)
+            
+            # Optimization loop
+            for i in range(100):
+                optimizer.zero_grad()
+                
+                # Generate mask
+                mask = mask_gen()
+                
+                # Update solver with mask
+                solver.update_er_with_mask(mask, layer_index=1)
+                
+                # Solve and calculate loss
+                result = solver.solve(source)
+                loss = -result['T_total'][0]  # Maximize transmission
+                
+                # Backpropagate and update
+                loss.backward()
+                optimizer.step()
+            ```
+            
+        Note:
+            This method only updates the permittivity (epsilon) distribution. To update
+            the permeability (mu) distribution, you would need to modify the layer's
+            urmat property directly.
+            
+        References:
+            - Huang et al., "Eigendecomposition-free inverse design of meta-optics devices," 
+              Opt. Express 32, 13986-13997 (2024)
+            - Huang et al., "Inverse Design of Photonic Structures Using Automatic Differentiable 
+              Rigorous Diffraction Interface Theory," CLEO (2023)
         """
 
         ndim1, ndim2 = mask.size()
@@ -1183,9 +1660,54 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
 
 class RCWASolver(FourierBaseSolver):
-    """RCWASolver.
-
-    This is the implemented solver class for RCWA.
+    """Rigorous Coupled-Wave Analysis (RCWA) Solver.
+    
+    This class implements the traditional Rigorous Coupled-Wave Analysis method for solving
+    electromagnetic wave propagation through periodic structures. RCWA is a
+    frequency-domain technique that expands the electromagnetic fields and
+    material properties in Fourier series and solves Maxwell's equations by
+    matching boundary conditions at layer interfaces.
+    
+    While the TorchRDIT package primarily emphasizes the eigendecomposition-free R-DIT
+    method for improved performance, this RCWA implementation is provided for
+    comparison and for cases where RCWA may be preferred.
+    
+    RCWA is particularly effective for:
+    - Periodic structures (gratings, photonic crystals, metasurfaces)
+    - Multilayer stacks with complex patterns
+    - Structures with sharp material interfaces
+    - Calculating diffraction efficiencies and field distributions
+    
+    The implementation uses PyTorch for efficient computation and supports:
+    - GPU acceleration
+    - Automatic differentiation for gradient-based optimization
+    - Batch processing of multiple wavelengths
+    - Fast Fourier Factorization for improved convergence
+    
+    Applications include:
+    - Analysis and design of diffractive optical elements
+    - Characterization of photonic crystals and metamaterials
+    - Inverse design of meta-optics (though R-DIT is recommended for better performance)
+    
+    Example:
+        ```python
+        # Create an RCWA solver
+        solver = RCWASolver(
+            lam0=np.array([1.55]),  # Wavelength in micrometers
+            rdim=[512, 512],        # Real space dimensions
+            kdim=[5, 5],            # Fourier space dimensions
+            device='cuda'           # Use GPU acceleration
+        )
+        
+        # Add layers and configure the simulation
+        solver.add_layer(0.5, 'Air')
+        solver.add_layer(0.2, 'Si')
+        solver.add_layer(1.0, 'SiO2')
+        
+        # Define a source and solve
+        source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+        result = solver.solve(source)
+        ```
     """
     def __init__(self,
                  lam0: np.ndarray = np.ndarray([]),
@@ -1204,13 +1726,75 @@ class RCWASolver(FourierBaseSolver):
         self._algorithm = RCWAAlgorithm(self)
     
     def set_rdit_order(self, rdit_order):
-        """Set RDIT order."""
+        """Set R-DIT order."""
         self._algorithm.set_rdit_order(rdit_order)
 
 class RDITSolver(FourierBaseSolver):
-    """RDITSolver.
+    """Eigendecomposition-free Rigorous Diffraction Interface Theory (R-DIT) Solver.
+    
+    This class implements the eigendecomposition-free Rigorous Diffraction Interface Theory
+    method for solving electromagnetic wave propagation through periodic structures.
+    The R-DIT solver is specifically designed for inverse design of meta-optics devices,
+    achieving up to 16.2× speedup compared to traditional RCWA-based methods.
+    
+    The R-DIT method:
+    - Reformulates the problem in terms of impedance matrices
+    - Avoids eigendecomposition, significantly improving computational efficiency
+    - Eliminates numerical instabilities associated with exponentially growing modes
+    - Provides better convergence for thick layers and high-contrast material systems
+    - Maintains the same accuracy as RCWA with better numerical properties
+    - Generates stable gradients for topology optimization
+    
+    Args:
+        lam0: Wavelength(s) to simulate, in the specified length unit. Default is [1.0].
+        lengthunit: The unit of length used in the simulation (e.g., 'um', 'nm').
+                   Default is 'um' (micrometers).
+        rdim: Dimensions of the real space grid [height, width]. Default is [512, 512].
+        kdim: Dimensions in Fourier space [kheight, kwidth]. Default is [3, 3].
+              This determines the number of Fourier harmonics used.
+        materiallist: List of materials used in the simulation. Default is empty list.
+        t1: First lattice vector. Default is [[1.0, 0.0]] (unit vector in x-direction).
+        t2: Second lattice vector. Default is [[0.0, 1.0]] (unit vector in y-direction).
+        is_use_FFF: Whether to use Fast Fourier Factorization. Default is True.
+                   This improves convergence for high-contrast material interfaces.
+        precision: Numerical precision to use (SINGLE or DOUBLE). Default is SINGLE.
+        device: The device to run the solver on ('cpu', 'cuda', etc.). Default is 'cpu'.
+               For optimal performance, especially with the R-DIT solver, using 'cuda'
+               is highly recommended for GPU acceleration.
 
-    This is the implemented solver class for R-DIT.
+    Returns:
+        A solver instance (either RCWASolver or RDITSolver) configured according
+        to the provided parameters. The returned solver is fully differentiable,
+        enabling gradient-based optimization for inverse design tasks.
+
+    Example:
+        ```python
+        # Create an R-DIT solver
+        solver = RDITSolver(
+            lam0=np.array([1.55]),  # Wavelength in micrometers
+            rdim=[512, 512],        # Real space dimensions
+            kdim=[5, 5],            # Fourier space dimensions
+            device='cuda'           # Use GPU acceleration
+        )
+        
+        # Set R-DIT order (optional)
+        solver.set_rdit_order(2)
+        
+        # Add layers and configure the simulation
+        solver.add_layer(0.5, 'Air')
+        solver.add_layer(0.2, 'Si')
+        solver.add_layer(1.0, 'SiO2')
+        
+        # Define a source and solve
+        source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+        result = solver.solve(source)
+        ```
+        
+    References:
+        - Huang et al., "Eigendecomposition-free inverse design of meta-optics devices," 
+          Opt. Express 32, 13986-13997 (2024)
+        - Huang et al., "Inverse Design of Photonic Structures Using Automatic Differentiable 
+          Rigorous Diffraction Interface Theory," CLEO (2023)
     """
 
     def __init__(self,
@@ -1229,8 +1813,40 @@ class RDITSolver(FourierBaseSolver):
         # Set the algorithm strategy
         self._algorithm = RDITAlgorithm(self)
 
-    def set_rdit_order(self, rdit_order):
-        """Set RDIT order."""
+    def set_rdit_order(self, rdit_order: int) -> None:
+        """Set the order of the R-DIT algorithm.
+        
+        This method allows you to configure the order of the Rigorous Diffraction
+        Interface Theory algorithm. The R-DIT order affects the numerical stability
+        and accuracy of the solution, especially for thick or high-contrast layers.
+        
+        The R-DIT order determines the approximation used in the diffraction
+        interface theory. Higher orders generally provide better accuracy but
+        may be computationally more expensive.
+        
+        Args:
+            rdit_order: The order of the R-DIT algorithm. Higher orders generally
+                       provide better accuracy but may be computationally more
+                       expensive. Typical values are 1, 2, or 3.
+                       - 1: First-order approximation (fastest, least accurate)
+                       - 2: Second-order approximation (good balance)
+                       - 3: Third-order approximation (most accurate, slowest)
+        
+        Returns:
+            None
+            
+        Example:
+            ```python
+            solver = RDITSolver(...)
+            solver.set_rdit_order(2)  # Set R-DIT order to 2 for good balance
+            ```
+            
+        Note:
+            The optimal R-DIT order depends on the specific problem. For most
+            applications, order 2 provides a good balance between accuracy and
+            computational efficiency. For highly demanding applications with
+            thick layers or high material contrast, order 3 may be necessary.
+        """
         self._algorithm.set_rdit_order(rdit_order)
 
 

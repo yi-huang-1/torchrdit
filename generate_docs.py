@@ -97,7 +97,7 @@ def create_home_page(docs_dir):
     with open(docs_dir / "Home.md", "w") as f:
         f.write("""# TorchRDIT Documentation
 
-Welcome to the TorchRDIT documentation. TorchRDIT is a PyTorch-based electromagnetic solver library that implements rigorous coupled-wave analysis (RCWA) and related differential methods with automatic differentiation support.
+Welcome to the `TorchRDIT` documentation. `TorchRDIT` is an advanced software package designed for the inverse design of meta-optics devices, utilizing an eigendecomposition-free implementation of Rigorous Diffraction Interface Theory (R-DIT). It provides a GPU-accelerated and fully differentiable framework powered by PyTorch, enabling the efficient optimization of photonic structures.
 
 ## Key Features
 
@@ -107,6 +107,11 @@ Welcome to the TorchRDIT documentation. TorchRDIT is a PyTorch-based electromagn
 - **Extensible**: Easy to integrate into machine learning and inverse design workflows
 
 ## Documentation
+
+### User Guide
+
+- [Getting Started](Getting-Started) - Installation and basic usage
+- [Examples](Examples) - Detailed examples showing how to use TorchRDIT
 
 ### API Reference
 
@@ -119,11 +124,6 @@ Welcome to the TorchRDIT documentation. TorchRDIT is a PyTorch-based electromagn
 - [Solver Module](Solver) - Core solver functionality
 - [Utils](Utils) - Utility functions
 - [Visualization](Visualization) - Tools for visualizing results
-
-### User Guide
-
-- [Getting Started](Getting-Started) - Installation and basic usage
-- [Examples](Examples) - Detailed examples showing how to use TorchRDIT
 
 ## Examples
 
@@ -144,6 +144,13 @@ def create_sidebar(docs_dir):
         f.write("""# TorchRDIT Docs
 
 - [Home](Home)
+- User Guide
+  - [Getting Started](Getting-Started)
+  - [Examples](Examples)
+    - [Basic Usage](Examples#demo-01-basic-usage)
+    - [Parametric Sweeps](Examples#demo-02-parametric-sweeps)
+    - [Dispersive Materials](Examples#demo-03-dispersive-materials)
+    - [Performance](Examples#demo-04-performance-benchmark)
 - API Reference
   - [Overview](API-Overview)
   - [Algorithm](Algorithm)
@@ -154,13 +161,6 @@ def create_sidebar(docs_dir):
   - [Solver](Solver)
   - [Utils](Utils)
   - [Visualization](Visualization)
-- User Guide
-  - [Getting Started](Getting-Started)
-  - [Examples](Examples)
-    - [Basic Usage](Examples#demo-01-basic-usage)
-    - [Parametric Sweeps](Examples#demo-02-parametric-sweeps)
-    - [Dispersive Materials](Examples#demo-03-dispersive-materials)
-    - [Performance](Examples#demo-04-performance-benchmark)
 """)
         print("  -> Created _Sidebar.md")
 

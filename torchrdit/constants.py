@@ -1,4 +1,17 @@
-"""Module defines some constants used in the electromagnetic solver."""
+"""Constants module for the TorchRDIT electromagnetic solver package.
+
+This module defines physical constants, unit conversion factors, and enumerations
+used throughout the TorchRDIT package. These include:
+
+- Physical constants (vacuum permittivity, permeability, speed of light, etc.)
+- Frequency unit conversion factors (Hz, kHz, MHz, etc.)
+- Length unit conversion factors (meter, μm, nm, etc.)
+- Algorithm enumerations (RCWA, R-DIT)
+- Precision enumerations (single, double)
+
+These constants provide a centralized reference for consistent values across the
+package and allow for convenient unit conversions in calculations.
+"""
 
 import numpy as np
 from enum import Enum, auto, unique
@@ -35,11 +48,30 @@ lengthunit_dict: dict[str, float] = {
 
 @unique
 class Algorithm(Enum):
-    """Enumeration of supported algorithms."""
-    RCWA = auto()
-    RDIT = auto()
+    """Enumeration of supported electromagnetic solver algorithms.
+    
+    This enum defines the available algorithms that can be used for electromagnetic
+    field calculations:
+    
+    - RCWA: Rigorous Coupled-Wave Analysis, the traditional approach using eigenmode
+            decomposition.
+    - RDIT: Rigorous Diffraction Interface Theory (R-DIT), the eigendecomposition-free
+            approach that offers improved computational efficiency.
+    """
+    RCWA = auto()  # Rigorous Coupled-Wave Analysis
+    RDIT = auto()  # Rigorous Diffraction Interface Theory (R-DIT)
 
 @unique
 class Precision(Enum):
-    SINGLE = auto()
-    DOUBLE = auto()
+    """Enumeration of numerical precision options for calculations.
+    
+    This enum defines the available precision options for calculations:
+    
+    - SINGLE: Single precision (32-bit floating point, torch.float32)
+    - DOUBLE: Double precision (64-bit floating point, torch.float64)
+    
+    Higher precision provides more accurate results but requires more memory and
+    computational resources.
+    """
+    SINGLE = auto()  # 32-bit floating point (torch.float32)
+    DOUBLE = auto()  # 64-bit floating point (torch.float64)

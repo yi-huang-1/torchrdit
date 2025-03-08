@@ -1,5 +1,18 @@
-"""Implementations of observer classes for tracking solver progress."""
+"""Observer implementations for tracking and reporting solver progress.
 
+This module provides concrete implementations of the SolverObserver interface
+for monitoring the progress of electromagnetic simulations. These observers
+follow the Observer design pattern, allowing them to receive notifications
+from solvers without tight coupling.
+
+The module includes:
+- ConsoleProgressObserver: Prints progress information to the console
+- TqdmProgressObserver: Displays a progress bar using the tqdm library
+
+These observers can be attached to solvers to provide real-time feedback
+during potentially long-running simulations, making it easier to monitor
+the progress and estimated completion time of calculations.
+"""
 import time
 from typing import Optional, Dict, Any
 
@@ -13,7 +26,33 @@ except ImportError:
 
 
 class ConsoleProgressObserver(SolverObserver):
-    """Observer that prints solver progress to the console."""
+    """Observer that prints solver progress to the console.
+    
+    This class implements the SolverObserver interface to provide real-time
+    feedback on solver progress through console output. It tracks the start
+    time of the solving process and reports various events such as layer
+    processing, iteration completion, and overall solve completion.
+    
+    When verbose mode is enabled, detailed information about each step of
+    the solving process is printed. Otherwise, only major milestones are
+    reported.
+    
+    Example:
+        ```python
+        from torchrdit.solver import create_solver
+        from torchrdit.observers import ConsoleProgressObserver
+        
+        # Create a solver
+        solver = create_solver()
+        
+        # Add an observer to track progress
+        observer = ConsoleProgressObserver(verbose=True)
+        solver.add_observer(observer)
+        
+        # Run the solver - progress will be reported to the console
+        result = solver.solve(source)
+        ```
+    """
     
     def __init__(self, verbose: bool = True):
         """Initialize the console observer.
@@ -71,7 +110,33 @@ class ConsoleProgressObserver(SolverObserver):
 
 if TQDM_AVAILABLE:
     class TqdmProgressObserver(SolverObserver):
-        """Observer that displays solver progress using tqdm progress bars."""
+        """Observer that displays solver progress using tqdm progress bars.
+        
+        This class implements the SolverObserver interface to provide visual
+        feedback on solver progress through tqdm progress bars. It creates
+        progress bars for layer processing and other iterative operations,
+        making it easy to track the progress of long-running simulations.
+        
+        Note:
+            This observer requires the tqdm package to be installed. If tqdm
+            is not available, this class will not be defined.
+            
+        Example:
+            ```python
+            from torchrdit.solver import create_solver
+            from torchrdit.observers import TqdmProgressObserver
+            
+            # Create a solver
+            solver = create_solver()
+            
+            # Add a progress bar observer
+            observer = TqdmProgressObserver()
+            solver.add_observer(observer)
+            
+            # Run the solver - progress will be displayed with a progress bar
+            result = solver.solve(source)
+            ```
+        """
         
         def __init__(self):
             """Initialize the tqdm progress observer."""
