@@ -1,0 +1,53 @@
+loaders:
+  - type: python
+    search_path: [./]
+processors:
+  - type: filter
+    expression: not name.startswith('_') and default()
+  - type: smart
+  - type: crossref
+renderer:
+  type: markdown
+  descriptive_class_title: true
+  descriptive_module_title: true
+  render_toc: true
+  header_level_by_type:
+    Module: 1
+    Class: 2
+    Method: 3
+    Function: 3
+    InstanceVariable: 3
+  add_method_class_prefix: true
+  add_member_class_prefix: true
+  signature_with_def: false
+
+# Output configuration
+docs_directory: wiki
+modules:
+  - name: torchrdit
+    source_path: ./
+    output_file: API-Overview.md
+  - name: torchrdit.solver
+    source_path: ./
+    output_file: Solver.md
+  - name: torchrdit.algorithm
+    source_path: ./
+    output_file: Algorithm.md
+  - name: torchrdit.builder
+    source_path: ./
+    output_file: Builder.md
+  - name: torchrdit.cell
+    source_path: ./
+    output_file: Cell.md
+  - name: torchrdit.materials
+    source_path: ./
+    output_file: Materials.md
+  - name: torchrdit.layers
+    source_path: ./
+    output_file: Layers.md
+  - name: torchrdit.utils
+    source_path: ./
+    output_file: Utils.md
+  - name: torchrdit.viz
+    source_path: ./
+    output_file: Visualization.md

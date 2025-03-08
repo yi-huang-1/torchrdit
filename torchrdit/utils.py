@@ -1,5 +1,5 @@
 """ This file defines some helper function. """
-from typing import Callable, Optional, Union, Any, Tuple
+from typing import Callable, Optional, Union, Any, Tuple, List
 from functools import partial, wraps
 
 import torch
@@ -316,3 +316,18 @@ def blur_filter(rho: torch.Tensor,
 
     return rho
 
+def to_diag_util(input_mat: torch.Tensor, kdim: List[int]) -> torch.Tensor:
+    """Convert a vector to a diagonal matrix.
+    
+    Args:
+        input_mat (torch.Tensor): Input matrix/vector to be converted to diagonal
+        kdim (List[int]): Dimensions in k space [kH, kW]
+    
+    Returns:
+        torch.Tensor: Diagonal matrix representation
+    """
+    n_harmonics = kdim[0] * kdim[1]
+    if input_mat.shape[-1] == n_harmonics:
+        return input_mat.unsqueeze(-2) * torch.eye(n_harmonics).to(input_mat.device)
+    else:
+        return input_mat.unsqueeze(-2) * torch.eye(2 * n_harmonics).to(input_mat.device)

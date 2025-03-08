@@ -1,17 +1,17 @@
 """
-# Example 2 - GMRF with hexagonal unit cells using R-DIT
+# Example 2 - GMRF with hexagonal unit cells using R-DIT (Builder Pattern)
 
-This example shows the simulation of the guided-mode resonance filter (GMRF) using torchrdit with differentiable RCWA algorithm. The device is composed of a SiO hexagonal grating layer, a SiN waveguide layer and a fused silica substrate.
+This example shows the simulation of the guided-mode resonance filter (GMRF) using torchrdit with differentiable RDIT algorithm. The device is composed of a SiO hexagonal grating layer, a SiN waveguide layer and a fused silica substrate.
 
 The GMRF can be found in the following references:
 
-- A. A. Mehta, R. C. Rumpf, Z. A. Roth, and E. G. Johnson, “Guided mode resonance filter as a spectrally selective feedback element in a double-cladding optical fiber laser,” IEEE Photonics Technology Letters, vol. 19, pp. 2030–2032, 12 2007.
+- A. A. Mehta, R. C. Rumpf, Z. A. Roth, and E. G. Johnson, "Guided mode resonance filter as a spectrally selective feedback element in a double-cladding optical fiber laser," IEEE Photonics Technology Letters, vol. 19, pp. 2030–2032, 12 2007.
 """
 import numpy as np
 import torch
 import os
 
-from torchrdit.solver import SolverConstructer
+from torchrdit.solver import get_solver_builder
 from torchrdit.utils import create_material
 from torchrdit.constants import Algorithm, Precision
 from torchrdit.viz import plot_layer
@@ -44,57 +44,61 @@ b = a * np.sqrt(3)
 r = 400 * nm
 
 # thickness of each layer
-h1 = torch.tensor(230 * nm, dtype=torch.float32)
-h2 = torch.tensor(345 * nm, dtype=torch.float32)
+h1 = torch.tensor(230 * nm, dtype=torch.float64)
+h2 = torch.tensor(345 * nm, dtype=torch.float64)
 
 # lattice vectors of the cell
-t1 = torch.tensor([[a/2, -a*np.sqrt(3)/2]], dtype=torch.float32)
-t2 = torch.tensor([[a/2, a*np.sqrt(3)/2]], dtype=torch.float32)
+t1 = torch.tensor([[a/2, -a*np.sqrt(3)/2]], dtype=torch.float64)
+t2 = torch.tensor([[a/2, a*np.sqrt(3)/2]], dtype=torch.float64)
 
 # creating materials
-# all mateiral objects should be added to the 'materiallist' parameter when initializing the solver
 material_sio = create_material(name='SiO', permittivity=n_SiO**2)
 material_sin = create_material(name='SiN', permittivity=n_SiN**2)
 material_fs = create_material(name='FusedSilica', permittivity=n_fs**2)
 
-# Initialize the instance of the solver engine
-dev1rdit = SolverConstructer.creat_sovler(
-    algorithm=Algorithm.RDIT,
-    precision=Precision.DOUBLE,
-    rdim = [512, 512],
-    kdim = [9, 9],
-    lam0 = np.array([1540 * nm, 1550 * nm, 1560 * nm, 1570 * nm]),
-    lengthunit = 'um',
-    t1 = t1,
-    t2 = t2,
-    is_use_FFF = True)
+# Initialize and configure the solver using the Builder pattern
+builder = get_solver_builder()
+builder.with_algorithm(Algorithm.RDIT)
+builder.with_precision(Precision.DOUBLE)
+builder.with_real_dimensions([512, 512])
+builder.with_k_dimensions([11, 11])
+builder.with_wavelengths(np.array([1540 * nm, 1550 * nm, 1560 * nm, 1570 * nm]))
+builder.with_length_unit('um')
+builder.with_lattice_vectors(t1, t2)
+builder.with_fff(True)
 
-# set the order of R-DIT
-dev1rdit.set_rdit_order(10)
+# Add materials to the builder
+builder.add_material(material_sio)
+builder.add_material(material_sin)
+builder.add_material(material_fs)
 
-# Initialize the instance of the solver engine
+# Add layers to the builder
+builder.add_layer({
+    "material": "SiO",
+    "thickness": h1.item(),
+    "is_homogeneous": False,
+    "is_optimize": True
+})
+builder.add_layer({
+    "material": "SiN",
+    "thickness": h2.item(),
+    "is_homogeneous": True,
+    "is_optimize": False
+})
+
+# Build the solver
+dev1rdit = builder.build()
+
+# Update the transmission material
 dev1rdit.update_trn_material(trn_material=material_fs)
-
-# add a grating layer with patterns, the pattern can be updated later
-dev1rdit.add_layer(material_name=material_sio,
-              thickness=h1,
-              is_homogeneous=False,
-              is_optimize=True)
-
-# add a homongeneous layer
-dev1rdit.add_layer(material_name=material_sin,
-              thickness=h2,
-              is_homogeneous=True,
-              is_optimize=False)
 
 # print layer information
 dev1rdit.get_layer_structure()
 
-# create a source object
-src1rdit = dev1rdit.add_source(theta = 0 * degrees,
-                 phi = 0 * degrees,
-                 pte = 1,
-                 ptm = 0)
+src1 = dev1rdit.add_source(theta = theta,
+                 phi = phi,
+                 pte = pte,
+                 ptm = ptm)
 
 # build hexagonal unit cell
 c1 = dev1rdit.get_circle_mask(center=[0, b/2], radius=r)
@@ -106,24 +110,26 @@ mask = dev1rdit.combine_masks(mask1=c1, mask2=c2, operation='union')
 mask = dev1rdit.combine_masks(mask1=mask, mask2=c3, operation='union')
 mask = dev1rdit.combine_masks(mask1=mask, mask2=c4, operation='union')
 
-mask = 1 - mask
+mask = (1 - mask).to(torch.float64)
 
-layer_index = 0
+mask.requires_grad = True
 
-dev1rdit.update_er_with_mask(mask=mask, layer_index=layer_index, set_grad = True)
+dev1rdit.update_er_with_mask(mask=mask, layer_index=0)
 
 # plot the layer and save the figure
 fig, axes = plt.subplots()
-plot_layer(dev1rdit, layer_index=layer_index, func='real', fig_ax=axes, cmap='BuGn', labels=('x (um)','y (um)'), title=f'layer {layer_index}')
+plot_layer(dev1rdit, layer_index=0, func='real', fig_ax=axes, cmap='BuGn', labels=('x (um)','y (um)'), title='layer 0')
 script_dir = os.path.dirname(os.path.abspath(__file__))
-output_filename = os.path.join(script_dir, f"{os.path.basename(__file__)}_layer_{layer_index}.png")
+output_filename = os.path.join(script_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_layer_0.png")
 plt.savefig(output_filename, dpi=300)
 plt.close(fig)
 
-data = dev1rdit.solve(src1rdit)# Example 1 - GMRF with hexagonal unit cells
+data = dev1rdit.solve(src1)
 
 print(f"The transmission efficiency is {data['TRN'][0] * 100}%")
 print(f"The reflection efficiency is {data['REF'][0] * 100}%")
 
 # Start back propagation
 torch.sum(data['TRN'][0]).backward()
+
+print(f"The gradient with respect to the mask is {torch.mean(mask.grad)}")

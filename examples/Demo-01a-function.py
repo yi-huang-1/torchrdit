@@ -1,5 +1,5 @@
 """
-# Example 1 - GMRF with hexagonal unit cells using RCWA
+# Example 1 - GMRF with hexagonal unit cells using RCWA (Function-based Builder Version)
 
 This example shows the simulation of the guided-mode resonance filter (GMRF) using torchrdit with differentiable RCWA algorithm. The device is composed of a SiO hexagonal grating layer, a SiN waveguide layer and a fused silica substrate.
 
@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import os
 
-from torchrdit.solver import get_solver_builder
+from torchrdit.solver import create_solver_from_builder
 from torchrdit.utils import create_material
 from torchrdit.constants import Algorithm, Precision
 from torchrdit.viz import plot_layer
@@ -57,46 +57,41 @@ material_sio = create_material(name='SiO', permittivity=n_SiO**2)
 material_sin = create_material(name='SiN', permittivity=n_SiN**2)
 material_fs = create_material(name='FusedSilica', permittivity=n_fs**2)
 
-# Initialize the solver using the builder pattern
-builder = get_solver_builder()
+# Define a builder configuration function
+def configure_gmrf_solver(builder):
+    """Configure a builder for a GMRF solver."""
+    return (builder
+            # Configure the solver parameters
+            .with_algorithm(Algorithm.RCWA)
+            .with_precision(Precision.DOUBLE)
+            .with_real_dimensions([512, 512])
+            .with_k_dimensions([9, 9])
+            .with_wavelengths(np.array([1540 * nm, 1550 * nm, 1560 * nm, 1570 * nm]))
+            .with_length_unit('um')
+            .with_lattice_vectors(t1, t2)
+            .with_fff(True)
+            
+            # Add materials
+            .add_material(material_sio)
+            .add_material(material_sin)
+            .add_material(material_fs)
+            
+            # Add layers
+            .add_layer({
+                "material": "SiO",
+                "thickness": h1.item(),
+                "is_homogeneous": False,
+                "is_optimize": True
+            })
+            .add_layer({
+                "material": "SiN",
+                "thickness": h2.item(),
+                "is_homogeneous": True,
+                "is_optimize": False
+            }))
 
-# Configure the builder with all necessary parameters
-builder.with_algorithm(Algorithm.RCWA)
-builder.with_precision(Precision.DOUBLE)
-builder.with_real_dimensions([512, 512])
-builder.with_k_dimensions([9, 9])
-builder.with_wavelengths(np.array([1540 * nm, 1550 * nm, 1560 * nm, 1570 * nm]))
-builder.with_length_unit('um')
-builder.with_lattice_vectors(t1, t2)
-builder.with_fff(True)
-
-# Add materials
-builder.add_material(material_sio)
-builder.add_material(material_sin)
-builder.add_material(material_fs)
-
-# Configure transmission material
-# (This will be applied after building the solver)
-
-# Add layers to the builder
-# First layer: grating layer (SiO)
-builder.add_layer({
-    "material": "SiO",
-    "thickness": h1.item(),
-    "is_homogeneous": False,
-    "is_optimize": True
-})
-
-# Second layer: homogeneous layer (SiN)
-builder.add_layer({
-    "material": "SiN",
-    "thickness": h2.item(),
-    "is_homogeneous": True,
-    "is_optimize": False
-})
-
-# Build the solver
-dev1 = builder.build()
+# Create the solver using the configuration function
+dev1 = create_solver_from_builder(configure_gmrf_solver)
 
 # Update the material of the transmission layer
 dev1.update_trn_material(trn_material=material_fs)
@@ -105,10 +100,10 @@ dev1.update_trn_material(trn_material=material_fs)
 dev1.get_layer_structure()
 
 # create a source object
-src1 = dev1.add_source(theta = theta,
-                 phi = phi,
-                 pte = pte,
-                 ptm = ptm)
+src1 = dev1.add_source(theta=theta,
+                      phi=phi,
+                      pte=pte,
+                      ptm=ptm)
 
 # build hexagonal unit cell
 c1 = dev1.get_circle_mask(center=[0, b/2], radius=r)
@@ -132,7 +127,7 @@ dev1.update_er_with_mask(mask=mask, layer_index=layer_index)
 fig, axes = plt.subplots()
 plot_layer(dev1, layer_index=layer_index, func='real', fig_ax=axes, cmap='BuGn', labels=('x (um)','y (um)'), title=f'layer {layer_index}')
 script_dir = os.path.dirname(os.path.abspath(__file__))
-output_filename = os.path.join(script_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_layer_{layer_index}.png")
+output_filename = os.path.join(script_dir, f"{os.path.basename(__file__)}_layer_{layer_index}.png")
 plt.savefig(output_filename, dpi=300)
 plt.close(fig)
 
@@ -145,9 +140,9 @@ print(f"The reflection efficiency is {data['REF'][0] * 100}%")
 torch.sum(data['TRN'][0]).backward()
 
 # update thickness
-dev1.update_layer_thickness(layer_index=1,thickness=torch.tensor(220 * nm))
+dev1.update_layer_thickness(layer_index=1, thickness=torch.tensor(220 * nm))
 dev1.get_layer_structure()
 data = dev1.solve(src1)
 
 print(f"The transmission efficiency is {data['TRN'][0] * 100}%")
-print(f"The reflection efficiency is {data['REF'][0] * 100}%")
+print(f"The reflection efficiency is {data['REF'][0] * 100}%") 
