@@ -42,10 +42,38 @@ def main():
         # Run pydoc-markdown for this module
         cmd = ["pydoc-markdown", "-m", module_name, "--render-toc"]
         
-        with open(output_file, "w") as f:
-            subprocess.run(cmd, stdout=f)
-        
-        print(f"  -> Written to {output_file}")
+        try:
+            with open(output_file, "w") as f:
+                result = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, text=True)
+                
+            if result.returncode != 0:
+                print(f"  -> Warning: Failed to generate documentation for {module_name}")
+                # Create a minimal documentation file when module import fails
+                with open(output_file, "w") as f:
+                    f.write(f"""# {module_name}
+
+**Note: Documentation generation for this module failed.**
+
+This could be due to import errors or other issues. Please ensure the module is properly installed and importable.
+
+## Module Structure
+
+This is a placeholder for {module_name} documentation.
+""")
+                print(f"  -> Created placeholder documentation for {module_name}")
+            else:
+                print(f"  -> Written to {output_file}")
+        except Exception as e:
+            print(f"  -> Error generating documentation for {module_name}: {str(e)}")
+            # Create an error documentation file
+            with open(output_file, "w") as f:
+                f.write(f"""# {module_name}
+
+**Error: Documentation generation for this module encountered an error: {str(e)}**
+
+Please check that the module exists and is properly installed.
+""")
+            print(f"  -> Created error documentation for {module_name}")
     
     # Create Home page
     create_home_page(docs_dir)
@@ -69,7 +97,7 @@ def create_home_page(docs_dir):
     with open(docs_dir / "Home.md", "w") as f:
         f.write("""# TorchRDIT Documentation
 
-Welcome to the TorchRDIT documentation. TorchRDIT is a PyTorch-based electromagnetic solver library that implements rigorous coupled-wave analysis (RCWA) and related differential methods with automatic differentiation support.
+Welcome to the `TorchRDIT` documentation. `TorchRDIT` is an advanced software package designed for the inverse design of meta-optics devices, utilizing an eigendecomposition-free implementation of Rigorous Diffraction Interface Theory (R-DIT). It provides a GPU-accelerated and fully differentiable framework powered by PyTorch, enabling the efficient optimization of photonic structures.
 
 ## Key Features
 
@@ -79,6 +107,11 @@ Welcome to the TorchRDIT documentation. TorchRDIT is a PyTorch-based electromagn
 - **Extensible**: Easy to integrate into machine learning and inverse design workflows
 
 ## Documentation
+
+### User Guide
+
+- [Getting Started](Getting-Started) - Installation and basic usage
+- [Examples](Examples) - Detailed examples showing how to use TorchRDIT
 
 ### API Reference
 
@@ -91,11 +124,6 @@ Welcome to the TorchRDIT documentation. TorchRDIT is a PyTorch-based electromagn
 - [Solver Module](Solver) - Core solver functionality
 - [Utils](Utils) - Utility functions
 - [Visualization](Visualization) - Tools for visualizing results
-
-### User Guide
-
-- [Getting Started](Getting-Started) - Installation and basic usage
-- [Examples](Examples) - Detailed examples showing how to use TorchRDIT
 
 ## Examples
 
@@ -116,6 +144,13 @@ def create_sidebar(docs_dir):
         f.write("""# TorchRDIT Docs
 
 - [Home](Home)
+- User Guide
+  - [Getting Started](Getting-Started)
+  - [Examples](Examples)
+    - [Basic Usage](Examples#demo-01-basic-usage)
+    - [Parametric Sweeps](Examples#demo-02-parametric-sweeps)
+    - [Dispersive Materials](Examples#demo-03-dispersive-materials)
+    - [Performance](Examples#demo-04-performance-benchmark)
 - API Reference
   - [Overview](API-Overview)
   - [Algorithm](Algorithm)
@@ -126,13 +161,6 @@ def create_sidebar(docs_dir):
   - [Solver](Solver)
   - [Utils](Utils)
   - [Visualization](Visualization)
-- User Guide
-  - [Getting Started](Getting-Started)
-  - [Examples](Examples)
-    - [Basic Usage](Examples#demo-01-basic-usage)
-    - [Parametric Sweeps](Examples#demo-02-parametric-sweeps)
-    - [Dispersive Materials](Examples#demo-03-dispersive-materials)
-    - [Performance](Examples#demo-04-performance-benchmark)
 """)
         print("  -> Created _Sidebar.md")
 
