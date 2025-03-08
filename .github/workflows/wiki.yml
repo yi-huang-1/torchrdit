@@ -15,7 +15,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install pydoc-markdown pyyaml
-          python setup.py
+          python setup.py install
       - name: Generate documentation
         run: |
           mkdir -p wiki
