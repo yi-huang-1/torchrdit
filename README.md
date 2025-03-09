@@ -54,12 +54,32 @@ pip install torchrdit
 
 ## Usage
 
-Please find the demo jupyter noteboks for more information.
+TorchRDIT includes several example files to demonstrate its capabilities:
 
-- `examples/Demo-01.py`
-- `examples/Demo-02.py`
-- `examples/Demo-03.py`
-- `examples/Demo-04.ipynb`
+### Basic Usage Examples (Demo-01)
+
+- **Demo-01a.py**: GMRF with hexagonal unit cells using RCWA (standard builder pattern)
+- **Demo-01a-fluent.py**: Same example using fluent builder pattern
+- **Demo-01a-function.py**: Same example using function-based builder pattern
+- **Demo-01b.py**: Multilayer structure configuration with standard builder
+- **Demo-01b-fluent.py**: Multilayer structure with fluent API
+- **Demo-01b-function.py**: Multilayer structure with function-based API
+
+### R-DIT Algorithm Examples (Demo-02)
+
+- **Demo-02a.py**: GMRF with hexagonal unit cells using R-DIT algorithm
+- **Demo-02b.py**: Same example with fluent builder pattern
+
+### Dispersive Materials (Demo-03)
+
+- **Demo-03a.py**: GMRF with dispersive materials and permittivity fitting
+- **Demo-03b.py**: Spectral analysis with dispersive materials
+
+### Design Optimization (Demo-04)
+
+- **Demo-04.py**: Demonstration of parameter optimization using automatic differentiation
+
+For more detailed documentation, please visit our [Wiki](https://github.com/yi-huang-1/torchrdit/wiki).
 
 ---
 
