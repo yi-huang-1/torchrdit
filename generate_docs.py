@@ -127,14 +127,32 @@ Welcome to the `TorchRDIT` documentation. `TorchRDIT` is an advanced software pa
 
 ## Examples
 
-TorchRDIT comes with a variety of examples in the `examples/` directory:
+TorchRDIT comes with several example files in the `examples/` directory:
 
-- Basic usage examples (Demo-01)
-- Parametric sweeps (Demo-02)
-- Dispersive materials (Demo-03)
-- Performance benchmarks (Demo-04)
+### Basic Usage Examples (Demo-01)
 
-See the [Examples](Examples) page for more details.
+- **Demo-01a.py**: GMRF with hexagonal unit cells using RCWA (standard builder pattern)
+- **Demo-01a-fluent.py**: Same example using fluent builder pattern
+- **Demo-01a-function.py**: Same example using function-based builder pattern
+- **Demo-01b.py**: Multilayer structure configuration with standard builder
+- **Demo-01b-fluent.py**: Multilayer structure with fluent API
+- **Demo-01b-function.py**: Multilayer structure with function-based API
+
+### R-DIT Algorithm Examples (Demo-02)
+
+- **Demo-02a.py**: GMRF with hexagonal unit cells using R-DIT algorithm
+- **Demo-02b.py**: Same example with fluent builder pattern
+
+### Dispersive Materials (Demo-03)
+
+- **Demo-03a.py**: GMRF with dispersive materials and permittivity fitting
+- **Demo-03b.py**: Spectral analysis with dispersive materials
+
+### Design Optimization (Demo-04)
+
+- **Demo-04.py**: Demonstration of parameter optimization using automatic differentiation
+
+For more detailed explanations of each example, see the [Examples](Examples) page.
 """)
         print("  -> Created Home.md")
 
@@ -347,48 +365,47 @@ The examples are organized into several categories:
 
 Below is a summary of key example files available in the `examples/` directory:
 
-### Demo-01: Basic Usage and API Styles with RCWA
+### Demo-01: Basic Usage Examples
 
-* **Demo-01a.py**: GMRF with hexagonal unit cells using RCWA (Standard Builder Pattern)
+* **Demo-01a.py**: GMRF with hexagonal unit cells using RCWA (standard builder pattern)
   * Demonstrates basic setup of a guided-mode resonance filter
   * Uses hexagonal unit cells with circular holes
   * Shows the standard builder pattern API
   * Demonstrates back-propagation for gradient calculation
 
-* **Demo-01a-fluent.py**: GMRF with hexagonal unit cells (Fluent Builder Pattern)
+* **Demo-01a-fluent.py**: Same example using fluent builder pattern
   * Same simulation as Demo-01a but using the fluent API with method chaining
   * Shows how to configure the solver in a single statement chain
   * Provides a more concise, readable approach for complex configurations
 
-* **Demo-01a-function.py**: GMRF with hexagonal unit cells (Function-based Builder Pattern)
+* **Demo-01a-function.py**: Same example using function-based builder pattern
   * Demonstrates the function-based approach to solver configuration
   * Shows how to define reusable configuration functions
   * Illustrates creating solvers from builder functions
 
-* **Demo-01b.py**: Multilayer structure configuration
+* **Demo-01b.py**: Multilayer structure configuration with standard builder
   * Shows how to set up and convert from configuration dictionaries
   * Demonstrates the builder pattern for multilayer devices
   * Includes explicit configuration dictionary to builder conversion
 
-* **Demo-01b-fluent.py** and **Demo-01b-function.py**: Alternative API styles
+* **Demo-01b-fluent.py** and **Demo-01b-function.py**: Multilayer structure with alternative API styles
   * Shows the same multilayer example in both fluent and function-based styles
   * Provides comparison of different API approaches
 
 ### Demo-02: R-DIT Algorithm Examples
 
-* **Demo-02a.py**: GMRF with hexagonal unit cells using R-DIT
+* **Demo-02a.py**: GMRF with hexagonal unit cells using R-DIT algorithm
   * Similar to Demo-01a but uses the R-DIT algorithm instead of RCWA
   * Demonstrates the same geometry but with a different solver approach
   * Shows how to configure the R-DIT algorithm parameters
 
-* **Demo-02b.py**: R-DIT with fluent API style
+* **Demo-02b.py**: Same example with fluent builder pattern
   * Demonstrates the R-DIT algorithm using fluent API style
   * Shows the same structure as Demo-02a but with a different coding style
-  * Provides a comparison of solver performance with R-DIT
 
 ### Demo-03: Dispersive Materials
 
-* **Demo-03a.py**: GMRF with dispersive materials
+* **Demo-03a.py**: GMRF with dispersive materials and permittivity fitting
   * Shows how to load and use dispersive material data from files
   * Demonstrates permittivity fitting for realistic material models
   * Uses SiC and SiO2 data files with frequency-dependent properties
@@ -401,12 +418,10 @@ Below is a summary of key example files available in the `examples/` directory:
 
 ### Demo-04: Design Optimization
 
-* **Demo-04.py**: GMRF parameter optimization
+* **Demo-04.py**: Demonstration of parameter optimization
   * Demonstrates how to set up and perform automatic design optimization
   * Uses gradient descent to tune the radius of the holes in a GMRF
   * Shows how to define an objective function for optimization
-  * Shifts the resonance wavelength to a target value (1537 nm)
-  * Includes visualization of optimization results showing the spectral shift
   * Provides a complete workflow for parameter tuning using automatic differentiation
 
 ## Running the Examples
