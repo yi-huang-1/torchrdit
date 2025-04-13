@@ -358,8 +358,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                  t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
                  is_use_FFF: bool = True, # if use Fast Fourier Factorization
                  precision: Precision = Precision.SINGLE,
-                 algorithm: SolverAlgorithm = None,
-                 device: Union[str, torch.device] = 'cpu') -> None:
+                 device: Union[str, torch.device] = 'cpu',
+                 algorithm: SolverAlgorithm = None) -> None:
         Cell3D.__init__(self, lengthunit, rdim, kdim, materiallist, t1, t2, device)
         SolverSubjectMixin.__init__(self)
 
@@ -1720,7 +1720,7 @@ class RCWASolver(FourierBaseSolver):
                  is_use_FFF: bool = True,
                  precision: Precision = Precision.SINGLE,
                  device: Union[str, torch.device] = 'cpu') -> None:
-        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, is_use_FFF, precision, device)
+        super().__init__(lam0=lam0, lengthunit=lengthunit, rdim=rdim, kdim=kdim, materiallist=materiallist, t1=t1, t2=t2, is_use_FFF=is_use_FFF, precision=precision, device=device)
 
         # Set the algorithm strategy
         self._algorithm = RCWAAlgorithm(self)
@@ -1808,7 +1808,7 @@ class RDITSolver(FourierBaseSolver):
                  is_use_FFF: bool = True,
                  precision: Precision = Precision.SINGLE,
                  device: Union[str, torch.device] = 'cpu') -> None:
-        super().__init__(lam0, lengthunit, rdim, kdim, materiallist, t1, t2, is_use_FFF, precision, device)
+        super().__init__(lam0=lam0, lengthunit=lengthunit, rdim=rdim, kdim=kdim, materiallist=materiallist, t1=t1, t2=t2, is_use_FFF=is_use_FFF, precision=precision, device=device)
 
         # Set the algorithm strategy
         self._algorithm = RDITAlgorithm(self)
