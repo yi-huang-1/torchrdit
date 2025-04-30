@@ -3,6 +3,7 @@ import torch
 from .solver import tsolve
 from .utils import EigComplex, to_diag_util
 import math
+
 class SolverAlgorithm(ABC):
     """Abstract base class defining the interface for electromagnetic solver algorithms.
     
@@ -10,9 +11,27 @@ class SolverAlgorithm(ABC):
     must adhere to. It follows the Strategy pattern, allowing different algorithms
     (RCWA and R-DIT) to be used interchangeably with the same solver interface.
     
-    Concrete implementations of this abstract class must implement the required
-    methods for solving electromagnetic problems, particularly for handling
-    non-homogeneous layers which is where the algorithms differ most significantly.
+    Note:
+        Users should not instantiate or use these algorithm classes directly.
+        Instead, use the SolverBuilder interface which provides a more user-friendly
+        way to configure and create solvers with the appropriate algorithm.
+    
+    Examples:
+        >>> # Use SolverBuilder to configure and create a solver
+        >>> from torchrdit.builder import SolverBuilder
+        >>> from torchrdit.constants import Algorithm
+        >>> builder = SolverBuilder()
+        >>> # Configure with RCWA algorithm
+        >>> solver_rcwa = builder.with_algorithm(Algorithm.RCWA).build()
+        >>> # Configure with R-DIT algorithm
+        >>> solver_rdit = builder.with_algorithm(Algorithm.RDIT).build()
+        >>> # Check which algorithm a solver uses
+        >>> print(f"Solver uses: {solver_rcwa.algorithm.name}")
+        >>> print(f"Solver uses: {solver_rdit.algorithm.name}")
+
+    
+    Keywords:
+        algorithm, solver, electromagnetic, strategy pattern, abstraction
     """
     
     @abstractmethod
@@ -24,16 +43,23 @@ class SolverAlgorithm(ABC):
         implementations (RCWA, R-DIT) will provide different approaches for
         this calculation.
         
+        Note:
+            This method is called internally by the solver and should not be
+            called directly by users.
+        
         Args:
-            layer_index: Index of the layer to solve
-            p_mat: P matrix for the layer
-            q_mat: Q matrix for the layer
-            w0_mat: W0 matrix
-            v0_mat: V0 matrix
+            layer_index (int): Index of the layer to solve.
+            p_mat (torch.Tensor): P matrix for the layer.
+            q_mat (torch.Tensor): Q matrix for the layer.
+            w0_mat (torch.Tensor): W0 matrix.
+            v0_mat (torch.Tensor): V0 matrix.
             
         Returns:
-            Results of the non-homogeneous layer calculation, typically a
+            dict: Results of the non-homogeneous layer calculation, typically a
             scattering matrix for the layer.
+        
+        Keywords:
+            layer solving, non-homogeneous, electromagnetic, scattering matrix
         """
         pass
     
@@ -46,6 +72,9 @@ class SolverAlgorithm(ABC):
         
         Returns:
             str: The name of the algorithm (e.g., 'RCWA', 'R-DIT')
+        
+        Keywords:
+            algorithm name, identifier
         """
         pass
 
@@ -62,14 +91,47 @@ class RCWAAlgorithm(SolverAlgorithm):
     While the TorchRDIT package primarily emphasizes the eigendecomposition-free
     R-DIT method for improved performance, this RCWA implementation is provided
     for comparison and for cases where RCWA may be preferred.
+    
+    Note:
+        Users should not instantiate this class directly. Instead, use the
+        SolverBuilder interface to create solvers with the appropriate algorithm.
+    
+    Attributes:
+        solver: Reference to the parent solver instance.
+        _rdit_order (int): Order parameter for compatibility with R-DIT.
+    
+    Examples:
+        >>> # Using SolverBuilder to create a solver with RCWA algorithm
+        >>> from torchrdit.builder import SolverBuilder
+        >>> from torchrdit.constants import Algorithm
+        >>> builder = SolverBuilder()
+        >>> solver = builder.with_algorithm(Algorithm.RCWA).build()
+        >>> # Additional configuration can be applied through the builder
+        >>> solver = builder.with_algorithm(Algorithm.RCWA) \
+        ...                 .with_wavelengths(1.55) \
+        ...                 .with_k_dimensions([5, 5]) \
+        ...                 .build()
+    
+    Keywords:
+        RCWA, electromagnetic, eigendecomposition, Fourier, Maxwell, scattering
     """
     
     def __init__(self, solver):
+        """Initialize the RCWA algorithm instance.
+        
+        Args:
+            solver: Reference to the parent solver that will use this algorithm.
+        """
         self.solver = solver
         self._rdit_order = 2  # Default value
     
     @property
     def name(self):
+        """Return the name of the algorithm.
+        
+        Returns:
+            str: The name of the algorithm ('RCWA')
+        """
         return "RCWA"
     
     def solve_nonhomo_layer(self, layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, kdim, k_0, **kwargs):
@@ -79,21 +141,27 @@ class RCWAAlgorithm(SolverAlgorithm):
         matrix of a non-homogeneous layer using eigenmode decomposition in the
         Rigorous Coupled Wave Analysis (RCWA) algorithm.
         
+        Note:
+            This method is called internally by the solver and should not be
+            called directly by users.
+        
         Args:
-            layer_thickness: Thickness of the layer
-            p_mat_i: P matrix for the layer
-            q_mat_i: Q matrix for the layer
-            mat_w0: W0 matrix
-            mat_v0: V0 matrix
-            kdim: Dimensions in k-space [kheight, kwidth]
-            k_0: Wave number
-            **kwargs: Additional parameters
+            layer_thickness (float): Thickness of the layer.
+            p_mat_i (torch.Tensor): P matrix for the layer.
+            q_mat_i (torch.Tensor): Q matrix for the layer.
+            mat_w0 (torch.Tensor): W0 matrix.
+            mat_v0 (torch.Tensor): V0 matrix.
+            kdim (list): Dimensions in k-space [kheight, kwidth].
+            k_0 (torch.Tensor): Wave number.
+            **kwargs: Additional parameters.
             
         Returns:
-            Dictionary containing the scattering matrix for the layer
+            dict: Dictionary containing the scattering matrix for the layer
+                 with keys 'S11', 'S12', 'S21', 'S22'.
+        
+        Keywords:
+            RCWA, scattering matrix, eigenmode, layer calculation, non-homogeneous
         """
-        # Implementation from RCWASolver._solve_nonhomo_layer
-        # ...
         # Compute Eigen Modes
         smat_layer = {}
         mat_lam_i, mat_w_i = EigComplex.apply(p_mat_i @ q_mat_i)
@@ -126,9 +194,25 @@ class RCWAAlgorithm(SolverAlgorithm):
         This method is provided for API compatibility with the R-DIT algorithm,
         allowing for easy switching between algorithms.
         
+        Note:
+            Users should not call this method directly. RDIT order can be set 
+            using SolverBuilder.with_rdit_order() method.
+        
         Args:
-            rdit_order: The order of the R-DIT algorithm. This parameter has
+            rdit_order (int): The order of the R-DIT algorithm. This parameter has
                        minimal effect in the RCWA implementation.
+        
+        Examples:
+            >>> # Setting RDIT order through the builder
+            >>> from torchrdit.builder import SolverBuilder
+            >>> from torchrdit.constants import Algorithm
+            >>> solver = SolverBuilder() \
+            ...                 .with_algorithm(Algorithm.RCWA) \
+            ...                 .with_rdit_order(4) \
+            ...                 .build()
+        
+        Keywords:
+            RCWA, R-DIT, compatibility, order parameter
         """
         self._rdit_order = rdit_order
 
@@ -140,11 +224,39 @@ class RDITAlgorithm(SolverAlgorithm):
     improved numerical stability and computational efficiency compared to the
     traditional RCWA approach. The R-DIT method achieves up to 16.2× speedup
     in inverse design applications.
+    
+    Note:
+        Users should not instantiate this class directly. Instead, use the
+        SolverBuilder interface to create solvers with the appropriate algorithm.
+    
+    Attributes:
+        solver: Reference to the parent solver instance.
+        _rdit_order (int): Order parameter for the R-DIT algorithm approximation.
+    
+    Examples:
+        >>> # Using SolverBuilder to create a solver with R-DIT algorithm
+        >>> from torchrdit.builder import SolverBuilder
+        >>> from torchrdit.constants import Algorithm
+        >>> builder = SolverBuilder()
+        >>> # Configure with R-DIT algorithm and set order
+        >>> solver = builder.with_algorithm(Algorithm.RDIT) \
+        ...                 .with_rdit_order(8) \
+        ...                 .build()
+        >>> # Or load configuration from a file
+        >>> solver = SolverBuilder().from_config("config.json").build()
+    
+    Keywords:
+        R-DIT, electromagnetic, eigendecomposition-free, optimization, speedup, scattering
     """
     
     def __init__(self, solver):
+        """Initialize the R-DIT algorithm instance.
+        
+        Args:
+            solver: Reference to the parent solver that will use this algorithm.
+        """
         self.solver = solver
-        self._rdit_order = 10# Default value
+        self._rdit_order = 10  # Default value
     
     @property
     def name(self):
@@ -152,6 +264,9 @@ class RDITAlgorithm(SolverAlgorithm):
         
         Returns:
             str: The name of the algorithm ('R-DIT')
+        
+        Keywords:
+            algorithm name, R-DIT, identifier
         """
         return "R-DIT"
     
@@ -162,21 +277,27 @@ class RDITAlgorithm(SolverAlgorithm):
         the scattering matrix of a non-homogeneous layer using the Rigorous Diffraction
         Interface Theory algorithm.
         
+        Note:
+            This method is called internally by the solver and should not be
+            called directly by users.
+        
         Args:
-            layer_thickness: Thickness of the layer
-            p_mat_i: P matrix for the layer
-            q_mat_i: Q matrix for the layer
-            mat_w0: W0 matrix
-            mat_v0: V0 matrix
-            kdim: Dimensions in k-space [kheight, kwidth]
-            k_0: Wave number
-            **kwargs: Additional parameters
+            layer_thickness (float): Thickness of the layer.
+            p_mat_i (torch.Tensor): P matrix for the layer.
+            q_mat_i (torch.Tensor): Q matrix for the layer.
+            mat_w0 (torch.Tensor): W0 matrix.
+            mat_v0 (torch.Tensor): V0 matrix.
+            kdim (list): Dimensions in k-space [kheight, kwidth].
+            k_0 (torch.Tensor): Wave number.
+            **kwargs: Additional parameters.
             
         Returns:
-            Dictionary containing the scattering matrix for the layer
+            dict: Dictionary containing the scattering matrix for the layer
+                 with keys 'S11', 'S12', 'S21', 'S22'.
+        
+        Keywords:
+            R-DIT, scattering matrix, eigendecomposition-free, layer calculation, non-homogeneous
         """
-        # Implementation from RDITSolver._solve_nonhomo_layer
-        # ...
         n_harmonics = kdim[0] * kdim[1]
 
         smat_layer = {}
@@ -233,9 +354,25 @@ class RDITAlgorithm(SolverAlgorithm):
         interface theory. Higher orders generally provide better accuracy but
         may be computationally more expensive.
         
+        Note:
+            Users should not call this method directly. RDIT order can be set 
+            using SolverBuilder.with_rdit_order() method.
+        
         Args:
-            rdit_order: The order of the algorithm (typically 1-10). Higher values
+            rdit_order (int): The order of the algorithm (typically 1-10). Higher values
                        provide more accurate results at the cost of computational
                        efficiency.
+        
+        Examples:
+            >>> # Setting RDIT order through the builder
+            >>> from torchrdit.builder import SolverBuilder
+            >>> from torchrdit.constants import Algorithm
+            >>> solver = SolverBuilder() \
+            ...                 .with_algorithm(Algorithm.RDIT) \
+            ...                 .with_rdit_order(8) \
+            ...                 .build()
+        
+        Keywords:
+            R-DIT, order, approximation, accuracy, performance, tradeoff
         """
         self._rdit_order = rdit_order

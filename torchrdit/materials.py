@@ -1,4 +1,75 @@
-""" This file defines the material class to manage all materials. """
+"""Module for defining and managing material properties in TorchRDIT electromagnetic simulations.
+
+This module provides classes and utilities for creating, managing, and manipulating
+material properties used in electromagnetic simulations with TorchRDIT. It handles
+both dispersive (wavelength/frequency dependent) and non-dispersive materials with
+a unified interface.
+
+The material system is designed with a proxy pattern, separating material property
+definitions from their data loading and processing. This allows for efficient handling
+of different material data formats and sources, including:
+- Direct permittivity/permeability specification
+- Refractive index and extinction coefficient (n, k) specification
+- Loading from data files with different formats (freq-eps, wl-eps, freq-nk, wl-nk)
+
+Classes:
+    MaterialClass: Main class for representing materials with their electromagnetic properties.
+
+Functions:
+    (No module-level functions, but MaterialClass provides factory methods)
+
+Examples:
+    Creating simple non-dispersive materials:
+    
+    >>> from torchrdit.utils import create_material
+    >>> # Create a simple material with constant permittivity
+    >>> air = create_material(name="air", permittivity=1.0)
+    >>> silicon = create_material(name="silicon", permittivity=11.7)
+    >>> # Create a material from refractive index
+    >>> glass = create_material(name="glass", permittivity=2.25)  # n=1.5
+    >>> # Create a material with complex permittivity (lossy)
+    >>> gold = create_material(name="gold", permittivity=complex(-10.0, 1.5))
+    
+    Creating dispersive materials from data files:
+    
+    >>> # Create dispersive material from data file with wavelength-permittivity data
+    >>> silica = create_material(
+    ...     name="silica",
+    ...     dielectric_dispersion=True,
+    ...     user_dielectric_file="materials/SiO2.txt",
+    ...     data_format="wl-eps",
+    ...     data_unit="um"
+    ... )
+    >>> 
+    >>> # Create dispersive material from data file with frequency-nk data
+    >>> silicon_dispersive = create_material(
+    ...     name="silicon_disp",
+    ...     dielectric_dispersion=True,
+    ...     user_dielectric_file="materials/Si.txt",
+    ...     data_format="freq-nk",
+    ...     data_unit="thz"
+    ... )
+    
+    Using materials in solvers:
+    
+    >>> from torchrdit.solver import create_solver
+    >>> from torchrdit.constants import Algorithm
+    >>> import torch
+    >>> # Create a solver and add materials
+    >>> solver = create_solver(algorithm=Algorithm.RCWA)
+    >>> solver.add_materials([air, silicon, glass])
+    >>> # Add layers using these materials
+    >>> solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
+    >>> solver.add_layer(material_name="glass", thickness=torch.tensor(0.1))
+    >>> # Set input/output materials
+    >>> solver.update_ref_material("air")
+    >>> solver.update_trn_material("air")
+
+Keywords:
+    materials, permittivity, permeability, optical properties, dispersive materials,
+    refractive index, extinction coefficient, material data, complex permittivity,
+    electromagnetic properties, dielectric function, optical constants, wavelength-dependent
+"""
 import os
 import warnings
 from typing import Dict, List, Optional, Union, Tuple, Any
@@ -11,20 +82,65 @@ from .material_proxy import MaterialDataProxy, UnitConverter
 
 
 class MaterialClass:
-    """
-    Class of materials used in the RCWA solver.
+    """Class for representing materials and their electromagnetic properties in TorchRDIT.
     
-    This class implements a proxy pattern for handling material data with different
-    units and formats. The material data can be dispersive (wavelength/frequency dependent) 
-    or non-dispersive (fixed values).
+    This class implements a comprehensive representation of materials used in electromagnetic
+    simulations, supporting both dispersive (wavelength/frequency dependent) and
+    non-dispersive (constant) material properties. It provides a unified interface
+    for managing permittivity and permeability data regardless of the source format.
+    
+    MaterialClass uses a proxy pattern for handling material data loading and processing,
+    allowing it to support multiple data formats and unit systems. For dispersive
+    materials, it can load data from files and perform polynomial fitting to interpolate
+    property values at specific wavelengths needed for simulations.
     
     Attributes:
-        name (str): Name of the material
-        er (torch.Tensor): Permittivity tensor (complex for dispersive materials)
-        ur (torch.Tensor): Permeability tensor
-        isdispersive_er (bool): Whether the material has dispersive permittivity
-        data_format (str): Format of the material data ('freq-eps', 'wl-eps', etc.)
-        data_unit (str): Unit of the material data ('thz', 'um', etc.)
+        name (str): Name identifier for the material.
+        er (torch.Tensor): Complex permittivity tensor.
+        ur (torch.Tensor): Permeability tensor.
+        isdispersive_er (bool): Whether the material has wavelength/frequency-dependent permittivity.
+        data_format (str): Format of the loaded data file for dispersive materials.
+        data_unit (str): Unit used in the data file for dispersive materials.
+        fitted_data (Dict[str, Any]): Fitted profile data for dispersive materials.
+    
+    Note:
+        Users typically create MaterialClass instances through the `create_material` 
+        function rather than directly instantiating this class.
+    
+    Examples:
+        Creating a simple non-dispersive material:
+        
+        >>> from torchrdit.utils import create_material
+        >>> # Material with constant permittivity
+        >>> silicon = create_material(name="silicon", permittivity=11.7)
+        >>> print(f"Material: {silicon.name}, ε = {silicon.er.real:.1f}")
+        Material: silicon, ε = 11.7
+        >>> # Material with complex permittivity (lossy)
+        >>> gold = create_material(name="gold", permittivity=complex(-10.0, 1.5))
+        >>> print(f"Material: {gold.name}, ε = {gold.er.real:.1f}{gold.er.imag:+.1f}j")
+        Material: gold, ε = -10.0+1.5j
+        
+        Creating a dispersive material from a data file:
+        
+        >>> # Load permittivity data from wavelength-permittivity data file
+        >>> silica = create_material(
+        ...     name="silica",
+        ...     dielectric_dispersion=True,
+        ...     user_dielectric_file="materials/SiO2.txt",
+        ...     data_format="wl-eps",
+        ...     data_unit="um"
+        ... )
+        >>> # Use in a simulation with specific wavelengths
+        >>> import numpy as np
+        >>> wavelengths = np.array([1.31, 1.55])
+        >>> permittivity = silica.get_permittivity(wavelengths, 'um')
+        >>> print(f"Silica permittivity at λ=1.55 μm: {permittivity[1].real:.4f}")
+        Silica permittivity at λ=1.55 μm: 2.1521
+    
+    Keywords:
+        material properties, permittivity, permeability, optical constants,
+        dispersive materials, refractive index, wavelength-dependent properties,
+        material data, complex permittivity, dielectric function
     """
     
     # Class-level shared proxy for efficiency
@@ -44,23 +160,64 @@ class MaterialClass:
                  max_poly_fit_order: int = 10,
                  data_proxy: Optional[MaterialDataProxy] = None
                  ) -> None:
-        """
-        Initialize the MaterialClass instance.
+        """Initialize a MaterialClass instance with electromagnetic properties.
+
+        Creates a new material with specified properties. For non-dispersive materials,
+        only name, permittivity, and permeability need to be specified. For dispersive
+        materials (with wavelength/frequency-dependent properties), additional parameters
+        are required to specify the data source and format.
 
         Args:
-            name: Name of the material.
-            permittivity: Relative permittivity (used for non-dispersive materials).
-            permeability: Relative permeability.
-            dielectric_dispersion: If the permittivity of material is dispersive.
-            user_dielectric_file: Path of the user-defined dispersive dielectric data.
-            data_format: Format of the user-defined data ('freq-eps', 'wl-eps', 'freq-nk', or 'wl-nk').
-            data_unit: Unit of frequency or wavelength in the data file.
-            max_poly_fit_order: Max polynomial fit order for dispersive data.
-            data_proxy: Custom data proxy instance (uses shared proxy if None).
+            name: Unique identifier for the material. Used when referencing the material
+                 in solvers and layer definitions.
+            permittivity: Relative permittivity (εr) for non-dispersive materials.
+                         Can be a real or complex value to represent lossless or lossy materials.
+                         This value is ignored for dispersive materials.
+            permeability: Relative permeability (μr) of the material. Default is 1.0
+                         (non-magnetic material).
+            dielectric_dispersion: Whether the material has wavelength/frequency-dependent
+                                  permittivity. If True, a data file must be provided.
+            user_dielectric_file: Path to the data file containing the dispersive properties.
+                                 Required if dielectric_dispersion is True.
+            data_format: Format of the data in the file. Must be one of:
+                        'freq-eps': Frequency and permittivity (real, imaginary)
+                        'wl-eps': Wavelength and permittivity (real, imaginary)
+                        'freq-nk': Frequency and refractive index (n, k)
+                        'wl-nk': Wavelength and refractive index (n, k)
+            data_unit: Unit of the frequency or wavelength in the data file (e.g., 'thz', 'um').
+            max_poly_fit_order: Maximum polynomial order for fitting dispersive data.
+                               Higher values provide more accurate fits for complex
+                               dispersion curves but may lead to overfitting.
+            data_proxy: Custom data proxy instance for handling material data loading.
+                       Uses the shared class-level proxy if None.
         
         Raises:
             ValueError: If dispersive material is missing a data file,
                        if the data file doesn't exist, or if the data format is invalid.
+                       
+        Examples:
+            >>> from torchrdit.materials import MaterialClass
+            >>> # Create a simple air material
+            >>> air = MaterialClass(name="air", permittivity=1.0)
+            >>> 
+            >>> # Create a lossy metal with complex permittivity
+            >>> gold = MaterialClass(
+            ...     name="gold", 
+            ...     permittivity=complex(-10.0, 1.5)
+            ... )
+            >>> 
+            >>> # Create a dispersive material from data file
+            >>> silica = MaterialClass(
+            ...     name="silica",
+            ...     dielectric_dispersion=True,
+            ...     user_dielectric_file="materials/SiO2.txt",
+            ...     data_format="wl-eps",
+            ...     data_unit="um"
+            ... )
+        
+        Keywords:
+            material creation, permittivity, permeability, dispersive material,
+            optical constants, electromagnetic properties, material initialization
         """
         self._name = name
         self._data_format = data_format.lower()
@@ -242,7 +399,7 @@ class MaterialClass:
         }
         
         # Set the permittivity tensor
-        self._er = torch.tensor(eps_real - 1j*eps_imag)
+        self._er = torch.tensor(eps_real(sim_wavelengths) - 1j*eps_imag(sim_wavelengths))
         
         # Cache the result
         self._perm_cache[cache_key] = self._er

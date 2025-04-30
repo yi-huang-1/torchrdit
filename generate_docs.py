@@ -87,6 +87,12 @@ Please check that the module exists and is properly installed.
     # Create an Examples page
     create_examples_page(docs_dir)
     
+    # Create a Shapes page
+    create_shapes_page(docs_dir)
+    
+    # Create an Observers page
+    create_observers_page(docs_dir)
+    
     # Create a README file for the wiki directory
     create_readme(docs_dir)
 
@@ -121,36 +127,15 @@ Welcome to the `TorchRDIT` documentation. `TorchRDIT` is an advanced software pa
 - [Cell Module](Cell) - Cell geometry definitions
 - [Layers Module](Layers) - Layer definitions and operations
 - [Materials Module](Materials) - Material property definitions
+- [Observers Module](Observers) - Progress tracking and reporting
+- [Shapes Module](Shapes) - Shape generation for photonic structures
 - [Solver Module](Solver) - Core solver functionality
 - [Utils](Utils) - Utility functions
 - [Visualization](Visualization) - Tools for visualizing results
 
 ## Examples
 
-TorchRDIT comes with several example files in the `examples/` directory:
-
-### Basic Usage Examples (Demo-01)
-
-- **Demo-01a.py**: GMRF with hexagonal unit cells using RCWA (standard builder pattern)
-- **Demo-01a-fluent.py**: Same example using fluent builder pattern
-- **Demo-01a-function.py**: Same example using function-based builder pattern
-- **Demo-01b.py**: Multilayer structure configuration with standard builder
-- **Demo-01b-fluent.py**: Multilayer structure with fluent API
-- **Demo-01b-function.py**: Multilayer structure with function-based API
-
-### R-DIT Algorithm Examples (Demo-02)
-
-- **Demo-02a.py**: GMRF with hexagonal unit cells using R-DIT algorithm
-- **Demo-02b.py**: Same example with fluent builder pattern
-
-### Dispersive Materials (Demo-03)
-
-- **Demo-03a.py**: GMRF with dispersive materials and permittivity fitting
-- **Demo-03b.py**: Spectral analysis with dispersive materials
-
-### Design Optimization (Demo-04)
-
-- **Demo-04.py**: Demonstration of parameter optimization using automatic differentiation
+TorchRDIT comes with several example files in the `examples/` directory
 
 For more detailed explanations of each example, see the [Examples](Examples) page.
 """)
@@ -176,6 +161,8 @@ def create_sidebar(docs_dir):
   - [Cell](Cell)
   - [Layers](Layers)
   - [Materials](Materials)
+  - [Observers](Observers)
+  - [Shapes](Shapes)
   - [Solver](Solver)
   - [Utils](Utils)
   - [Visualization](Visualization)
@@ -235,7 +222,6 @@ builder.with_precision(Precision.DOUBLE)
 builder.with_real_dimensions([512, 512])
 builder.with_k_dimensions([9, 9])
 builder.with_wavelengths(np.array([1550 * nm]))
-builder.with_fff(True)  # Use Fast Fourier Factorization
 
 # Create materials
 material_si = create_material(name='Silicon', permittivity=12.25)  # n=3.5 for silicon
@@ -290,7 +276,6 @@ device = (tr.solver.get_solver_builder()
     .with_real_dimensions([512, 512])
     .with_k_dimensions([9, 9])
     .with_wavelengths([1550e-3])  # in μm
-    .with_fff(True)
     .build())
 
 # Continue with simulation setup...
@@ -361,75 +346,12 @@ The examples are organized into several categories:
 - Automatic differentiation and gradient calculation
 - Parameter tuning
 
-## Example Files Overview
-
-Below is a summary of key example files available in the `examples/` directory:
-
-### Demo-01: Basic Usage Examples
-
-* **Demo-01a.py**: GMRF with hexagonal unit cells using RCWA (standard builder pattern)
-  * Demonstrates basic setup of a guided-mode resonance filter
-  * Uses hexagonal unit cells with circular holes
-  * Shows the standard builder pattern API
-  * Demonstrates back-propagation for gradient calculation
-
-* **Demo-01a-fluent.py**: Same example using fluent builder pattern
-  * Same simulation as Demo-01a but using the fluent API with method chaining
-  * Shows how to configure the solver in a single statement chain
-  * Provides a more concise, readable approach for complex configurations
-
-* **Demo-01a-function.py**: Same example using function-based builder pattern
-  * Demonstrates the function-based approach to solver configuration
-  * Shows how to define reusable configuration functions
-  * Illustrates creating solvers from builder functions
-
-* **Demo-01b.py**: Multilayer structure configuration with standard builder
-  * Shows how to set up and convert from configuration dictionaries
-  * Demonstrates the builder pattern for multilayer devices
-  * Includes explicit configuration dictionary to builder conversion
-
-* **Demo-01b-fluent.py** and **Demo-01b-function.py**: Multilayer structure with alternative API styles
-  * Shows the same multilayer example in both fluent and function-based styles
-  * Provides comparison of different API approaches
-
-### Demo-02: R-DIT Algorithm Examples
-
-* **Demo-02a.py**: GMRF with hexagonal unit cells using R-DIT algorithm
-  * Similar to Demo-01a but uses the R-DIT algorithm instead of RCWA
-  * Demonstrates the same geometry but with a different solver approach
-  * Shows how to configure the R-DIT algorithm parameters
-
-* **Demo-02b.py**: Same example with fluent builder pattern
-  * Demonstrates the R-DIT algorithm using fluent API style
-  * Shows the same structure as Demo-02a but with a different coding style
-
-### Demo-03: Dispersive Materials
-
-* **Demo-03a.py**: GMRF with dispersive materials and permittivity fitting
-  * Shows how to load and use dispersive material data from files
-  * Demonstrates permittivity fitting for realistic material models
-  * Uses SiC and SiO2 data files with frequency-dependent properties
-  * Includes visualization of fitted permittivity
-
-* **Demo-03b.py**: Spectral analysis with dispersive materials
-  * Performs wavelength sweep with realistic material models
-  * Shows how dispersion affects resonance features
-  * Calculates and visualizes spectra with material dispersion effects
-
-### Demo-04: Design Optimization
-
-* **Demo-04.py**: Demonstration of parameter optimization
-  * Demonstrates how to set up and perform automatic design optimization
-  * Uses gradient descent to tune the radius of the holes in a GMRF
-  * Shows how to define an objective function for optimization
-  * Provides a complete workflow for parameter tuning using automatic differentiation
-
 ## Running the Examples
 
 To run any of the examples, navigate to the repository root and run:
 
 ```bash
-python examples/Demo-01a.py
+python examples/example_gmrf_variable_optimize.py
 ```
 
 Most examples generate visualization outputs automatically, which are saved to the same directory. The examples use relative imports, so they must be run from the repository root.
@@ -504,15 +426,21 @@ dev1 = create_solver_from_builder(configure_gmrf_solver)
 
 ```python
 # Using masks to create complex geometries
-c1 = device.get_circle_mask(center=[0, b/2], radius=r)
-c2 = device.get_circle_mask(center=[0, -b/2], radius=r)
-c3 = device.get_circle_mask(center=[a/2, 0], radius=r)
-c4 = device.get_circle_mask(center=[-a/2, 0], radius=r)
+from torchrdit.shapes import ShapeGenerator
+
+# Create a shape generator
+shape_generator = ShapeGenerator.from_solver(device)
+
+# Create a circular mask
+c1 = shape_generator.generate_circle_mask(center=[0, b/2], radius=r)
+c2 = shape_generator.generate_circle_mask(center=[0, -b/2], radius=r)
+c3 = shape_generator.generate_circle_mask(center=[a/2, 0], radius=r)
+c4 = shape_generator.generate_circle_mask(center=[-a/2, 0], radius=r)
 
 # Combine masks using boolean operations
-mask = device.combine_masks(mask1=c1, mask2=c2, operation='union')
-mask = device.combine_masks(mask1=mask, mask2=c3, operation='union')
-mask = device.combine_masks(mask1=mask, mask2=c4, operation='union')
+mask = shape_generator.combine_masks(mask1=c1, mask2=c2, operation='union')
+mask = shape_generator.combine_masks(mask1=mask, mask2=c3, operation='union')
+mask = shape_generator.combine_masks(mask1=mask, mask2=c4, operation='union')
 
 # Update permittivity with mask
 device.update_er_with_mask(mask=mask, layer_index=0)
@@ -576,6 +504,405 @@ for epoch in trange(num_epochs):
 These examples demonstrate the key capabilities of TorchRDIT, including differentiable simulation, optimization, and support for complex geometries and materials.""")
         print("  -> Created Examples.md")
 
+def create_shapes_page(docs_dir):
+    """Create a dedicated Shapes page for the wiki."""
+    with open(docs_dir / "Shapes.md", "w") as f:
+        f.write("""---
+title: "Shape Generation"
+category: "Core Components"
+tags: ["shapes", "mask", "geometry", "photonics"]
+related: ["Solver", "Layers"]
+complexity: "intermediate"
+---
+
+# Shape Generation Module
+
+## Overview
+The `torchrdit.shapes` module provides tools for generating binary masks representing various photonic structures. These masks can be used to define the geometry of patterned layers in electromagnetic simulations.
+
+## Key Features
+- Create common shapes (circles, rectangles, polygons)
+- Support for both hard and soft edges
+- Combine shapes using boolean operations (union, intersection, difference)
+- Non-Cartesian coordinate system support through lattice vectors
+- Full PyTorch integration for GPU acceleration and differentiability
+
+## Usage
+```python
+import torch
+from torchrdit.shapes import ShapeGenerator
+from torchrdit.solver import create_solver
+from torchrdit.constants import Algorithm
+
+# Create a solver
+solver = create_solver(algorithm=Algorithm.RDIT, rdim=[512, 512], kdim=[7, 7])
+
+# Create a shape generator
+shape_gen = ShapeGenerator.from_solver(solver)
+
+# Generate shapes
+circle = shape_gen.generate_circle_mask(center=(0.0, 0.0), radius=0.3)
+rect = shape_gen.generate_rectangle_mask(width=0.4, height=0.2, angle=30)
+
+# Combine shapes
+combined = shape_gen.combine_masks(circle, rect, operation='union')
+
+# Use the mask in a simulation
+solver.update_er_with_mask(combined, layer_index=0)
+```
+
+## Detailed Description
+
+The `torchrdit.shapes` module centers around the `ShapeGenerator` class, which provides methods for creating binary mask tensors. These masks represent the geometry of photonic structures and can be used to define the permittivity distribution in patterned layers.
+
+The module supports both Cartesian and non-Cartesian coordinate systems through the use of lattice vectors. This allows for simulating structures with various symmetries, such as hexagonal lattices.
+
+All operations in the module are performed using PyTorch tensors, ensuring compatibility with GPU acceleration and automatic differentiation. This makes the module suitable for gradient-based optimization of photonic structures.
+
+## Main Components
+
+### ShapeGenerator
+
+The main class for generating and manipulating shape masks. It provides methods for creating common shapes and combining them using boolean operations.
+
+```python
+class ShapeGenerator:
+    \"\"\"Class to generate binary shape masks for photonic structures with lattice vector support.\"\"\"
+    
+    def __init__(self, XO, YO, rdim, lattice_t1=None, lattice_t2=None):
+        \"\"\"Initialize a shape generator with coordinate grids and lattice vectors.\"\"\"
+        # ...
+```
+
+#### Initialization
+
+The `ShapeGenerator` class can be initialized in three ways:
+
+1. Directly with coordinate grids:
+   ```python
+   import torch
+   import numpy as np
+   from torchrdit.shapes import ShapeGenerator
+   
+   # Create coordinate grids
+   x = torch.linspace(-1, 1, 128)
+   y = torch.linspace(-1, 1, 128)
+   X, Y = torch.meshgrid(x, y, indexing='ij')
+   
+   # Initialize shape generator
+   shape_gen = ShapeGenerator(X, Y, (128, 128))
+   ```
+
+2. From an existing solver using the `from_solver` class method:
+   ```python
+   from torchrdit.solver import create_solver
+   from torchrdit.constants import Algorithm
+   from torchrdit.shapes import ShapeGenerator
+   
+   # Create a solver
+   solver = create_solver(algorithm=Algorithm.RDIT, rdim=[512, 512], kdim=[7, 7])
+   
+   # Create a shape generator from the solver
+   shape_gen = ShapeGenerator.from_solver(solver)
+   ```
+
+3. Using solver's parameter dictionary with `get_shape_generator_params`:
+   ```python
+   from torchrdit.solver import create_solver
+   from torchrdit.constants import Algorithm
+   from torchrdit.shapes import ShapeGenerator
+   
+   # Create a solver
+   solver = create_solver(algorithm=Algorithm.RDIT, rdim=[512, 512], kdim=[7, 7])
+   
+   # Get parameters from solver and create a shape generator
+   params = solver.get_shape_generator_params()
+   shape_gen = ShapeGenerator(**params)
+   
+   # This method is useful when you need to customize parameters
+   # before creating the shape generator
+   params["tfloat"] = torch.float32  # Change precision if needed
+   custom_shape_gen = ShapeGenerator(**params)
+   ```
+
+#### Shape Generation Methods
+
+##### generate_circle_mask
+```python
+def generate_circle_mask(self, center=None, radius=0.1, soft_edge=0.001):
+    \"\"\"Generate a mask for a circle in Cartesian coordinates.\"\"\"
+    # ...
+```
+
+Creates a circular mask with the specified center, radius, and edge softness.
+
+##### generate_rectangle_mask
+```python
+def generate_rectangle_mask(self, center=(0.0, 0.0), width=0.2, height=0.2, angle=0.0, soft_edge=0.001):
+    \"\"\"Generate a mask for a rectangle in Cartesian coordinates.\"\"\"
+    # ...
+```
+
+Creates a rectangular mask with the specified center, dimensions, rotation angle, and edge softness.
+
+##### generate_polygon_mask
+```python
+def generate_polygon_mask(self, polygon_points, center=None, angle=None, invert=False, soft_edge=0.001):
+    \"\"\"Generate a mask for a polygon in Cartesian coordinates.\"\"\"
+    # ...
+```
+
+Creates a mask for an arbitrary polygon defined by its vertices.
+
+#### Mask Combination
+
+##### combine_masks
+```python
+def combine_masks(self, mask1, mask2, operation=\"union\"):
+    \"\"\"Combine two masks using a specified operation.\"\"\"
+    # ...
+```
+
+Combines two masks using a boolean operation. Supported operations are:
+- `\"union\"`: Logical OR (maximum) of the masks
+- `\"intersection\"`: Logical AND (minimum) of the masks
+- `\"difference\"`: Absolute difference between the masks
+- `\"subtract\"`: Remove mask2 from mask1
+
+## Examples
+
+### Creating a Circle Mask
+
+```python
+import torch
+from torchrdit.shapes import ShapeGenerator
+
+# Create coordinate grids
+x = torch.linspace(-1, 1, 128)
+y = torch.linspace(-1, 1, 128)
+X, Y = torch.meshgrid(x, y, indexing='ij')
+shape_gen = ShapeGenerator(X, Y, (128, 128))
+
+# Generate a circle mask with hard edges
+hard_circle = shape_gen.generate_circle_mask(
+    center=(0.2, -0.3),
+    radius=0.4,
+    soft_edge=0
+)
+
+# Generate a circle mask with soft edges
+soft_circle = shape_gen.generate_circle_mask(
+    center=(0.2, -0.3),
+    radius=0.4,
+    soft_edge=0.02
+)
+```
+
+### Creating a Rectangle Mask
+
+```python
+# Generate a rectangle mask
+rectangle = shape_gen.generate_rectangle_mask(
+    center=(0.1, 0.1),
+    width=0.5,
+    height=0.3,
+    angle=45,
+    soft_edge=0.01
+)
+```
+
+### Creating a Polygon Mask
+
+```python
+# Create a triangle mask
+triangle_points = [(-0.2, -0.2), (0.2, -0.2), (0.0, 0.2)]
+triangle = shape_gen.generate_polygon_mask(
+    polygon_points=triangle_points,
+    soft_edge=0.01
+)
+
+# Create a hexagon mask
+import numpy as np
+n = 6  # hexagon
+angles = np.linspace(0, 2*np.pi, n, endpoint=False)
+radius = 0.3
+hexagon_points = [(radius*np.cos(a), radius*np.sin(a)) for a in angles]
+hexagon = shape_gen.generate_polygon_mask(
+    polygon_points=hexagon_points,
+    center=(0.1, 0.1),
+    angle=30
+)
+```
+
+### Combining Masks
+
+```python
+# Create two circular masks
+circle1 = shape_gen.generate_circle_mask(center=(-0.1, 0), radius=0.3)
+circle2 = shape_gen.generate_circle_mask(center=(0.1, 0), radius=0.3)
+
+# Combine masks using different operations
+union = shape_gen.combine_masks(circle1, circle2, operation="union")
+intersection = shape_gen.combine_masks(circle1, circle2, operation="intersection")
+difference = shape_gen.combine_masks(circle1, circle2, operation="difference")
+circle1_minus_circle2 = shape_gen.combine_masks(circle1, circle2, operation="subtract")
+```
+
+### Creating Complex Patterns
+
+```python
+# Create a pattern of four circles in a square arrangement
+c1 = shape_gen.generate_circle_mask(center=[0.2, 0.2], radius=0.1)
+c2 = shape_gen.generate_circle_mask(center=[0.2, -0.2], radius=0.1)
+c3 = shape_gen.generate_circle_mask(center=[-0.2, 0.2], radius=0.1)
+c4 = shape_gen.generate_circle_mask(center=[-0.2, -0.2], radius=0.1)
+
+# Combine all circles
+mask = c1
+mask = shape_gen.combine_masks(mask, c2, operation='union')
+mask = shape_gen.combine_masks(mask, c3, operation='union')
+mask = shape_gen.combine_masks(mask, c4, operation='union')
+
+# Add a square in the middle
+square = shape_gen.generate_rectangle_mask(width=0.2, height=0.2, angle=0)
+final_mask = shape_gen.combine_masks(mask, square, operation='union')
+```
+
+### Using Masks in Simulations
+
+```python
+from torchrdit.solver import create_solver
+from torchrdit.constants import Algorithm
+import torch
+
+# Create a solver
+solver = create_solver(
+    algorithm=Algorithm.RCWA,
+    rdim=[512, 512],
+    kdim=[7, 7]
+)
+
+# Create a shape generator
+shape_gen = ShapeGenerator.from_solver(solver)
+
+# Generate a mask
+mask = shape_gen.generate_circle_mask(radius=0.3)
+
+# Make the mask differentiable for optimization
+mask = mask.clone().detach().requires_grad_(True)
+
+# Apply the mask to a layer
+solver.update_er_with_mask(mask=mask, layer_index=0)
+
+# Run the simulation and compute gradients
+source = solver.add_source(theta=0, phi=0, pte=1, ptm=0)
+results = solver.solve(source)
+transmission = results['TRN'][0]
+transmission.backward()
+
+# Access gradients for shape optimization
+gradient = mask.grad
+```
+
+## Common Issues
+
+### Memory Usage
+
+When working with large grid sizes, memory usage can become significant. Consider these tips:
+- Use smaller grid sizes during prototyping and increase only when needed
+- Release unused tensors to free memory
+- If using GPUs with limited memory, consider moving computations to CPU for large grids
+
+### Edge Effects
+
+When using soft edges, be careful with the `soft_edge` parameter:
+- Too small values can lead to aliasing effects on coarse grids
+- Too large values can cause shapes to lose their definition
+- A general guideline is to use `soft_edge` values around 1-5% of the shape's characteristic dimension
+
+### Coordinate Systems
+
+When using non-Cartesian coordinate systems:
+- Ensure that lattice vectors are properly defined
+- Remember that shape parameters (center, radius, etc.) are in the Cartesian coordinate system
+- The coordinate transformation is handled internally by the ShapeGenerator
+
+## See Also
+- [Solver Module](Solver) - Core solver functionality
+- [Layers Module](Layers) - Layer definitions and operations
+- [Utils Module](Utils) - Utility functions
+
+## Keywords
+shape, mask, binary mask, photonics, circle, rectangle, polygon, lattice, geometry, structure generation, boolean operations
+""")
+        print("  -> Created Shapes.md")
+
+def create_observers_page(docs_dir):
+    """Create a dedicated Observers page for the wiki."""
+    content = """---
+title: "Progress Tracking and Reporting"
+category: "Utility Components"
+tags: ["progress", "monitoring", "feedback", "observer pattern", "console", "progress bar"]
+related: ["Solver"]
+complexity: "beginner"
+---
+
+# Observer Module
+
+## Overview
+The `torchrdit.observers` module provides implementations of the Observer pattern for tracking and reporting progress during electromagnetic simulations. These observers can be attached to solvers to receive notifications about various stages of the calculation process, allowing for real-time feedback during potentially long-running simulations.
+
+## Key Features
+- Implementation of the Observer design pattern for solver progress tracking
+- Console output for detailed progress information
+- Progress bar visualization using tqdm (optional)
+- Event-based notification system
+- Compatible with all solver types (RCWA, RDIT)
+
+## Usage
+```python
+from torchrdit.solver import create_solver
+from torchrdit.observers import ConsoleProgressObserver, TqdmProgressObserver
+
+# Create a solver
+solver = create_solver()
+
+# Add observers
+verbose_observer = ConsoleProgressObserver(verbose=True)
+progress_observer = TqdmProgressObserver()
+solver.add_observer(verbose_observer)
+solver.add_observer(progress_observer)
+
+# Run the simulation - progress will be reported
+source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+results = solver.solve(source)
+```
+
+## Main Components
+
+### ConsoleProgressObserver
+Prints progress information to the console. Useful for detailed tracking of solver stages.
+
+### TqdmProgressObserver
+Displays a progress bar using the tqdm library (if available).
+
+## Common Issues
+- If tqdm is not installed, TqdmProgressObserver will not be available
+- In Jupyter notebooks, console output may not update in real-time
+
+## See Also
+- [Solver Module](Solver) - Core solver functionality that generates the events
+- [Utils Module](Utils) - Utility functions and tools
+
+## Keywords
+observer pattern, progress tracking, console output, progress bar, tqdm, simulation monitoring
+"""
+    
+    with open(docs_dir / "Observers.md", "w") as f:
+        f.write(content)
+    
+    print("  -> Created Observers.md")
+
 def create_readme(docs_dir):
     """Create a README file for the wiki directory explaining how it's generated."""
     with open(docs_dir / "README.md", "w") as f:
@@ -599,6 +926,8 @@ The documentation is generated automatically using pydoc-markdown. To update it:
 - **Cell.md**: Documentation for the cell module
 - **Layers.md**: Documentation for the layers module
 - **Materials.md**: Documentation for the materials module
+- **Observers.md**: Documentation for the observers module
+- **Shapes.md**: Documentation for the shapes module
 - **Solver.md**: Documentation for the solver module
 - **Utils.md**: Documentation for utility functions
 - **Visualization.md**: Documentation for visualization tools
@@ -637,7 +966,7 @@ def calculate_field(mesh, material_properties, frequency):
     This function solves Maxwell's equations using the FDTD method.
     The governing equation is:
     
-    ∇ × (∇ × E) - k₀²εᵣE = 0
+    ∇ x (∇ x E) - k₀²εᵣE = 0
     
     where k₀ is the wavenumber and εᵣ is the relative permittivity.
     

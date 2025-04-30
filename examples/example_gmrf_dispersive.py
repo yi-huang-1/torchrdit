@@ -1,8 +1,12 @@
 """
-# Example 3 - GMRF with hexagonal unit cells with dispersive materials (Builder Pattern)
+# Example - GMRF with hexagonal unit cells with dispersive materials (Builder Pattern)
 
 This example shows the simulation of the guided-mode resonance filter (GMRF) 
 using the builder pattern with dispersive materials.
+
+Keywords:
+    dispersive material, permittivity, wavelength dependence, polynomial fitting,
+    material characterization, complex permittivity, optical properties, material dispersion, R-DIT, builder
 """
 
 import numpy as np
@@ -10,6 +14,7 @@ import os
 import torch
 import matplotlib.pyplot as plt
 from torchrdit.solver import get_solver_builder
+from torchrdit.shapes import ShapeGenerator
 from torchrdit.utils import create_material
 from torchrdit.constants import Algorithm, Precision
 from torchrdit.viz import display_fitted_permittivity, plot_layer
@@ -56,7 +61,6 @@ torchrdit_sim = (get_solver_builder()
     .with_wavelengths(np.array([1540 * nm, 1550 * nm, 1560 * nm, 1570 * nm]))
     .with_length_unit('um')
     .with_lattice_vectors(t1, t2)
-    .with_fff(True)
     .build())
 
 # creating materials
@@ -88,18 +92,18 @@ torchrdit_sim.add_layer(material_name=material_sin,
                       is_optimize=False)
 
 # build hexagonal unit cell
-c1 = torchrdit_sim.get_circle_mask(center=[0, b/2], radius=r)
-c2 = torchrdit_sim.get_circle_mask(center=[0, -b/2], radius=r)
-c3 = torchrdit_sim.get_circle_mask(center=[a/2, 0], radius=r)
-c4 = torchrdit_sim.get_circle_mask(center=[-a/2, 0], radius=r)
+shape_generator = ShapeGenerator.from_solver(torchrdit_sim)
 
-mask = torchrdit_sim.combine_masks(mask1=c1, mask2=c2, operation='union')
-mask = torchrdit_sim.combine_masks(mask1=mask, mask2=c3, operation='union')
-mask = torchrdit_sim.combine_masks(mask1=mask, mask2=c4, operation='union')
+c1 = shape_generator.generate_circle_mask(center=[0, b/2], radius=r)
+c2 = shape_generator.generate_circle_mask(center=[0, -b/2], radius=r)
+c3 = shape_generator.generate_circle_mask(center=[a/2, 0], radius=r)
+c4 = shape_generator.generate_circle_mask(center=[-a/2, 0], radius=r)
+
+mask = shape_generator.combine_masks(mask1=c1, mask2=c2, operation='union')
+mask = shape_generator.combine_masks(mask1=mask, mask2=c3, operation='union')
+mask = shape_generator.combine_masks(mask1=mask, mask2=c4, operation='union')
 
 mask = (1 - mask).to(torch.float64)
-
-mask.requires_grad = True
 
 layer_index = 0
 torchrdit_sim.update_er_with_mask(mask=mask, layer_index=layer_index)
@@ -116,9 +120,9 @@ plt.savefig(output_filename, dpi=300)
 plt.close(fig)
 
 # Plot fitted permittivity
-fig, axes = plt.subplots()
+fig, axes = plt.subplots(2, 1, figsize=(10, 12))
 display_fitted_permittivity(torchrdit_sim, fig_ax=axes)
-output_filename = os.path.join(script_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_spectrum.png")
+output_filename = os.path.join(script_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_fitted_dispersive.png")
 plt.savefig(output_filename, dpi=300)
 plt.close(fig)
 
@@ -126,11 +130,7 @@ plt.close(fig)
 src = torchrdit_sim.add_source(theta=theta, phi=phi, pte=pte, ptm=ptm)
 result = torchrdit_sim.solve(src)
 
-# Print simulation results
-print(f"The transmission efficiency is {result['TRN'][0] * 100}%")
-print(f"The reflection efficiency is {result['REF'][0] * 100}%")
-
-# Start back propagation
-torch.sum(result['TRN'][0]).backward()
-
-print(f"The gradient with respect to the mask is {torch.mean(mask.grad)}")
+# Print the efficiency at each wavelength
+for i in range(len(torchrdit_sim.lam0)):
+    print(f"The transmission efficiency at wavelength \t{torchrdit_sim.lam0[i] * 1e3} nm is \t{result['TRN'][i] * 100}%")
+    print(f"The reflection efficiency at wavelength \t{torchrdit_sim.lam0[i] * 1e3} nm is \t{result['REF'][i] * 100}%")

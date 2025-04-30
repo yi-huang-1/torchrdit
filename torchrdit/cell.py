@@ -1,4 +1,21 @@
-""" This file defines classes for models to be simulated. """
+"""Module for defining base class (Cell3D) of solver classes in electromagnetic simulations.
+
+This module provides classes for creating and manipulating 3D unit cells for use in electromagnetic simulations with TorchRDIT. The key 
+components include:
+
+- CellType: Enumeration of supported cell geometry types
+- Cell3D: Base class for defining 3D unit cells with material properties
+
+These classes form the foundation for defining the geometric and material properties
+of structures to be simulated with RCWA or R-DIT algorithms.
+
+Examples:
+    Basic usage: The Cell3D class is not intended to be used directly. Instead, it serves as a
+    parent class for solver implementations in solver.py (RCWASolver and RDITSolver).
+
+Keywords:
+    unit cell, geometry, shape generation, mask, material, layer, photonics
+"""
 from typing import Callable, Tuple, Union, List, Any
 
 import numpy as np
@@ -9,8 +26,6 @@ from .materials import MaterialClass
 from .constants import lengthunit_dict
 from .layers import LayerManager
 
-from matplotlib.path import Path
-
 # Function Type
 FuncType = Callable[..., Any]
 
@@ -18,296 +33,103 @@ class CellType:
     """Enumeration of supported cell geometry types in TorchRDIT.
     
     This class defines the types of coordinate systems that can be used for
-    the unit cell in electromagnetic simulations:
+    the unit cell in electromagnetic simulations. The cell type affects how
+    coordinates are interpreted and how Fourier transforms are computed.
     
-    - Cartesian: Standard Cartesian coordinate system with rectangular grid
-    - Other: Alternative coordinate systems (e.g., for non-rectangular lattices)
+    Attributes:
+        Cartesian: Standard Cartesian coordinate system with rectangular grid.
+            Used for rectangular lattices aligned with coordinate axes.
+        Other: Alternative coordinate systems used for non-rectangular lattices
+            or rotated structures.
     
-    These cell types affect how coordinates are interpreted and how the
-    Fourier transforms are computed in the simulation.
+    Examples:
+        >>> # Check the cell type
+        >>> import torch
+        >>> from torchrdit.cell import Cell3D
+        >>> cell = Cell3D()
+        >>> print(cell.cell_type)
+        Cartesian
+        >>> # Cell type is automatically determined from lattice vectors
+        >>> cell = Cell3D(t1=torch.tensor([[1.0, 0.5]]), 
+        ...               t2=torch.tensor([[0.0, 1.0]]))
+        >>> print(cell.cell_type)
+        Other
+    
+    Keywords:
+        coordinate system, Cartesian, unit cell, lattice type, grid
     """
     Cartesian = 'Cartesian'
     Other = 'Other'
 
-class ShapeGenerator:
-    """Class to generate binary shape masks for photonic structures.
-    
-    This class provides methods to create binary masks representing various geometric 
-    shapes (circles, rectangles, polygons) that can be used to define material 
-    distributions in photonic structures. These masks are used in the 
-    electromagnetic solver to specify regions with different material properties.
-    
-    The coordinates for these shapes are defined in a real-space coordinate system,
-    which is mapped to the computational grid defined by rdim.
-    """
-    def __init__(self, XO: torch.Tensor, YO: torch.Tensor, rdim: Tuple[int, int]):
-        """Initialize a shape generator with coordinate grids.
-        
-        Args:
-            XO: Tensor containing the x-coordinates of each point in the grid.
-               This should be a 2D tensor with the same shape as the computational grid.
-            YO: Tensor containing the y-coordinates of each point in the grid.
-               This should be a 2D tensor with the same shape as the computational grid.
-            rdim: Dimensions of the real-space grid as (height, width).
-               This determines the resolution of the generated masks.
-               
-        Note:
-            The XO and YO tensors typically come from a meshgrid operation and
-            represent the real-space coordinates corresponding to each grid point.
-        """
-        assert isinstance(XO, torch.Tensor) and isinstance(YO, torch.Tensor), "XO and YO must be torch.Tensor"
-        self.rdim = rdim
-        
-        self.X_real = XO
-        self.Y_real = YO
-    
-    def generate_circle_mask(self, center=None, radius=0.1):
-        """Generate a binary mask for a circle.
-        
-        Creates a binary mask (0s and 1s) where points inside the specified circle
-        are set to 1 and points outside are set to 0. The circle is defined by its
-        center and radius in the real coordinate system.
-        
-        Args:
-            center: Tuple of (x, y) real coordinates of the circle center.
-                   If None, the center of the computational domain is used.
-            radius: Radius of the circle in real units.
-                   Default is 0.1.
-                   
-        Returns:
-            torch.Tensor: Binary mask with 1s inside the circle and 0s outside.
-                       Has shape self.rdim and device matching self.X_real.
-                       
-        Example:
-            ```python
-            # Create a circle in the center with radius 0.2
-            generator = ShapeGenerator(X_grid, Y_grid, (512, 512))
-            circle_mask = generator.generate_circle_mask(center=(0, 0), radius=0.2)
-            ```
-        """
-        mask = torch.zeros(self.rdim, dtype=torch.uint8, device=self.X_real.device)
-        if center is None:
-            center = (self.X_real.mean().item(), self.Y_real.mean().item())
-
-        # Mask condition based on real coordinates
-        distance = torch.sqrt((self.X_real - center[0])**2 + (self.Y_real - center[1])**2)
-        mask[distance <= radius] = 1
-
-        return mask
-
-    
-    def generate_rectangle_mask(self, bottom_left=None, top_right=None):
-        """Generate a binary mask for a rectangle.
-        
-        Creates a binary mask (0s and 1s) where points inside the specified rectangle
-        are set to 1 and points outside are set to 0. The rectangle is defined by its
-        bottom-left and top-right corners in the real coordinate system.
-        
-        Args:
-            bottom_left: Tuple of (x, y) real coordinates of the bottom-left corner.
-                       If None, the minimum coordinates in the domain are used.
-            top_right: Tuple of (x, y) real coordinates of the top-right corner.
-                     If None, the maximum coordinates in the domain are used.
-                     
-        Returns:
-            torch.Tensor: Binary mask with 1s inside the rectangle and 0s outside.
-                       Has shape self.rdim and dtype torch.uint8.
-                       
-        Example:
-            ```python
-            # Create a rectangle from (-0.5, -0.5) to (0.5, 0.5)
-            generator = ShapeGenerator(X_grid, Y_grid, (512, 512))
-            rect_mask = generator.generate_rectangle_mask(
-                bottom_left=(-0.5, -0.5), 
-                top_right=(0.5, 0.5)
-            )
-            ```
-        """
-        mask = np.zeros(self.rdim, dtype=np.uint8)
-        if bottom_left is None:
-            bottom_left = (self.X_real.min().item(), self.Y_real.min().item())
-        if top_right is None:
-            top_right = (self.X_real.max().item(), self.Y_real.max().item())
-
-        # Mask condition based on real coordinates
-        mask[
-            (self.X_real >= bottom_left[0]) & (self.X_real <= top_right[0]) &
-            (self.Y_real >= bottom_left[1]) & (self.Y_real <= top_right[1])
-        ] = 1
-
-        return torch.tensor(mask, dtype=torch.uint8)
-    
-
-    def generate_polygon_mask(self, polygon_points, invert=False):
-        """Generate a binary mask for an arbitrary polygon.
-        
-        Creates a binary mask (0s and 1s) where points inside the specified polygon
-        are set to 1 and points outside are set to 0. The polygon is defined by its
-        vertices in the real coordinate system.
-        
-        This method uses matplotlib's Path for efficient point-in-polygon testing,
-        making it suitable for complex polygons with many vertices.
-        
-        Args:
-            polygon_points: List of (x, y) tuples representing the vertices of the polygon
-                         in real coordinates. The vertices should be ordered to form a 
-                         valid polygon (either clockwise or counterclockwise).
-            invert: If True, inverts the mask so that points outside the polygon are 1
-                  and points inside are 0. Default is False.
-                     
-        Returns:
-            torch.Tensor: Binary mask with 1s inside the polygon and 0s outside
-                       (or the inverse if invert=True). Has shape self.rdim and 
-                       dtype torch.uint8.
-                       
-        Example:
-            ```python
-            # Create a triangle mask
-            generator = ShapeGenerator(X_grid, Y_grid, (512, 512))
-            triangle_points = [(0, 0), (0.5, 0.5), (0, 0.5)]
-            triangle_mask = generator.generate_polygon_mask(triangle_points)
-            ```
-        """
-        mask = np.zeros(self.rdim, dtype=np.uint8)
-
-        # Create a path object for the polygon in real space
-        poly_path = Path(polygon_points)
-
-        # Flatten the grid points into (x, y) pairs
-        points = np.vstack((self.X_real.ravel(), self.Y_real.ravel())).T
-
-        # Use the Path.contains_points method for efficient point-in-polygon testing
-        inside = poly_path.contains_points(points)
-
-        # Reshape the result back to the grid dimensions
-        mask = inside.reshape(self.rdim)
-
-        if invert:
-            mask = 1 - mask  # Invert the mask
-
-        return torch.tensor(mask, dtype=torch.uint8)
-    
-    def combine_masks(self, mask1, mask2, operation="union"):
-        """Combine two binary masks using a specified boolean operation.
-        
-        This method allows for combining multiple shape masks to create more complex
-        geometries. The available operations are:
-        
-        - 'union': Returns points that are in either mask (OR operation)
-        - 'intersection': Returns points that are in both masks (AND operation)
-        - 'difference': Returns points that are in either mask but not both (XOR operation)
-        - 'subtract': Returns points that are in mask1 but not in mask2
-        
-        Args:
-            mask1: First binary mask (torch.Tensor of dtype torch.uint8)
-            mask2: Second binary mask (torch.Tensor of dtype torch.uint8)
-            operation: String specifying the boolean operation to perform.
-                     Must be one of 'union', 'intersection', 'difference', or 'subtract'.
-                     Default is 'union'.
-                     
-        Returns:
-            torch.Tensor: The combined binary mask with the same shape and dtype as the inputs.
-            
-        Raises:
-            ValueError: If an invalid operation is specified.
-            
-        Example:
-            ```python
-            # Create two circle masks and combine them
-            generator = ShapeGenerator(X_grid, Y_grid, (512, 512))
-            circle1 = generator.generate_circle_mask(center=(-0.2, 0), radius=0.3)
-            circle2 = generator.generate_circle_mask(center=(0.2, 0), radius=0.3)
-            
-            # Create a mask resembling a figure-8
-            figure8 = generator.combine_masks(circle1, circle2, operation="union")
-            
-            # Create a lens shape (only where the circles overlap)
-            lens = generator.combine_masks(circle1, circle2, operation="intersection")
-            ```
-        """
-        if operation == "union":
-            return mask1 | mask2
-        elif operation == "intersection":
-            return mask1 & mask2
-        elif operation == "difference":
-            return mask1 ^ mask2
-        elif operation == "subtract":
-            return mask1 & ~mask2
-        else:
-            raise ValueError("Invalid operation. Choose from 'union', 'intersection', 'difference', or 'subtract'.")
-
-    def _point_in_polygon(self, point, polygon):
-        """Determine if a point is inside a polygon using ray-casting.
-        
-        This is a helper method that implements the ray-casting algorithm to determine
-        whether a given point is inside a polygon. A ray is cast from the point in
-        any direction, and the number of intersections with the polygon edges is counted.
-        If the count is odd, the point is inside; if even, the point is outside.
-        
-        Note:
-            This is a private method used internally by the polygon mask generation.
-            For most cases, the generate_polygon_mask method should be used instead,
-            as it is more efficient for generating masks for entire grids.
-        
-        Args:
-            point: Tuple of (x, y) coordinates of the point to test
-            polygon: List or array of (x, y) coordinates of the polygon vertices
-                   The vertices should form a closed polygon
-                   
-        Returns:
-            bool: True if the point is inside the polygon, False otherwise
-        """
-        # Ensure inputs are numpy arrays
-        if isinstance(polygon, torch.Tensor):
-            polygon = polygon.numpy()
-        x, y = point
-        if isinstance(x, torch.Tensor):
-            x = x.item()
-        if isinstance(y, torch.Tensor):
-            y = y.item()
-
-        # Vectorized ray-casting
-        x1, y1 = polygon[:-1, 0], polygon[:-1, 1]
-        x2, y2 = polygon[1:, 0], polygon[1:, 1]
-
-        # Check if the point is within the vertical range of each edge
-        within_y_bounds = (y > np.minimum(y1, y2)) & (y <= np.maximum(y1, y2))
-
-        # Avoid horizontal edges where no intersection can occur
-        non_horizontal = y1 != y2
-
-        # Calculate the intersection of the horizontal ray with polygon edges
-        xinters = np.where(non_horizontal, (y - y1) * (x2 - x1) / (y2 - y1) + x1, np.inf)
-
-        # Check if the x-coordinate of the point is less than the intersection
-        intersects = (x <= xinters) & within_y_bounds
-
-        # Determine if the number of intersections is odd
-        return np.sum(intersects) % 2 == 1
-
 class Cell3D():
-    """Base class for defining 3D unit cells in electromagnetic simulations.
+    """Base parent class for defining and structuring cells in electromagnetic solvers.
     
     The Cell3D class provides the foundational structure for defining and managing
-    the geometric and material properties of a unit cell in TorchRDIT. It handles:
+    the geometric and material properties of a unit cell in TorchRDIT. It serves
+    as the core building block for creating photonic structures to be simulated
+    with electromagnetic solvers.
     
-    - Setting up the computational grid in real and Fourier space
-    - Managing material properties and layers
+    Note:
+        Cell3D is not intended to be used directly. Instead, it serves as a
+        parent class for solver implementations in solver.py (RCWASolver and RDITSolver).
+        Most users should create solver instances using the create_solver() function
+        rather than instantiating Cell3D directly.
+    
+    Key capabilities:
+    - Setting up computational grids in real and Fourier space
+    - Managing material properties and multilayer stacks
     - Creating and manipulating binary shape masks for complex geometries
-    - Tracking reference and transmission materials
+    - Controlling reference and transmission materials
     - Providing coordinate transformation utilities
     
-    This class serves as a base for the FourierBaseSolver class and provides all the
-    necessary functionality to define the structure being simulated, including
-    material layers, shapes, and boundary conditions.
-    
-    Material properties can be specified either as static values or as wavelength-dependent
-    (dispersive) models, supporting both simple and complex electromagnetic simulations.
+    This class serves as a base for solver classes (FourierBaseSolver, RCWASolver, RDITSolver)
+    and provides all the necessary functionality to define the structure being simulated,
+    including material layers, shape patterns, and boundary conditions.
     
     Attributes:
-        cell_type: Type of coordinate system (Cartesian or Other)
-        tcomplex, tfloat, tint, nfloat: Data type definitions for consistency
-        layer_manager: Manager for handling the layers in the structure
+        cell_type (CellType): Type of coordinate system (Cartesian or Other)
+        tcomplex (torch.dtype): Complex data type used for calculations
+        tfloat (torch.dtype): Float data type used for calculations
+        tint (torch.dtype): Integer data type used for calculations
+        nfloat (np.dtype): NumPy float data type for compatibility
+        rdim (List[int]): Dimensions in real space [height, width]
+        kdim (List[int]): Dimensions in k-space [kheight, kwidth]
+        layer_manager (LayerManager): Manager for handling material layers
+        
+    Examples:
+        >>> # Create a solver (recommended way) instead of using Cell3D directly
+        >>> import torch
+        >>> import numpy as np
+        >>> from torchrdit.solver import create_solver
+        >>> from torchrdit.utils import create_material
+        >>> from torchrdit.constants import Algorithm
+        >>> 
+        >>> # Create an RCWA solver
+        >>> solver = create_solver(
+        ...     algorithm=Algorithm.RCWA,
+        ...     lam0=np.array([1.55]),
+        ...     rdim=[256, 256],
+        ...     kdim=[5, 5]
+        ... )
+        >>> 
+        >>> # Add materials
+        >>> silicon = create_material(name="silicon", permittivity=11.7)
+        >>> sio2 = create_material(name="sio2", permittivity=2.25)
+        >>> solver.add_materials([silicon, sio2])
+        >>> 
+        >>> # Add layers
+        >>> solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
+        >>> solver.add_layer(material_name="sio2", thickness=torch.tensor(0.1))
+        >>> 
+        >>> # Create a patterned layer
+        >>> solver.add_layer(material_name="silicon", thickness=torch.tensor(0.3),
+        ...                is_homogeneous=False)
+        >>> circle_mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
+        
+    Keywords:
+        base class, parent class, solver foundation, electromagnetic simulation, 
+        photonics, layers, materials, computational grid, Fourier transform, 
+        shape generation, inheritance
     """
 
     n_kermat_gen = 0
@@ -336,34 +158,63 @@ class Cell3D():
         provided lattice vectors. It also initializes the layer manager for handling
         material layers in the structure.
         
+        Note:
+            Users should generally not instantiate Cell3D directly, but rather
+            create a solver instance using the create_solver() function.
+        
         Args:
-            lengthunit: Unit of length for all dimensions in the simulation.
+            lengthunit (str): Unit of length for all dimensions in the simulation.
                       Common values: 'um' (micrometers), 'nm' (nanometers).
                       Default is 'um'.
-            rdim: Dimensions of the real-space grid as [height, width].
+            rdim (List[int]): Dimensions of the real-space grid as [height, width].
                 This determines the spatial resolution of the simulation.
                 Default is [512, 512].
-            kdim: Dimensions in Fourier space as [kheight, kwidth].
+            kdim (List[int]): Dimensions in Fourier space as [kheight, kwidth].
                 This determines the number of Fourier harmonics used in the simulation.
                 Default is [3, 3].
-            materiallist: List of material objects to be used in the simulation.
+            materiallist (List[MaterialClass]): List of material objects to be used in the simulation.
                        Each material should be an instance of MaterialClass.
                        Default is an empty list.
-            t1: First lattice vector defining the unit cell.
+            t1 (torch.Tensor): First lattice vector defining the unit cell.
                 Default is [[1.0, 0.0]] (unit vector in x-direction).
-            t2: Second lattice vector defining the unit cell.
+            t2 (torch.Tensor): Second lattice vector defining the unit cell.
                 Default is [[0.0, 1.0]] (unit vector in y-direction).
-            device: The device to run computations on ('cpu' or 'cuda').
+            device (Union[str, torch.device]): The device to run computations on ('cpu' or 'cuda').
                   Default is 'cpu'.
                   
         Raises:
             ValueError: If any of the input parameters have invalid values or formats.
                       
-        Note:
-            - The default configuration creates a square unit cell with dimensions 1×1.
-            - Air is automatically added as a default material if not included in materiallist.
-            - The real space coordinates range from -0.5 to 0.5 (in cell units) and
-              are then transformed using the lattice vectors.
+        Examples:
+            >>> # Instead of creating Cell3D directly, create a solver:
+            >>> from torchrdit.solver import create_solver
+            >>> from torchrdit.constants import Algorithm
+            >>> import torch
+            >>> # Create an RDIT solver
+            >>> rdit_solver = create_solver(
+            ...     algorithm=Algorithm.RDIT,
+            ...     rdim=[1024, 1024],
+            ...     kdim=[7, 7]
+            ... )
+            >>> 
+            >>> # Create an RCWA solver with non-rectangular lattice
+            >>> rcwa_solver = create_solver(
+            ...     algorithm=Algorithm.RCWA,
+            ...     t1=torch.tensor([[1.0, 0.0]]),
+            ...     t2=torch.tensor([[0.5, 0.866]]),  # 30-degree lattice
+            ...     rdim=[512, 512],
+            ...     kdim=[5, 5]
+            ... )
+            >>> 
+            >>> # Create a solver with GPU acceleration
+            >>> gpu_solver = create_solver(
+            ...     algorithm=Algorithm.RCWA,
+            ...     device="cuda"
+            ... )
+        
+        Keywords:
+            initialization, base class, parent class, computational grid, lattice vectors, 
+            spatial resolution, Fourier harmonics
         """
         self.device = device
 
@@ -406,9 +257,6 @@ class Cell3D():
             mesh_q * self.lattice_t2[0]
         self.YO = mesh_p * self.lattice_t1[1] +\
             mesh_q * self.lattice_t2[1]
-        
-        # Initialize shape generator
-        self.shapes = ShapeGenerator(self.XO, self.YO, tuple(self.rdim))
 
         # scaling factor of lengths
         self._lenunit = lengthunit.lower()
@@ -421,105 +269,72 @@ class Cell3D():
         self.update_trn_material(trn_material='air')
         self.update_ref_material(ref_material='air')
 
-    def get_circle_mask(self, center=(0, 0), radius=20):
-        """Generate a binary mask for a circle.
+    def get_shape_generator_params(self):
+        """Get the parameters for the shape generator.
         
-        Convenience method that wraps ShapeGenerator.generate_circle_mask.
-        See that method for detailed documentation.
-        
-        Args:
-            center: Tuple of (x, y) coordinates for the circle center.
-                  Default is (0, 0).
-            radius: Radius of the circle in real units.
-                  Default is 20.
-                  
         Returns:
-            torch.Tensor: Binary mask with 1s inside the circle and 0s outside.
+            dict: Dictionary containing the parameters for the shape generator.
+
+        Examples:
+            >>> from torchrdit.solver import create_solver
+            >>> from torchrdit.constants import Algorithm
+            >>> import torch
+            >>> from torchrdit.shapes import ShapeGenerator
+            >>> solver = create_solver(
+            ...     algorithm=Algorithm.RDIT,
+            ...     rdim=[1024, 1024],
+            ...     kdim=[7, 7]
+            ... )
+            >>> params = solver.get_shape_generator_params()
+            >>> shape_gen = ShapeGenerator(**params)
         """
-        return self.shapes.generate_circle_mask(center=center, radius=radius)
-    
-    def get_rectangle_mask(self, bottom_left=(50, 50), top_right=(100, 100)):
-        """Generate a binary mask for a rectangle.
-        
-        Convenience method that wraps ShapeGenerator.generate_rectangle_mask.
-        See that method for detailed documentation.
-        
-        Args:
-            bottom_left: Tuple of (x, y) coordinates for the bottom-left corner.
-                       Default is (50, 50).
-            top_right: Tuple of (x, y) coordinates for the top-right corner.
-                     Default is (100, 100).
-                     
-        Returns:
-            torch.Tensor: Binary mask with 1s inside the rectangle and 0s outside.
-        """
-        return self.shapes.generate_rectangle_mask(bottom_left=bottom_left, top_right=top_right)
-    
-    def get_polygon_mask(self, polygon_points, invert=False):
-        """Generate a binary mask for a polygon.
-        
-        Convenience method that wraps ShapeGenerator.generate_polygon_mask.
-        See that method for detailed documentation.
-        
-        Args:
-            polygon_points: List of (x, y) tuples representing the vertices of the polygon.
-            invert: If True, inverts the mask (1s outside, 0s inside).
-                  Default is False.
-                  
-        Returns:
-            torch.Tensor: Binary mask with 1s inside the polygon and 0s outside
-                       (or the inverse if invert=True).
-        """
-        return self.shapes.generate_polygon_mask(polygon_points, invert)
-    
-    def combine_masks(self, mask1, mask2, operation="union"):
-        """Combine two binary masks using a boolean operation.
-        
-        Convenience method that wraps ShapeGenerator.combine_masks.
-        See that method for detailed documentation.
-        
-        Args:
-            mask1: First binary mask.
-            mask2: Second binary mask.
-            operation: String specifying the boolean operation ('union', 'intersection',
-                     'difference', or 'subtract'). Default is 'union'.
-                     
-        Returns:
-            torch.Tensor: The combined binary mask.
-        """
-        return self.shapes.combine_masks(mask1, mask2, operation)
+        return {"XO": self.XO, "YO": self.YO, "rdim": tuple(self.rdim),
+                "lattice_t1": self.lattice_t1, "lattice_t2": self.lattice_t2,
+                "tcomplex": self.tcomplex, "tfloat": self.tfloat, "tint": self.tint,
+                "nfloat": self.nfloat}
+
 
     def add_materials(self, material_list: list = []):
         """Add materials to the solver's material library.
         
-        This method adds one or more materials to the solver's internal material
+        This method adds one or more materials to the cell's internal material
         library, making them available for use in layers. Materials can be either
         non-dispersive (constant properties) or dispersive (wavelength-dependent).
         
-        Materials must be instances of the MaterialClass, which can be created
-        using the create_material utility function.
-        
         Args:
-            material_list: List of MaterialClass instances to add to the material library.
+            material_list (list): List of MaterialClass instances to add to the material library.
                         Each material should have a unique name that will be used to
                         reference it when creating layers.
+        
+        Raises:
+            ValueError: If any element in the list is not a MaterialClass instance or
+                      if the input is not a list.
                         
-        Example:
-            ```python
-            # Create and add materials
-            silicon = create_material(name='silicon', permittivity=11.7)
-            sio2 = create_material(name='sio2', permittivity=2.25)
-            
-            # Add materials to the solver
-            solver.add_materials([silicon, sio2])
-            
-            # Now these materials can be used in layers
-            solver.add_layer(material_name='silicon', thickness=torch.tensor(0.2))
-            ```
+        Examples:
+            >>> from torchrdit.solver import create_solver
+            >>> from torchrdit.constants import Algorithm
+            >>> solver = create_solver(
+            ...     algorithm=Algorithm.RDIT,
+            ...     rdim=[1024, 1024],
+            ...     kdim=[7, 7]
+            ... )
+            >>> # Create and add materials
+            >>> from torchrdit.utils import create_material
+            >>> silicon = create_material(name='silicon', permittivity=11.7)
+            >>> sio2 = create_material(name='sio2', permittivity=2.25)
+            >>> # Add multiple materials at once
+            >>> solver.add_materials([silicon, sio2])
+            >>> # Add a single material
+            >>> gold = create_material(name='gold', permittivity=complex(-10.0, 1.5))
+            >>> solver.add_materials([gold])
             
         Note:
             The 'air' material (permittivity=1.0) is automatically added to all
-            solvers by default and does not need to be explicitly added.
+            Cell3D instances by default and does not need to be explicitly added.
+        
+        Keywords:
+            materials, permittivity, dielectric properties, material library,
+            optical materials, dispersive materials
         """
         if isinstance(material_list, list):
             for imat in material_list:
@@ -546,39 +361,56 @@ class Cell3D():
         with the first layer added being at the bottom of the stack (closest to
         the reference region) and subsequent layers building upward.
         
-        The layer can be either homogeneous (uniform material throughout) or
-        non-homogeneous (patterned, with material distribution defined by a mask).
-        For non-homogeneous layers, you need to call update_er_with_mask() after
-        adding the layer to define the material distribution.
-        
         Args:
-            material_name: Name of the material for this layer, or a MaterialClass instance.
-                        Must be a material that exists in the material library.
-            thickness: Thickness of the layer as a torch.Tensor.
+            material_name (Union[str, MaterialClass]): Name of the material for this layer,
+                        or a MaterialClass instance. Must be a material that exists in
+                        the material library or a new material to be added.
+            thickness (torch.Tensor): Thickness of the layer as a torch.Tensor.
                      The units are determined by the lengthunit parameter of the solver.
-            is_homogeneous: Whether the layer has uniform material properties (True) or
+            is_homogeneous (bool): Whether the layer has uniform material properties (True) or
                           is patterned with a spatial distribution (False).
                           Default is True.
-            is_optimize: Whether this layer's parameters (e.g., thickness) should be
+            is_optimize (bool): Whether this layer's parameters (e.g., thickness) should be
                        included in optimization. Set to True if you plan to optimize
                        this layer's properties. Default is False.
                        
         Raises:
             RuntimeError: If the specified material does not exist in the material library.
             
-        Example:
-            ```python
-            # Add a homogeneous silicon layer with thickness 0.2 μm
-            solver.add_layer(material_name='silicon', thickness=torch.tensor(0.2))
-            
-            # Add a patterned layer with silicon as the base material
-            solver.add_layer(material_name='silicon', thickness=torch.tensor(0.1), 
-                           is_homogeneous=False)
-            
-            # Define the pattern using a mask (e.g., a circle of silicon in air)
-            mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
-            solver.update_er_with_mask(mask=mask, layer_index=1, bg_material='air')
-            ```
+        Examples:
+            >>> # Create a cell and add materials
+            >>> from torchrdit.cell import Cell3D
+            >>> from torchrdit.utils import create_material
+            >>> import torch
+            >>> cell = Cell3D()
+            >>> silicon = create_material(name='silicon', permittivity=11.7)
+            >>> sio2 = create_material(name='sio2', permittivity=2.25)
+            >>> cell.add_materials([silicon, sio2])
+            >>> 
+            >>> # Add a homogeneous silicon layer with thickness 0.2 μm
+            >>> cell.add_layer(material_name='silicon', thickness=torch.tensor(0.2))
+            >>> 
+            >>> # Add a layer using a material object directly
+            >>> air = create_material(name='air2', permittivity=1.0)
+            >>> cell.add_layer(material_name=air, thickness=torch.tensor(0.1))
+            >>> 
+            >>> # Add a patterned (non-homogeneous) layer
+            >>> cell.add_layer(
+            ...     material_name='silicon',
+            ...     thickness=torch.tensor(0.3),
+            ...     is_homogeneous=False
+            ... )
+            >>> 
+            >>> # Add a layer that will be optimized
+            >>> cell.add_layer(
+            ...     material_name='sio2',
+            ...     thickness=torch.tensor(0.15),
+            ...     is_optimize=True
+            ... )
+        
+        Keywords:
+            layer, material, thickness, homogeneous, patterned, photonic structure,
+            multilayer, stack, optimization
         """
         if isinstance(material_name, MaterialClass):
             if material_name.name not in self._matlib:
@@ -604,14 +436,18 @@ class Cell3D():
             raise RuntimeError(str_rterr)
 
     def _init_dispersive_materials(self) -> None:
-        """_init_dispersive_materials.
+        """Initialize the dispersive profile of materials.
         
-        Initialize the dispersive profile of materials.
-
-        Args:
-
-        Returns:
-            None:
+        This internal method initializes wavelength-dependent (dispersive) material
+        properties for all materials in the material library that have dispersive
+        behavior. It loads the appropriate values for the current wavelength settings.
+        
+        Note:
+            This method is called automatically when materials are added and should
+            not typically be called directly by users.
+        
+        Keywords:
+            dispersive materials, wavelength-dependent, initialization, internal method
         """
         for imat in self._matlib.values():
             if imat.isdispersive_er is True:
@@ -621,24 +457,47 @@ class Cell3D():
 
     @property
     def layers(self):
-        """layers.
-
-        Returns all created layers in the layer_manager instance.
+        """Get all created layers in the layer structure.
+        
+        Returns:
+            List: All created layers in the layer_manager instance.
+            
+        Examples:
+            >>> from torchrdit.cell import Cell3D
+            >>> import torch
+            >>> # Access all layers
+            >>> cell = Cell3D()
+            >>> cell.add_layer(material_name='air', thickness=torch.tensor(0.2))
+            >>> cell.add_layer(material_name='air', thickness=torch.tensor(0.3))
+            >>> print(f"Number of layers: {len(cell.layers)}")
+            >>> # Access properties of specific layers
+            >>> for i, layer in enumerate(cell.layers):
+            ...     print(f"Layer {i}: {layer.material_name}, thickness={layer.thickness}")
+        
+        Keywords:
+            layers, layer access, layer properties, layer stack
         """
         return self.layer_manager.layers
 
 
     @tensor_params_check()
     def _add_lattice_vectors(self, lattice_vec: torch.Tensor) -> torch.Tensor:
-        """_add_lattice_vectors.
-
-        Checks the input parameters and adds to the lattice vectors.
-
+        """Process and validate lattice vectors.
+        
+        This internal method checks the input lattice vector parameters and
+        converts them to the appropriate data type and device.
+        
         Args:
-            lattice_vec (torch.Tensor): lattice_vec
-
+            lattice_vec (torch.Tensor): Lattice vector to process
+        
         Returns:
-            torch.Tensor:
+            torch.Tensor: Processed lattice vector with correct dtype and device
+            
+        Raises:
+            TypeError: If the vector cannot be converted to the correct dtype
+            
+        Keywords:
+            lattice vector, validation, internal method
         """
         if lattice_vec.dtype != self.tfloat:
             try:
@@ -649,15 +508,37 @@ class Cell3D():
         return lattice_vec.squeeze().to(self.device)
 
     def update_trn_material(self, trn_material: Any) -> None:
-        """update_trn_material.
-
-        Updates the material of the transmission layer.
-
+        """Update the transmission layer material.
+        
+        This method sets or changes the material used for the transmission layer,
+        which is the semi-infinite region above the layered structure. This material
+        affects the boundary conditions and the calculation of transmission coefficients.
+        
         Args:
-            trn_material (str): trn_material
-
-        Returns:
-            None:
+            trn_material (Union[str, MaterialClass]): Name of the material to use for
+                        the transmission layer, or a MaterialClass instance.
+                        Must be a material that exists in the material library
+                        or a new material to be added.
+        
+        Raises:
+            RuntimeError: If the specified material does not exist in the material library
+                        and is not a MaterialClass instance.
+                        
+        Examples:
+            >>> from torchrdit.cell import Cell3D
+            >>> from torchrdit.utils import create_material
+            >>> # Set transmission material by name
+            >>> cell = Cell3D()
+            >>> silicon = create_material(name='silicon', permittivity=11.7)
+            >>> cell.add_materials([silicon])
+            >>> cell.update_trn_material(trn_material='silicon')
+            >>> 
+            >>> # Set transmission material by providing a material object
+            >>> water = create_material(name='water', permittivity=1.77)
+            >>> cell.update_trn_material(trn_material=water)
+        
+        Keywords:
+            transmission layer, output medium, boundary condition, semi-infinite region
         """
         if isinstance(trn_material, MaterialClass):
             if trn_material.name not in self._matlib:
@@ -672,12 +553,37 @@ class Cell3D():
             raise RuntimeError(str_rterr)
 
     def update_ref_material(self, ref_material: Any) -> None:
-        """update_ref_material.
-
-        Updates the material of the reflection layer.
-
+        """Update the reflection layer material.
+        
+        This method sets or changes the material used for the reflection layer,
+        which is the semi-infinite region below the layered structure. This material
+        affects the boundary conditions and the calculation of reflection coefficients.
+        
         Args:
-            ref_material (str): ref_material
+            ref_material (Union[str, MaterialClass]): Name of the material to use for
+                        the reflection layer, or a MaterialClass instance.
+                        Must be a material that exists in the material library
+                        or a new material to be added.
+        
+        Raises:
+            RuntimeError: If the specified material does not exist in the material library
+                        and is not a MaterialClass instance.
+                        
+        Examples:
+            >>> from torchrdit.cell import Cell3D
+            >>> from torchrdit.utils import create_material
+            >>> # Set reflection material by name
+            >>> cell = Cell3D()
+            >>> silicon = create_material(name='silicon', permittivity=11.7)
+            >>> cell.add_materials([silicon])
+            >>> cell.update_ref_material(ref_material='silicon')
+            >>> 
+            >>> # Set reflection material by providing a material object
+            >>> metal = create_material(name='silver', permittivity=complex(-15.0, 1.0))
+            >>> cell.update_ref_material(ref_material=metal)
+        
+        Keywords:
+            reflection layer, input medium, boundary condition, semi-infinite region
         """
         if isinstance(ref_material, MaterialClass):
             if ref_material.name not in self._matlib:
@@ -692,9 +598,31 @@ class Cell3D():
             raise RuntimeError(str_rterr)
 
     def get_layer_structure(self):
-        """get_layer_structure.
-
-        Prints information of all layers.
+        """Print information about all layers in the structure.
+        
+        This method displays detailed information about the current layer structure,
+        including the reflection layer, all intermediate layers, and the transmission
+        layer. For each layer, it shows:
+        - Material name
+        - Thickness (for intermediate layers)
+        - Permittivity and permeability
+        - Whether the layer is dispersive, homogeneous, or to be optimized
+        
+        Examples:
+            >>> from torchrdit.cell import Cell3D
+            >>> from torchrdit.utils import create_material
+            >>> import torch
+            >>> # Create a cell with multiple layers and display information
+            >>> cell = Cell3D()
+            >>> silicon = create_material(name='silicon', permittivity=11.7)
+            >>> sio2 = create_material(name='sio2', permittivity=2.25)
+            >>> cell.add_materials([silicon, sio2])
+            >>> cell.add_layer(material_name='silicon', thickness=torch.tensor(0.2))
+            >>> cell.add_layer(material_name='sio2', thickness=torch.tensor(0.1))
+            >>> cell.get_layer_structure()
+        
+        Keywords:
+            layer structure, information display, debugging, layer properties
         """
         # cell type
         print("------------------------------------")
@@ -724,54 +652,125 @@ class Cell3D():
         print("------------------------------------")
 
     def get_layout(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        """get_layout.
-
-        Returns the layout matrices of the cell.
-
-        Args:
-
+        """Get the coordinate grid tensors of the cell.
+        
+        This method returns the x and y coordinate tensors that define the real-space
+        grid of the unit cell. These tensors can be used for visualization or for
+        creating custom shape masks.
+        
         Returns:
-            Tuple[torch.Tensor, torch.Tensor]:
+            Tuple[torch.Tensor, torch.Tensor]: A tuple containing (X, Y) coordinate tensors,
+                                            each with shape (rdim[0], rdim[1]).
+                                            
+        Examples:
+            >>> # Get coordinate grids and use them for visualization
+            >>> import matplotlib.pyplot as plt
+            >>> import torch
+            >>> from torchrdit.cell import Cell3D
+            >>> cell = Cell3D()
+            >>> X, Y = cell.get_layout()
+            >>> plt.figure(figsize=(6, 6))
+            >>> plt.pcolormesh(X.cpu().numpy(), Y.cpu().numpy(), torch.ones_like(X).cpu().numpy())
+            >>> plt.axis('equal')
+            >>> plt.title('Unit Cell Coordinate Grid')
+            >>> plt.colorbar(label='Grid Visualization')
+            >>> plt.xlabel('X')
+            >>> plt.ylabel('Y')
+            >>> plt.show()
+        
+        Keywords:
+            coordinate grid, layout, visualization, real-space coordinates
         """
         return self.XO, self.YO
 
     @property
     def er1(self):
-        """er1.
-        attribute.
+        """Get the permittivity of the reflection layer.
+        
+        Returns:
+            torch.Tensor: Complex tensor containing the permittivity (εᵣ) of the 
+                       reflection layer material.
+                       
+        Keywords:
+            permittivity, reflection layer, material property, dielectric constant
         """
         return self._matlib[self.layer_manager.ref_material_name].er.to(self.tcomplex).detach().clone().to(self.device)
 
     @property
     def er2(self):
-        """er2.
-        attribute.
+        """Get the permittivity of the transmission layer.
+        
+        Returns:
+            torch.Tensor: Complex tensor containing the permittivity (εᵣ) of the 
+                       transmission layer material.
+                       
+        Keywords:
+            permittivity, transmission layer, material property, dielectric constant
         """
         return self._matlib[self.layer_manager.trn_material_name].er.to(self.tcomplex).detach().clone().to(self.device)
 
 
     @property
     def ur1(self):
-        """ur1.
-        attribute.
+        """Get the permeability of the reflection layer.
+        
+        Returns:
+            torch.Tensor: Complex tensor containing the permeability (μᵣ) of the 
+                       reflection layer material.
+                       
+        Keywords:
+            permeability, reflection layer, material property, magnetic property
         """
         return self._matlib[self.layer_manager.ref_material_name].ur.to(self.tcomplex).detach().clone().to(self.device)
 
     @property
     def ur2(self):
-        """ur2.
-        attribute.
+        """Get the permeability of the transmission layer.
+        
+        Returns:
+            torch.Tensor: Complex tensor containing the permeability (μᵣ) of the 
+                       transmission layer material.
+                       
+        Keywords:
+            permeability, transmission layer, material property, magnetic property
         """
         return self._matlib[self.layer_manager.trn_material_name].ur.to(self.tcomplex).detach().clone().to(self.device)
 
     @property
     def lengthunit(self):
-        """lengthunit.
-        attribute.
+        """Get the length unit used in the simulation.
+        
+        Returns:
+            str: The unit of length used in the simulation (e.g., 'um', 'nm').
+            
+        Keywords:
+            length unit, dimension, measurement unit
         """
         return self._lenunit
 
     def get_cell_type(self):
+        """Determine the type of cell based on lattice vectors.
+        
+        This method analyzes the lattice vectors and determines whether the cell
+        is a standard Cartesian cell (with vectors aligned to the coordinate axes)
+        or a more general cell type.
+        
+        Returns:
+            CellType: The type of cell (CellType.Cartesian or CellType.Other).
+            
+        Examples:
+            >>> # Create cells with different lattice vectors and check their types
+            >>> import torch
+            >>> from torchrdit.cell import Cell3D
+            >>> cell1 = Cell3D(t1=torch.tensor([[1.0, 0.0]]), t2=torch.tensor([[0.0, 1.0]]))
+            >>> print(cell1.get_cell_type())  # Cartesian
+            >>> 
+            >>> cell2 = Cell3D(t1=torch.tensor([[1.0, 0.2]]), t2=torch.tensor([[0.0, 1.0]]))
+            >>> print(cell2.get_cell_type())  # Other
+        
+        Keywords:
+            cell type, lattice vectors, coordinate system, Cartesian
+        """
         if self.lattice_t1[0] == 0 and self.lattice_t1[1] != 0 and self.lattice_t2[0] != 0 and self.lattice_t2[1] == 0:
             return CellType.Cartesian
         elif self.lattice_t1[0] != 0 and self.lattice_t1[1] == 0 and self.lattice_t2[0] == 0 and self.lattice_t2[1] != 0:

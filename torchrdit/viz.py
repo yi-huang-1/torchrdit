@@ -19,6 +19,10 @@ Key functions:
 - display_dispersive_profile: Visualize raw dispersive material data
 
 All functions return matplotlib objects that can be further customized as needed.
+
+Keywords:
+    visualization, plotting, matplotlib, field distribution, permittivity, 
+    material properties, dispersive materials, electromagnetic simulation
 """
 
 from typing import Any
@@ -77,21 +81,30 @@ def plot2d(data: Any,
         matplotlib.axes.Axes: The matplotlib axes object containing the plot,
                             allowing for further customization if needed.
     
-    Example:
-        ```python
-        # Plot the real part of the electric field distribution
-        x_grid, y_grid = solver.get_layout()
-        e_field = results['fields']['Ex']
+    Examples:
+        >>> from torchrdit.solver import create_solver
+        >>> from torchrdit.viz import plot2d
+        >>> import matplotlib.pyplot as plt
+
+        >>> # Create a solver
+        >>> solver = create_solver()
+        >>> # Plot the real part of the electric field distribution
+        >>> x_grid, y_grid = solver.get_layout()
+        >>> results = solver.solve(solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0))
+        >>> e_field = results['tx']  # Transmission field x-component
+        >>> 
+        >>> fig, ax = plt.subplots(figsize=(8, 6))
+        >>> plot2d(data=e_field, 
+        ...        layout=(x_grid, y_grid),
+        ...        func='real',
+        ...        cmap='RdBu_r',
+        ...        title='Transmission Field (X) Distribution',
+        ...        labels=('x (μm)', 'y (μm)'))
+        >>> plt.show()
         
-        fig, ax = plt.subplots(figsize=(8, 6))
-        plot2d(data=e_field, 
-               layout=(x_grid, y_grid),
-               func='real',
-               cmap='RdBu_r',
-               title='Electric Field (Ex) Distribution',
-               labels=('x (μm)', 'y (μm)'))
-        plt.show()
-        ```
+    Keywords:
+        visualization, plotting, field distribution, color map, electromagnetic, 
+        pcolormesh, complex data, contour, outline, colorbar, 2D plot
     """
 
     if isinstance(data, torch.Tensor):
@@ -134,6 +147,7 @@ def plot2d(data: Any,
     fig_ax.set_ylabel(labels[1])
     fig_ax.set_xlabel(labels[0])
     fig_ax.set_title(title)
+    fig_ax.set_aspect('equal')
 
     if cbar:
         plt.colorbar(pcolor_obj, ax=fig_ax)
@@ -179,18 +193,21 @@ def plot_layer(sim,
         matplotlib.axes.Axes: The matplotlib axes object containing the plot,
                             allowing for further customization if needed.
                             
-    Example:
-        ```python
-        # Create a simulation with multiple layers
-        solver = create_solver(algorithm=Algorithm.RDIT)
-        solver.add_layer(material_name='silicon', thickness=torch.tensor(0.2))
-        solver.add_layer(material_name='sio2', thickness=torch.tensor(0.3))
+    Examples:
+        >>> # Create a simulation with multiple layers
+        >>> solver = create_solver(algorithm=Algorithm.RDIT)
+        >>> solver.add_layer(material_name='silicon', thickness=torch.tensor(0.2))
+        >>> solver.add_layer(material_name='sio2', thickness=torch.tensor(0.3))
+        >>> 
+        >>> # Plot the permittivity distribution of the second layer
+        >>> fig, ax = plt.subplots(figsize=(8, 6))
+        >>> plot_layer(solver, layer_index=1, fig_ax=ax, 
+        ...           title='SiO2 Layer', labels=('x (μm)', 'y (μm)'))
+        >>> plt.show()
         
-        # Plot the permittivity distribution of the second layer
-        fig, ax = plt.subplots(figsize=(8, 6))
-        plot_layer(solver, layer_index=1, fig_ax=ax, title='SiO2 Layer')
-        plt.show()
-        ```
+    Keywords:
+        permittivity, layer visualization, material distribution, RCWA, R-DIT, 
+        electromagnetic simulation, layer structure, dispersive materials
     """
     ret = None
     if sim.layer_manager.layers[layer_index].is_dispersive is False:
@@ -235,24 +252,41 @@ def display_fitted_permittivity(sim, fig_ax=None):
         and plots their fitted permittivity data. If no dispersive materials are found,
         it prints a message indicating this.
         
-    Example:
-        ```python
-        # Create a simulation with a dispersive material (e.g., gold)
-        solver = create_solver(algorithm=Algorithm.RDIT)
-        gold = create_material(name='gold', dielectric_dispersion=True, 
-                             user_dielectric_file='gold_data.txt')
-        solver.add_materials([gold])
-        solver.add_layer(material_name='gold', thickness=torch.tensor(0.1))
+    Examples:
+        >>> from torchrdit.solver import create_solver
+        >>> from torchrdit.constants import Algorithm
+        >>> from torchrdit.utils import create_material
+        >>> from torchrdit.viz import display_fitted_permittivity
+        >>> import torch
+        >>> import matplotlib.pyplot as plt
+        >>>
+        >>> # Create a simulation with a dispersive material (e.g., gold)
+        >>> solver = create_solver(
+        ...     algorithm=Algorithm.RDIT,
+        ...     lam0=[1.55],
+        ...     lengthunit='um',
+        ...     rdim=[512, 512],
+        ...     kdim=[5, 5],
+        ...     device='cpu'
+        ... )
+        >>> gold = create_material(name='gold', dielectric_dispersion=True, 
+        ...                        user_dielectric_file='gold_data.txt')
+        >>> solver.add_materials([gold])
+        >>> solver.add_layer(material_name='gold', thickness=torch.tensor(0.1))
+        >>>
+        >>> # Visualize the fitted permittivity
+        >>> fig, ax = plt.subplots(2, 1, figsize=(10, 6))
+        >>> ax1, ax2 = display_fitted_permittivity(solver, fig_ax=ax)
+        >>> ax1.set_xlabel('Wavelength (μm)')
+        >>> ax1.set_ylabel('Real Part (ε\')')
+        >>> ax2.set_ylabel('Imaginary Part (ε")')
+        >>> plt.title('Gold Permittivity vs Wavelength')
+        >>> plt.show()
         
-        # Visualize the fitted permittivity
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax1, ax2 = display_fitted_permittivity(solver, ax)
-        ax1.set_xlabel('Wavelength (μm)')
-        ax1.set_ylabel('Real Part (ε\')')
-        ax2.set_ylabel('Imaginary Part (ε")')
-        plt.title('Gold Permittivity vs Wavelength')
-        plt.show()
-        ```
+    Keywords:
+        dispersive material, permittivity, wavelength dependence, polynomial fitting,
+        material characterization, complex permittivity, optical properties, 
+        Drude-Lorentz model, material dispersion
     """
 
     if True not in [sim.layer_manager.layers[ii].is_dispersive for ii in range(sim.layer_manager.nlayer)]:
@@ -270,8 +304,8 @@ def display_fitted_permittivity(sim, fig_ax=None):
             wls = sim._matlib[matname].fitted_data['wavelengths']
             data_eps1 = sim._matlib[matname].fitted_data['data_eps1']
             data_eps2 = sim._matlib[matname].fitted_data['data_eps2']
-            pe1 = sim._matlib[matname].fitted_data['fitted_crv1']
-            pe2 = sim._matlib[matname].fitted_data['fitted_crv2']
+            pe1 = sim._matlib[matname].fitted_data['fitted_eps1']
+            pe2 = sim._matlib[matname].fitted_data['fitted_eps2']
 
             ax1.plot(wls, data_eps1, 'r.', label=f'data e\' ({matname})')
             ax1.plot(sim._lam0, pe1(sim._lam0), 'c^-', label=f'fitted e\' ({matname})')
@@ -289,83 +323,3 @@ def display_fitted_permittivity(sim, fig_ax=None):
     ax2.legend(loc='best')
 
     return ax1, ax2
-
-
-def display_dispersive_profile(material,
-                               lengthunit: str = 'um',  # length unit used in the solver
-                               ):
-    """Visualize the raw dispersive material data without fitting.
-    
-    This function plots the raw dispersive material data (real and imaginary parts
-    of permittivity) as loaded from the material data file, before any polynomial
-    fitting is applied. This is useful for inspecting the original material data
-    and understanding its wavelength dependence.
-    
-    Unlike display_fitted_permittivity, which shows both the original data and the
-    fitted curves used in simulations, this function shows only the original data
-    extracted from the material data file.
-    
-    Args:
-        material: A MaterialClass instance with dispersive properties.
-                This should be a material created with dielectric_dispersion=True.
-        lengthunit: Unit of length for the wavelength axis.
-                  Common values include 'um' (micrometers), 'nm' (nanometers).
-                  Default is 'um'.
-    
-    Returns:
-        tuple: A tuple containing (figure, primary_axis, secondary_axis) where:
-              - figure: The matplotlib Figure object
-              - primary_axis: The main matplotlib axis (for real part)
-              - secondary_axis: The secondary y-axis (for imaginary part)
-              
-    Note:
-        This function requires that the material has loaded dispersive data.
-        If no data is available, it will return None.
-        
-    Example:
-        ```python
-        # Create a dispersive material
-        from torchrdit.utils import create_material
-        
-        gold = create_material(
-            name='gold',
-            dielectric_dispersion=True,
-            user_dielectric_file='gold_data.txt',
-            data_format='wl-nk',
-            data_unit='um'
-        )
-        
-        # Visualize the raw dispersion data
-        fig, ax1, ax2 = display_dispersive_profile(gold, lengthunit='um')
-        ax1.set_xlabel('Wavelength (μm)')
-        ax1.set_ylabel('Real Part (ε\')')
-        ax2.set_ylabel('Imaginary Part (ε")')
-        plt.title('Gold Permittivity Data')
-        plt.show()
-        ```
-    """
-
-    ret = None
-
-    disp_er_sorted = material._extract_laoded_data(lengthunit=lengthunit)
-    if disp_er_sorted is not None:
-        fig, fig_ax = plt.subplots()
-        ln1 = fig_ax.plot(disp_er_sorted[:, 0],
-                      disp_er_sorted[:, 1], 'r-', label='e\'')
-        # ax.legend(loc='best')
-        fig_ax2 = fig_ax.twinx()
-        ln2 = fig_ax2.plot(disp_er_sorted[:, 0],
-                       disp_er_sorted[:, 2], 'g--', label='e\"')
-        # ax2.legend(loc='best')
-        fig_ax.set_title(f"Permittivity [{material._name}]")
-        fig_ax.set_xlabel(f"Wavelength [{lengthunit}]")
-        fig_ax.set_ylabel('Eps\' [Real Part]')
-        fig_ax2.set_ylabel('Eps\" [Imag Part]')
-        lns = ln1 + ln2
-        labs = [l.get_label() for l in lns]
-        fig_ax.legend(lns, labs, loc='best')
-
-        ret = fig,fig_ax
-
-    return ret
-

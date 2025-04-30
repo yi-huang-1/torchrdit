@@ -197,10 +197,10 @@ def create_material(
         name: Unique identifier for the material. This name is used when 
               referencing the material in other functions.
               Default is 'material1'.
-        permittivity: Relative permittivity (εᵣ) of the material for non-dispersive
-                    materials. Default is 1.0 (vacuum).
-        permeability: Relative permeability (μᵣ) of the material for non-dispersive
-                    materials. Default is 1.0 (vacuum).
+        permittivity: Complex relative permittivity (εᵣ) of the material for non-dispersive
+                    materials. Default is 1.0 (vacuum). Negative convention is used.
+        permeability: Complex relative permeability (μᵣ) of the material for non-dispersive
+                    materials. Default is 1.0 (vacuum). Negative convention is used.
         dielectric_dispersion: Whether the material has frequency-dependent
                              permittivity. If True, data must be provided through
                              user_dielectric_file. Default is False.
@@ -410,9 +410,9 @@ def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64
     return smatrix
 
 def _create_blur_kernel(radius: int, device: torch.device = torch.device('cpu'), tfloat: torch.dtype = torch.float32):
-    """Create a circular blur kernel for convolution operations.
+    """Create a circular convolution kernel for blurring operations.
     
-    This internal helper function creates a normalized circular kernel with the specified
+    Creates a normalized circular (disk-shaped) convolution kernel with the specified
     radius that can be used for blurring operations via convolution. The kernel has
     uniform weights (all pixels within the disk have the same value) and is normalized
     so that the sum of all weights equals 1.
@@ -427,6 +427,14 @@ def _create_blur_kernel(radius: int, device: torch.device = torch.device('cpu'),
     
     Returns:
         torch.Tensor: Normalized circular convolution kernel.
+        
+    Examples:
+        >>> kernel = _create_blur_kernel(radius=5)
+        >>> kernel.shape
+        torch.Size([11, 11])
+        
+    Keywords:
+        convolution, kernel, blur, disk, circle, filter, topology optimization
     """
     row_ind, col_ind = skdraw.disk(center=(radius, radius), radius=radius+1)
     kernel = torch.zeros(size=(2*radius+1, 2*radius+1),
@@ -462,10 +470,21 @@ def operator_blur(rho: torch.Tensor,
     Returns:
         torch.Tensor: Blurred tensor with the same shape as the input.
         
+    Examples:
+        >>> import torch
+        >>> from torchrdit.utils import operator_blur
+        >>> input_tensor = torch.rand(1, 1, 32, 32)
+        >>> blurred = operator_blur(input_tensor, radius=3, num_blur=2)
+        >>> blurred.shape
+        torch.Size([1, 1, 32, 32])
+        
     Note:
         This function is often used in conjunction with projection operations
         in topology optimization to enforce minimum feature sizes and improve
         the manufacturability of optimized designs.
+        
+    Keywords:
+        blur, convolution, filter, smoothing, topology optimization, feature size, batch processing
     """
 
     in_ch = rho.shape[1]
@@ -509,10 +528,21 @@ def operator_proj(rho: torch.Tensor, eta: float = 0.5, beta: int = 100, num_proj
         torch.Tensor: Projected tensor with the same shape as the input, with
                    values pushed toward 0 or 1.
     
+    Examples:
+        >>> import torch
+        >>> from torchrdit.utils import operator_proj
+        >>> input_tensor = torch.rand(10, 10)  # Random values between 0 and 1
+        >>> binary_result = operator_proj(input_tensor, beta=200)
+        >>> print(binary_result)
+        >>> # Values will be pushed closer to 0 or 1
+    
     Note:
         This function is commonly used in topology optimization to enforce binary
         designs (e.g., material/no material) while maintaining differentiability
         for gradient-based optimization.
+        
+    Keywords:
+        projection, binary, topology optimization, thresholding, differentiable, sigmoid
     """
     eta = torch.tensor(eta)
     beta = torch.tensor(beta)
@@ -568,10 +598,22 @@ def blur_filter(rho: torch.Tensor,
     Returns:
         torch.Tensor: Filtered tensor with the same shape as the input.
     
+    Examples:
+        >>> import torch
+        >>> from torchrdit.utils import blur_filter
+        >>> design = torch.rand(1, 1, 64, 64)  # Initial random design
+        >>> filtered = blur_filter(design, radius=3, num_blur=2, beta=150)
+        >>> print(filtered)
+        >>> # Result will have smoother features and more binary values
+    
     Note:
         This function is a convenience wrapper that combines the operator_blur
         and operator_proj functions into a single operation commonly used in
         topology optimization workflows.
+        
+    Keywords:
+        topology optimization, filter, blur, projection, binary, manufacturability, 
+        feature size, inverse design, photonics
     """
 
     rho = operator_blur(rho, radius=radius, num_blur=num_blur, device=device, tfloat=tfloat)
@@ -604,9 +646,24 @@ def to_diag_util(input_mat: torch.Tensor, kdim: List[int]) -> torch.Tensor:
                    [..., 2*n_harmonics], the output will have shape
                    [..., 2*n_harmonics, 2*n_harmonics].
     
+    Examples:
+        >>> import torch
+        >>> from torchrdit.utils import to_diag_util
+        >>> input_vector = torch.ones(5)  # A vector with 5 elements
+        >>> kdim = [1, 5]  # 1x5 k-space dimension resulting in 5 harmonics
+        >>> diagonal_matrix = to_diag_util(input_vector, kdim)
+        >>> print(diagonal_matrix.shape)
+        torch.Size([5, 5])
+        >>> print(torch.allclose(diagonal_matrix, torch.eye(5)))
+        True
+    
     Note:
         This function is used extensively in the RCWA and R-DIT algorithms when
         constructing matrices for eigenvalue problems and field calculations.
+        
+    Keywords:
+        diagonal matrix, electromagnetic, RCWA, R-DIT, Fourier, harmonics, 
+        polarization, matrix construction
     """
     n_harmonics = kdim[0] * kdim[1]
     if input_mat.shape[-1] == n_harmonics:
