@@ -36,5 +36,6 @@ from . import layers
 from . import viz
 from . import algorithm
 from . import builder
+from . import shapes
 
-__version__ = "0.1.13"
+__version__ = "0.1.14"

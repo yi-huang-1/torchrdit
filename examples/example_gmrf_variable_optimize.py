@@ -11,7 +11,12 @@ using gradient descent to adjust the radius of the hexagonal pattern.
 The GMRF design is based on:
 - A. A. Mehta, R. C. Rumpf, Z. A. Roth, and E. G. Johnson, "Guided mode resonance filter 
   as a spectrally selective feedback element in a double-cladding optical fiber laser," 
-  IEEE Photonics Technology Letters, vol. 19, pp. 2030–2032, 12 2007.
+  IEEE Photonics Technology Letters, vol. 19, pp. 2030-2032, 12 2007.
+
+Keywords:
+    guided-mode resonance filter, GMRF, optimization, gradient descent, 
+    guided mode resonance, guided mode resonance filter, R-DIT, builder,
+    automatic differentiation, optimizer, scheduler
 """
 
 import numpy as np
@@ -20,47 +25,17 @@ import torch
 import time
 import os
 
-from torchrdit.solver import create_solver, get_solver_builder
-from torchrdit.utils import operator_proj, create_material
+from torchrdit.solver import get_solver_builder
+from torchrdit.utils import create_material
 from tqdm import trange
 from torchrdit.constants import Algorithm, Precision
+from torchrdit.shapes import ShapeGenerator
 
 # Global constants
 UM = 1
 NM = 1e-3 * UM
 DEGREES = np.pi / 180
 
-def make_GMRF_hexagonal_mask(radius_var, XO, YO, a, b, eta=0.5, beta=100, N=2):
-    """
-    Create a hexagonal unit cell mask for the GMRF.
-    
-    Args:
-        radius_var: Radius of the circles (holes) in the mask
-        XO, YO: Coordinate meshgrids
-        a, b: Lattice constants
-        eta, beta, N: Parameters for the projection operator
-        
-    Returns:
-        torch.Tensor: The binary mask for the GMRF
-    """
-    rsq1 = XO ** 2 + (YO - b / 2) ** 2
-    m1 = (rsq1 - (radius_var) ** 2) + 0.5
-    m1 = operator_proj(m1, eta=eta, beta=beta, num_proj=N)
-    
-    rsq2 = XO ** 2 + (YO + b / 2) ** 2
-    m2 = (rsq2 - (radius_var) ** 2) + 0.5
-    m2 = operator_proj(m2, eta=eta, beta=beta, num_proj=N)
-    
-    rsq3 = (XO - a / 2) ** 2 + YO ** 2
-    m3 = (rsq3 - (radius_var) ** 2) + 0.5
-    m3 = operator_proj(m3, eta=eta, beta=beta, num_proj=N)
-    
-    rsq4 = (XO + a / 2) ** 2 + YO ** 2
-    m4 = (rsq4 - (radius_var) ** 2) + 0.5
-    m4 = operator_proj(m4, eta=eta, beta=beta, num_proj=N)
-
-    mask = m1 + m2 + m3 + m4 - 3
-    return mask
 
 def GMRF_simulator(radius, lams, rdit_orders=10, kdims=9, is_showinfo=False):
     """
@@ -77,8 +52,6 @@ def GMRF_simulator(radius, lams, rdit_orders=10, kdims=9, is_showinfo=False):
         dict: Results dictionary with transmission and reflection data
     """
     # Setup units and angles
-    um = UM
-    nm = NM
     degrees = DEGREES
 
     theta = 0 * degrees
@@ -91,11 +64,11 @@ def GMRF_simulator(radius, lams, rdit_orders=10, kdims=9, is_showinfo=False):
     n_SiN = 1.9360
     n_fs = 1.5100
 
-    a = 1150 * nm
+    a = 1150 * NM
     b = a * np.sqrt(3)
 
-    h1 = torch.tensor(230 * nm, dtype=torch.float32)
-    h2 = torch.tensor([345 * nm], dtype=torch.float32)
+    h1 = torch.tensor(230 * NM, dtype=torch.float32)
+    h2 = torch.tensor([345 * NM], dtype=torch.float32)
 
     t1 = torch.tensor([[a/2, -a*np.sqrt(3)/2]], dtype=torch.float32)
     t2 = torch.tensor([[a/2, a*np.sqrt(3)/2]], dtype=torch.float32)
@@ -116,7 +89,6 @@ def GMRF_simulator(radius, lams, rdit_orders=10, kdims=9, is_showinfo=False):
     builder.with_wavelengths(lams)
     builder.with_length_unit('um')
     builder.with_lattice_vectors(t1, t2)
-    builder.with_fff(True)
     
     # Add materials to builder
     builder.add_material(material_sio)
@@ -141,13 +113,23 @@ def GMRF_simulator(radius, lams, rdit_orders=10, kdims=9, is_showinfo=False):
                   is_optimize=False)
 
     # Create source
-    src = gmrf_sim.add_source(theta=0 * degrees,
-                     phi=0 * degrees,
-                     pte=1,
-                     ptm=0)
+    src = gmrf_sim.add_source(theta=theta,
+                     phi=phi,
+                     pte=pte,
+                     ptm=ptm)
 
     # Create mask and update permittivity
-    mask = make_GMRF_hexagonal_mask(radius, gmrf_sim.XO, gmrf_sim.YO, a, b, eta=0.5, beta=100, N=2)
+    shapegen = ShapeGenerator.from_solver(gmrf_sim)
+    c1 = shapegen.generate_circle_mask(center=[0, b/2], radius=radius)
+    c2 = shapegen.generate_circle_mask(center=[0, -b/2], radius=radius)
+    c3 = shapegen.generate_circle_mask(center=[a/2, 0], radius=radius)
+    c4 = shapegen.generate_circle_mask(center=[-a/2, 0], radius=radius)
+
+    mask = shapegen.combine_masks(mask1=c1, mask2=c2, operation='union')
+    mask = shapegen.combine_masks(mask1=mask, mask2=c3, operation='union')
+    mask = shapegen.combine_masks(mask1=mask, mask2=c4, operation='union')
+
+    mask = (1 - mask)
     gmrf_sim.update_er_with_mask(mask=mask, layer_index=0)
 
     # Solve and return results
@@ -281,7 +263,17 @@ def objective_GMRF(dev, src, radius):
     a = 1150 * NM
     b = a * np.sqrt(3)
 
-    mask = make_GMRF_hexagonal_mask(radius, dev.XO, dev.YO, a, b, eta=0.5, beta=100, N=2)
+    shapegen = ShapeGenerator.from_solver(dev)
+    c1 = shapegen.generate_circle_mask(center=[0, b/2], radius=radius)
+    c2 = shapegen.generate_circle_mask(center=[0, -b/2], radius=radius)
+    c3 = shapegen.generate_circle_mask(center=[a/2, 0], radius=radius)
+    c4 = shapegen.generate_circle_mask(center=[-a/2, 0], radius=radius)
+
+    mask = shapegen.combine_masks(mask1=c1, mask2=c2, operation='union')
+    mask = shapegen.combine_masks(mask1=mask, mask2=c3, operation='union')
+    mask = shapegen.combine_masks(mask1=mask, mask2=c4, operation='union')
+
+    mask = (1 - mask)
     dev.update_er_with_mask(mask=mask, layer_index=0)
     
     data = dev.solve(src)
@@ -330,7 +322,6 @@ def setup_gmrf_solver(lam_opt):
     builder.with_wavelengths(lam_opt)
     builder.with_length_unit('um')
     builder.with_lattice_vectors(t1, t2)
-    builder.with_fff(True)
     
     # Add materials to builder
     builder.add_material(material_sio)
@@ -392,7 +383,6 @@ def optimize_radius(gmrf_sim_rdit, src_rdit, initial_radius, num_epochs=10):
     t1 = time.perf_counter()
     
     for epoch in trange(num_epochs):
-        tic = time.time()
         optimizer.zero_grad()
         loss = objective_GMRF(gmrf_sim_rdit, src_rdit, r_opt)
         loss.backward()

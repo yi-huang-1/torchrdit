@@ -1,11 +1,13 @@
 """
-# Example 1 - GMRF with hexagonal unit cells using RCWA
+# Example - GMRF with hexagonal unit cells using R-DIT
 
-This example shows the simulation of the guided-mode resonance filter (GMRF) using torchrdit with differentiable RCWA algorithm. The device is composed of a SiO hexagonal grating layer, a SiN waveguide layer and a fused silica substrate.
+This example shows the simulation of the guided-mode resonance filter (GMRF) using torchrdit with differentiable R-DIT algorithm. The device is composed of a SiO hexagonal grating layer, a SiN waveguide layer and a fused silica substrate.
 
 The GMRF can be found in the following references:
 
-- A. A. Mehta, R. C. Rumpf, Z. A. Roth, and E. G. Johnson, "Guided mode resonance filter as a spectrally selective feedback element in a double-cladding optical fiber laser," IEEE Photonics Technology Letters, vol. 19, pp. 2030–2032, 12 2007.
+- A. A. Mehta, R. C. Rumpf, Z. A. Roth, and E. G. Johnson, "Guided mode resonance filter as a spectrally selective feedback element in a double-cladding optical fiber laser," IEEE Photonics Technology Letters, vol. 19, pp. 2030-2032, 12 2007.
+
+Keywords: R-DIT, guided-mode resonance filter (GMRF), torchrdit, torch, efficiency, simulation, tutorial, optical
 """
 
 import numpy as np
@@ -13,6 +15,7 @@ import torch
 import os
 
 from torchrdit.solver import get_solver_builder
+from torchrdit.shapes import ShapeGenerator
 from torchrdit.utils import create_material
 from torchrdit.constants import Algorithm, Precision
 from torchrdit.viz import plot_layer
@@ -61,14 +64,13 @@ material_fs = create_material(name='FusedSilica', permittivity=n_fs**2)
 builder = get_solver_builder()
 
 # Configure the builder with all necessary parameters
-builder.with_algorithm(Algorithm.RCWA)
+builder.with_algorithm(Algorithm.RDIT)
 builder.with_precision(Precision.DOUBLE)
 builder.with_real_dimensions([512, 512])
 builder.with_k_dimensions([9, 9])
 builder.with_wavelengths(np.array([1540 * nm, 1550 * nm, 1560 * nm, 1570 * nm]))
 builder.with_length_unit('um')
 builder.with_lattice_vectors(t1, t2)
-builder.with_fff(True)
 
 # Add materials
 builder.add_material(material_sio)
@@ -76,7 +78,7 @@ builder.add_material(material_sin)
 builder.add_material(material_fs)
 
 # Configure transmission material
-# (This will be applied after building the solver)
+builder.with_trn_material(material_fs)
 
 # Add layers to the builder
 # First layer: grating layer (SiO)
@@ -98,9 +100,6 @@ builder.add_layer({
 # Build the solver
 dev1 = builder.build()
 
-# Update the material of the transmission layer
-dev1.update_trn_material(trn_material=material_fs)
-
 # print layer information
 dev1.get_layer_structure()
 
@@ -110,15 +109,17 @@ src1 = dev1.add_source(theta = theta,
                  pte = pte,
                  ptm = ptm)
 
-# build hexagonal unit cell
-c1 = dev1.get_circle_mask(center=[0, b/2], radius=r)
-c2 = dev1.get_circle_mask(center=[0, -b/2], radius=r)
-c3 = dev1.get_circle_mask(center=[a/2, 0], radius=r)
-c4 = dev1.get_circle_mask(center=[-a/2, 0], radius=r)
+shapegen = ShapeGenerator.from_solver(dev1)
 
-mask = dev1.combine_masks(mask1=c1, mask2=c2, operation='union')
-mask = dev1.combine_masks(mask1=mask, mask2=c3, operation='union')
-mask = dev1.combine_masks(mask1=mask, mask2=c4, operation='union')
+# build hexagonal unit cell
+c1 = shapegen.generate_circle_mask(center=[0, b/2], radius=r)
+c2 = shapegen.generate_circle_mask(center=[0, -b/2], radius=r)
+c3 = shapegen.generate_circle_mask(center=[a/2, 0], radius=r)
+c4 = shapegen.generate_circle_mask(center=[-a/2, 0], radius=r)
+
+mask = shapegen.combine_masks(mask1=c1, mask2=c2, operation='union')
+mask = shapegen.combine_masks(mask1=mask, mask2=c3, operation='union')
+mask = shapegen.combine_masks(mask1=mask, mask2=c4, operation='union')
 
 mask = (1 - mask).to(torch.float32)
 
@@ -129,7 +130,7 @@ layer_index = 0
 dev1.update_er_with_mask(mask=mask, layer_index=layer_index)
 
 # plot the layer and save the figure
-fig, axes = plt.subplots()
+fig, axes = plt.subplots(figsize=(5, 5))
 plot_layer(dev1, layer_index=layer_index, func='real', fig_ax=axes, cmap='BuGn', labels=('x (um)','y (um)'), title=f'layer {layer_index}')
 script_dir = os.path.dirname(os.path.abspath(__file__))
 output_filename = os.path.join(script_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_layer_{layer_index}.png")
@@ -138,16 +139,7 @@ plt.close(fig)
 
 data = dev1.solve(src1)
 
-print(f"The transmission efficiency is {data['TRN'][0] * 100}%")
-print(f"The reflection efficiency is {data['REF'][0] * 100}%")
-
-# Start back propagation
-torch.sum(data['TRN'][0]).backward()
-
-# update thickness
-dev1.update_layer_thickness(layer_index=1,thickness=torch.tensor(220 * nm))
-dev1.get_layer_structure()
-data = dev1.solve(src1)
-
-print(f"The transmission efficiency is {data['TRN'][0] * 100}%")
-print(f"The reflection efficiency is {data['REF'][0] * 100}%")
+# Print the Efficiency each wavelength
+for i in range(len(dev1.lam0)):
+    print(f"The transmission efficiency at wavelength \t{dev1.lam0[i] * 1e3} nm is \t{data['TRN'][i] * 100}%")
+    print(f"The reflection efficiency at wavelength \t{dev1.lam0[i] * 1e3} nm is \t{data['REF'][i] * 100}%")
