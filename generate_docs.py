@@ -16,15 +16,7 @@ def create_material_proxy_page(docs_dir):
     api_file = docs_dir / "MaterialProxy-API.md"
     
     # Create the custom intro content
-    intro_content = """---
-title: "Material Data Handling"
-category: "Core Components"
-tags: ["materials", "unit conversion", "data loading", "proxy pattern", "permittivity", "dispersion"]
-related: ["Materials", "Constants"]
-complexity: "intermediate"
----
-
-# Material Proxy Module
+    intro_content = """# Material Proxy Module
 
 ## Overview
 The `torchrdit.material_proxy` module provides classes for loading, processing, and converting material data with appropriate unit handling for electromagnetic simulations. It serves as a foundation for the materials system in TorchRDIT.
@@ -629,15 +621,7 @@ def create_shapes_page(docs_dir):
     api_file = docs_dir / "Shapes-API.md"
     
     # Create the custom intro content
-    intro_content = """---
-title: "Shape Generation"
-category: "Core Components"
-tags: ["shapes", "mask", "geometry", "photonics"]
-related: ["Solver", "Layers"]
-complexity: "intermediate"
----
-
-# Shape Generation Module
+    intro_content = """# Shape Generation Module
 
 ## Overview
 The `torchrdit.shapes` module provides tools for generating binary masks representing various photonic structures. These masks can be used to define the geometry of patterned layers in electromagnetic simulations.
@@ -717,15 +701,7 @@ def create_observers_page(docs_dir):
     api_file = docs_dir / "Observers-API.md"
     
     # Create the custom intro content
-    intro_content = """---
-title: "Progress Tracking and Reporting"
-category: "Utility Components"
-tags: ["progress", "monitoring", "feedback", "observer pattern", "console", "progress bar"]
-related: ["Solver"]
-complexity: "beginner"
----
-
-# Observer Module
+    intro_content = """# Observer Module
 
 ## Overview
 The `torchrdit.observers` module provides implementations of the Observer pattern for tracking and reporting progress during electromagnetic simulations.
@@ -797,15 +773,7 @@ def create_results_page(docs_dir):
     api_file = docs_dir / "Results-API.md"
     
     # Create the custom intro content
-    intro_content = """---
-title: "Simulation Results"
-category: "Core Components"
-tags: ["results", "dataclass", "simulation", "fields", "diffraction"]
-related: ["Solver", "Algorithm"]
-complexity: "intermediate"
----
-
-# Results Module
+    intro_content = """# Results Module
 
 ## Overview
 
@@ -981,15 +949,7 @@ def create_constants_page(docs_dir):
     api_file = docs_dir / "Constants-API.md"
     
     # Create the custom intro content
-    intro_content = """---
-title: "Constants and Enumerations"
-category: "Core Components"
-tags: ["constants", "enumerations", "physical constants", "units", "algorithms", "precision"]
-related: ["Solver", "Materials"]
-complexity: "beginner"
----
-
-# Constants Module
+    intro_content = """# Constants Module
 
 ## Overview
 The `torchrdit.constants` module defines physical constants, unit conversion factors, and enumerations used throughout the TorchRDIT package for electromagnetic simulations.
