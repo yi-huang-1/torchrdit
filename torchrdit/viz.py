@@ -82,25 +82,27 @@ def plot2d(data: Any,
                             allowing for further customization if needed.
     
     Examples:
-        >>> from torchrdit.solver import create_solver
-        >>> from torchrdit.viz import plot2d
-        >>> import matplotlib.pyplot as plt
+    ```python
+    from torchrdit.solver import create_solver
+    from torchrdit.viz import plot2d
+    import matplotlib.pyplot as plt
 
-        >>> # Create a solver
-        >>> solver = create_solver()
-        >>> # Plot the real part of the electric field distribution
-        >>> x_grid, y_grid = solver.get_layout()
-        >>> results = solver.solve(solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0))
-        >>> e_field = results['tx']  # Transmission field x-component
-        >>> 
-        >>> fig, ax = plt.subplots(figsize=(8, 6))
-        >>> plot2d(data=e_field, 
-        ...        layout=(x_grid, y_grid),
-        ...        func='real',
-        ...        cmap='RdBu_r',
-        ...        title='Transmission Field (X) Distribution',
-        ...        labels=('x (μm)', 'y (μm)'))
-        >>> plt.show()
+    # Create a solver
+    solver = create_solver()
+    # Plot the real part of the electric field distribution
+    x_grid, y_grid = solver.get_layout()
+    results = solver.solve(solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0))
+    e_field = results['tx']  # Transmission field x-component
+    
+    fig, ax = plt.subplots(figsize=(8, 6))
+    plot2d(data=e_field, 
+            layout=(x_grid, y_grid),
+            func='real',
+            cmap='RdBu_r',
+            title='Transmission Field (X) Distribution',
+            labels=('x (μm)', 'y (μm)'))
+    plt.show()
+    ```
         
     Keywords:
         visualization, plotting, field distribution, color map, electromagnetic, 
@@ -194,16 +196,18 @@ def plot_layer(sim,
                             allowing for further customization if needed.
                             
     Examples:
-        >>> # Create a simulation with multiple layers
-        >>> solver = create_solver(algorithm=Algorithm.RDIT)
-        >>> solver.add_layer(material_name='silicon', thickness=torch.tensor(0.2))
-        >>> solver.add_layer(material_name='sio2', thickness=torch.tensor(0.3))
-        >>> 
-        >>> # Plot the permittivity distribution of the second layer
-        >>> fig, ax = plt.subplots(figsize=(8, 6))
-        >>> plot_layer(solver, layer_index=1, fig_ax=ax, 
-        ...           title='SiO2 Layer', labels=('x (μm)', 'y (μm)'))
-        >>> plt.show()
+    ```python
+    # Create a simulation with multiple layers
+    solver = create_solver(algorithm=Algorithm.RDIT)
+    solver.add_layer(material_name='silicon', thickness=torch.tensor(0.2))
+    solver.add_layer(material_name='sio2', thickness=torch.tensor(0.3))
+    
+    # Plot the permittivity distribution of the second layer
+    fig, ax = plt.subplots(figsize=(8, 6))
+    plot_layer(solver, layer_index=1, fig_ax=ax, 
+                title='SiO2 Layer', labels=('x (μm)', 'y (μm)'))
+    plt.show()
+    ```
         
     Keywords:
         permittivity, layer visualization, material distribution, RCWA, R-DIT, 
@@ -253,35 +257,37 @@ def display_fitted_permittivity(sim, fig_ax=None):
         it prints a message indicating this.
         
     Examples:
-        >>> from torchrdit.solver import create_solver
-        >>> from torchrdit.constants import Algorithm
-        >>> from torchrdit.utils import create_material
-        >>> from torchrdit.viz import display_fitted_permittivity
-        >>> import torch
-        >>> import matplotlib.pyplot as plt
-        >>>
-        >>> # Create a simulation with a dispersive material (e.g., gold)
-        >>> solver = create_solver(
-        ...     algorithm=Algorithm.RDIT,
-        ...     lam0=[1.55],
-        ...     lengthunit='um',
-        ...     rdim=[512, 512],
-        ...     kdim=[5, 5],
-        ...     device='cpu'
-        ... )
-        >>> gold = create_material(name='gold', dielectric_dispersion=True, 
-        ...                        user_dielectric_file='gold_data.txt')
-        >>> solver.add_materials([gold])
-        >>> solver.add_layer(material_name='gold', thickness=torch.tensor(0.1))
-        >>>
-        >>> # Visualize the fitted permittivity
-        >>> fig, ax = plt.subplots(2, 1, figsize=(10, 6))
-        >>> ax1, ax2 = display_fitted_permittivity(solver, fig_ax=ax)
-        >>> ax1.set_xlabel('Wavelength (μm)')
-        >>> ax1.set_ylabel('Real Part (ε\')')
-        >>> ax2.set_ylabel('Imaginary Part (ε")')
-        >>> plt.title('Gold Permittivity vs Wavelength')
-        >>> plt.show()
+    ```python
+    from torchrdit.solver import create_solver
+    from torchrdit.constants import Algorithm
+    from torchrdit.utils import create_material
+    from torchrdit.viz import display_fitted_permittivity
+    import torch
+    import matplotlib.pyplot as plt
+    
+    # Create a simulation with a dispersive material (e.g., gold)
+    solver = create_solver(
+        algorithm=Algorithm.RDIT,
+        lam0=[1.55],
+        lengthunit='um',
+        rdim=[512, 512],
+        kdim=[5, 5],
+        device='cpu'
+    )
+    gold = create_material(name='gold', dielectric_dispersion=True, 
+                            user_dielectric_file='gold_data.txt')
+    solver.add_materials([gold])
+    solver.add_layer(material_name='gold', thickness=torch.tensor(0.1))
+    
+    # Visualize the fitted permittivity
+    fig, ax = plt.subplots(2, 1, figsize=(10, 6))
+    ax1, ax2 = display_fitted_permittivity(solver, fig_ax=ax)
+    ax1.set_xlabel('Wavelength (μm)')
+    ax1.set_ylabel('Real Part (ε\')')
+    ax2.set_ylabel('Imaginary Part (ε")')
+    plt.title('Gold Permittivity vs Wavelength')
+    plt.show()
+    ```
         
     Keywords:
         dispersive material, permittivity, wavelength dependence, polynomial fitting,

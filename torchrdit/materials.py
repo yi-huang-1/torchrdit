@@ -19,51 +19,48 @@ Functions:
     (No module-level functions, but MaterialClass provides factory methods)
 
 Examples:
-    Creating simple non-dispersive materials:
-    
-    >>> from torchrdit.utils import create_material
-    >>> # Create a simple material with constant permittivity
-    >>> air = create_material(name="air", permittivity=1.0)
-    >>> silicon = create_material(name="silicon", permittivity=11.7)
-    >>> # Create a material from refractive index
-    >>> glass = create_material(name="glass", permittivity=2.25)  # n=1.5
-    >>> # Create a material with complex permittivity (lossy)
-    >>> gold = create_material(name="gold", permittivity=complex(-10.0, 1.5))
-    
-    Creating dispersive materials from data files:
-    
-    >>> # Create dispersive material from data file with wavelength-permittivity data
-    >>> silica = create_material(
-    ...     name="silica",
-    ...     dielectric_dispersion=True,
-    ...     user_dielectric_file="materials/SiO2.txt",
-    ...     data_format="wl-eps",
-    ...     data_unit="um"
-    ... )
-    >>> 
-    >>> # Create dispersive material from data file with frequency-nk data
-    >>> silicon_dispersive = create_material(
-    ...     name="silicon_disp",
-    ...     dielectric_dispersion=True,
-    ...     user_dielectric_file="materials/Si.txt",
-    ...     data_format="freq-nk",
-    ...     data_unit="thz"
-    ... )
-    
-    Using materials in solvers:
-    
-    >>> from torchrdit.solver import create_solver
-    >>> from torchrdit.constants import Algorithm
-    >>> import torch
-    >>> # Create a solver and add materials
-    >>> solver = create_solver(algorithm=Algorithm.RCWA)
-    >>> solver.add_materials([air, silicon, glass])
-    >>> # Add layers using these materials
-    >>> solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
-    >>> solver.add_layer(material_name="glass", thickness=torch.tensor(0.1))
-    >>> # Set input/output materials
-    >>> solver.update_ref_material("air")
-    >>> solver.update_trn_material("air")
+```python
+from torchrdit.utils import create_material
+# Create a simple material with constant permittivity
+air = create_material(name="air", permittivity=1.0)
+silicon = create_material(name="silicon", permittivity=11.7)
+# Create a material from refractive index
+glass = create_material(name="glass", permittivity=2.25)  # n=1.5
+# Create a material with complex permittivity (lossy)
+gold = create_material(name="gold", permittivity=complex(-10.0, 1.5))
+
+# Create dispersive material from data file with wavelength-permittivity data
+silica = create_material(
+    name="silica",
+    dielectric_dispersion=True,
+    user_dielectric_file="materials/SiO2.txt",
+    data_format="wl-eps",
+    data_unit="um"
+)
+
+# Create dispersive material from data file with frequency-nk data
+silicon_dispersive = create_material(
+    name="silicon_disp",
+    dielectric_dispersion=True,
+    user_dielectric_file="materials/Si.txt",
+    data_format="freq-nk",
+    data_unit="thz"
+)
+
+# Using materials in solvers
+from torchrdit.solver import create_solver
+from torchrdit.constants import Algorithm
+import torch
+# Create a solver and add materials
+solver = create_solver(algorithm=Algorithm.RCWA)
+solver.add_materials([air, silicon, glass])
+# Add layers using these materials
+solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
+solver.add_layer(material_name="glass", thickness=torch.tensor(0.1))
+# Set input/output materials
+solver.update_ref_material("air")
+solver.update_trn_material("air")
+```
 
 Keywords:
     materials, permittivity, permeability, optical properties, dispersive materials,
@@ -108,34 +105,32 @@ class MaterialClass:
         function rather than directly instantiating this class.
     
     Examples:
-        Creating a simple non-dispersive material:
-        
-        >>> from torchrdit.utils import create_material
-        >>> # Material with constant permittivity
-        >>> silicon = create_material(name="silicon", permittivity=11.7)
-        >>> print(f"Material: {silicon.name}, ε = {silicon.er.real:.1f}")
-        Material: silicon, ε = 11.7
-        >>> # Material with complex permittivity (lossy)
-        >>> gold = create_material(name="gold", permittivity=complex(-10.0, 1.5))
-        >>> print(f"Material: {gold.name}, ε = {gold.er.real:.1f}{gold.er.imag:+.1f}j")
-        Material: gold, ε = -10.0+1.5j
-        
-        Creating a dispersive material from a data file:
-        
-        >>> # Load permittivity data from wavelength-permittivity data file
-        >>> silica = create_material(
-        ...     name="silica",
-        ...     dielectric_dispersion=True,
-        ...     user_dielectric_file="materials/SiO2.txt",
-        ...     data_format="wl-eps",
-        ...     data_unit="um"
-        ... )
-        >>> # Use in a simulation with specific wavelengths
-        >>> import numpy as np
-        >>> wavelengths = np.array([1.31, 1.55])
-        >>> permittivity = silica.get_permittivity(wavelengths, 'um')
-        >>> print(f"Silica permittivity at λ=1.55 μm: {permittivity[1].real:.4f}")
-        Silica permittivity at λ=1.55 μm: 2.1521
+    ```python
+    from torchrdit.utils import create_material
+    # Material with constant permittivity
+    silicon = create_material(name="silicon", permittivity=11.7)
+    print(f"Material: {silicon.name}, ε = {silicon.er.real:.1f}")
+    # Material: silicon, ε = 11.7
+    # Material with complex permittivity (lossy)
+    gold = create_material(name="gold", permittivity=complex(-10.0, 1.5))
+    print(f"Material: {gold.name}, ε = {gold.er.real:.1f}{gold.er.imag:+.1f}j")
+    # Material: gold, ε = -10.0+1.5j
+    
+    # Load permittivity data from wavelength-permittivity data file
+    silica = create_material(
+        name="silica",
+        dielectric_dispersion=True,
+        user_dielectric_file="materials/SiO2.txt",
+        data_format="wl-eps",
+        data_unit="um"
+    )
+    # Use in a simulation with specific wavelengths
+    import numpy as np
+    wavelengths = np.array([1.31, 1.55])
+    permittivity = silica.get_permittivity(wavelengths, 'um')
+    print(f"Silica permittivity at λ=1.55 μm: {permittivity[1].real:.4f}")
+    # Silica permittivity at λ=1.55 μm: 2.1521
+    ```
     
     Keywords:
         material properties, permittivity, permeability, optical constants,
@@ -196,24 +191,26 @@ class MaterialClass:
                        if the data file doesn't exist, or if the data format is invalid.
                        
         Examples:
-            >>> from torchrdit.materials import MaterialClass
-            >>> # Create a simple air material
-            >>> air = MaterialClass(name="air", permittivity=1.0)
-            >>> 
-            >>> # Create a lossy metal with complex permittivity
-            >>> gold = MaterialClass(
-            ...     name="gold", 
-            ...     permittivity=complex(-10.0, 1.5)
-            ... )
-            >>> 
-            >>> # Create a dispersive material from data file
-            >>> silica = MaterialClass(
-            ...     name="silica",
-            ...     dielectric_dispersion=True,
-            ...     user_dielectric_file="materials/SiO2.txt",
-            ...     data_format="wl-eps",
-            ...     data_unit="um"
-            ... )
+        ```python
+        from torchrdit.materials import MaterialClass
+        # Create a simple air material
+        air = MaterialClass(name="air", permittivity=1.0)
+        
+        # Create a lossy metal with complex permittivity
+        gold = MaterialClass(
+            name="gold", 
+            permittivity=complex(-10.0, 1.5)
+        )
+        
+        # Create a dispersive material from data file
+        silica = MaterialClass(
+            name="silica",
+            dielectric_dispersion=True,
+            user_dielectric_file="materials/SiO2.txt",
+            data_format="wl-eps",
+            data_unit="um"
+        )
+        ```
         
         Keywords:
             material creation, permittivity, permeability, dispersive material,

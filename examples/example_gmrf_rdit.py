@@ -141,5 +141,140 @@ data = dev1.solve(src1)
 
 # Print the Efficiency each wavelength
 for i in range(len(dev1.lam0)):
-    print(f"The transmission efficiency at wavelength \t{dev1.lam0[i] * 1e3} nm is \t{data['TRN'][i] * 100}%")
-    print(f"The reflection efficiency at wavelength \t{dev1.lam0[i] * 1e3} nm is \t{data['REF'][i] * 100}%")
+    print(f"The transmission efficiency at wavelength \t{dev1.lam0[i] * 1e3} nm is \t{data.transmission[i] * 100}%")
+    print(f"The reflection efficiency at wavelength \t{dev1.lam0[i] * 1e3} nm is \t{data.reflection[i] * 100}%")
+
+print("\n===== Demonstrating SolverResults API capabilities =====\n")
+
+# Example 1: Get specific diffraction order indices
+print("Example 1: Getting indices for specific diffraction orders")
+try:
+    zero_order_idx = data.get_diffraction_order_indices(0, 0)
+    first_order_idx = data.get_diffraction_order_indices(1, 0)
+    print(f"Zero order (0,0) indices: {zero_order_idx}")
+    print(f"First order (1,0) indices: {first_order_idx}")
+except ValueError as e:
+    print(f"Error getting order indices: {e}")
+
+# Example 2: Get zero-order field components
+print("\nExample 2: Getting zero-order field components")
+tx, ty, tz = data.get_zero_order_transmission()
+print(f"Zero-order transmission field components (first wavelength):")
+print(f"  x-component: {tx[0].item():.6f}")
+print(f"  y-component: {ty[0].item():.6f}")
+print(f"  z-component: {tz[0].item():.6f}")
+
+rx, ry, rz = data.get_zero_order_reflection()
+print(f"Zero-order reflection field components (first wavelength):")
+print(f"  x-component: {rx[0].item():.6f}")
+print(f"  y-component: {ry[0].item():.6f}")
+print(f"  z-component: {rz[0].item():.6f}")
+
+# Example 3: Get efficiency for specific diffraction orders
+print("\nExample 3: Getting efficiency for specific diffraction orders")
+zero_order_t = data.get_order_transmission_efficiency(0, 0)
+zero_order_r = data.get_order_reflection_efficiency(0, 0)
+print(f"Zero-order transmission efficiency across wavelengths: {zero_order_t.detach().numpy()}")
+print(f"Zero-order reflection efficiency across wavelengths: {zero_order_r.detach().numpy()}")
+
+# Try to get a higher-order if available in the simulation
+try:
+    first_order_t = data.get_order_transmission_efficiency(1, 0)
+    print(f"First-order (1,0) transmission efficiency: {first_order_t.detach().numpy()}")
+except ValueError as e:
+    print(f"Could not get first-order efficiency: {e}")
+
+# Example 4: Get all available diffraction orders
+print("\nExample 4: Getting all available diffraction orders")
+all_orders = data.get_all_diffraction_orders()
+print(f"All available diffraction orders (total: {len(all_orders)}):")
+print(all_orders[:10])  # Print first 10 for brevity if there are many
+
+# Example 5: Get propagating orders for a specific wavelength
+print("\nExample 5: Getting propagating orders for the first wavelength")
+prop_orders = data.get_propagating_orders(wavelength_idx=0)
+print(f"Propagating orders for wavelength {dev1.lam0[0] * 1e3} nm (total: {len(prop_orders)}):")
+print(prop_orders)
+
+# Example 6: Accessing raw scattering matrix data
+print("\nExample 6: Accessing scattering matrix components")
+s11_shape = data.structure_matrix.S11.shape
+s12_shape = data.structure_matrix.S12.shape
+print(f"Structure scattering matrix S11 shape: {s11_shape}")
+print(f"Structure scattering matrix S12 shape: {s12_shape}")
+
+# Example 7: Accessing wave vector information
+print("\nExample 7: Accessing wave vector information")
+print(f"kx shape: {data.wave_vectors.kx.shape}")
+print(f"ky shape: {data.wave_vectors.ky.shape}")
+print(f"Incident wave vector (kinc) shape: {data.wave_vectors.kinc.shape}")
+print(f"Incident wave vector for first wavelength: {data.wave_vectors.kinc[0]}")
+
+# Example 8: Extracting phase information
+print("\nExample 8: Extracting phase information from field components")
+
+# Get zero-order field components (these are complex values)
+tx, ty, tz = data.get_zero_order_transmission()
+rx, ry, rz = data.get_zero_order_reflection()
+
+# Calculate phase in radians using torch.angle()
+tx_phase_rad = torch.angle(tx)
+ty_phase_rad = torch.angle(ty)
+tz_phase_rad = torch.angle(tz)
+
+rx_phase_rad = torch.angle(rx)
+ry_phase_rad = torch.angle(ry)
+rz_phase_rad = torch.angle(rz)
+
+# Convert to degrees for easier interpretation
+rad_to_deg = 180.0 / np.pi
+
+print("Phase of transmission field components (in degrees):")
+for i in range(len(dev1.lam0)):
+    wavelength = dev1.lam0[i] * 1e3  # in nm
+    print(f"  Wavelength {wavelength:.1f} nm:")
+    print(f"    x-component: {tx_phase_rad[i].item() * rad_to_deg:.2f}°")
+    print(f"    y-component: {ty_phase_rad[i].item() * rad_to_deg:.2f}°")
+    print(f"    z-component: {tz_phase_rad[i].item() * rad_to_deg:.2f}°")
+
+print("\nPhase of reflection field components (in degrees):")
+for i in range(len(dev1.lam0)):
+    wavelength = dev1.lam0[i] * 1e3  # in nm
+    print(f"  Wavelength {wavelength:.1f} nm:")
+    print(f"    x-component: {rx_phase_rad[i].item() * rad_to_deg:.2f}°")
+    print(f"    y-component: {ry_phase_rad[i].item() * rad_to_deg:.2f}°")
+    print(f"    z-component: {rz_phase_rad[i].item() * rad_to_deg:.2f}°")
+
+# Example 9: Phase difference between field components
+print("\nExample 9: Phase difference between field components")
+tx_ty_phase_diff = tx_phase_rad - ty_phase_rad
+print("Phase difference between x and y components of transmitted field (in degrees):")
+for i in range(len(dev1.lam0)):
+    wavelength = dev1.lam0[i] * 1e3  # in nm
+    diff_deg = tx_ty_phase_diff[i].item() * rad_to_deg
+    # Normalize to [-180, 180] range
+    while diff_deg > 180:
+        diff_deg -= 360
+    while diff_deg < -180:
+        diff_deg += 360
+    print(f"  Wavelength {wavelength:.1f} nm: {diff_deg:.2f}°")
+
+# Example 10: Phase of off-axis diffraction orders (if available)
+print("\nExample 10: Phase of off-axis diffraction orders")
+try:
+    # Get indices for the (1,0) diffraction order
+    idx_1_0 = data.get_diffraction_order_indices(1, 0)
+    
+    # Extract the field components for this order
+    tx_1_0 = data.transmission_field.x[:, idx_1_0[0], idx_1_0[1]]
+    ty_1_0 = data.transmission_field.y[:, idx_1_0[0], idx_1_0[1]]
+    
+    # Calculate phase
+    tx_1_0_phase = torch.angle(tx_1_0) * rad_to_deg
+    ty_1_0_phase = torch.angle(ty_1_0) * rad_to_deg
+    
+    print(f"Phase of (1,0) order transmission field (first wavelength):")
+    print(f"  x-component: {tx_1_0_phase[0].item():.2f}°")
+    print(f"  y-component: {ty_1_0_phase[0].item():.2f}°")
+except ValueError as e:
+    print(f"Could not analyze (1,0) order: {e}")

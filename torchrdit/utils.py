@@ -37,12 +37,12 @@ def tensor_params_check(func: Optional[FuncType] = None, check_start_index: int 
         TypeError: If any of the checked parameters are not PyTorch tensors.
         
     Example:
-        ```python
-        @tensor_params_check(check_start_index=1, check_stop_index=3)
-        def add_tensors(self, a, b, c, d=None):
-            # This will check that parameters a, b, and c are tensors
-            return a + b + c
-        ```
+    ```python
+    @tensor_params_check(check_start_index=1, check_stop_index=3)
+    def add_tensors(self, a, b, c, d=None):
+        # This will check that parameters a, b, and c are tensors
+        return a + b + c
+    ```
     """
 
     if func is None:
@@ -88,17 +88,17 @@ class EigComplex(torch.autograd.Function):
     eigendecomposition with other numerical approaches for improved efficiency.
     
     Example:
-        ```python
-        # Apply differentiable eigendecomposition to a complex matrix
-        eigen_values, eigen_vectors = EigComplex.apply(complex_matrix)
-        
-        # Use the results in a differentiable computation
-        result = torch.matmul(eigen_vectors, torch.diag(eigen_values))
-        
-        # Backward pass will compute gradients through the eigendecomposition
-        loss = compute_loss(result)
-        loss.backward()
-        ```
+    ```python
+    # Apply differentiable eigendecomposition to a complex matrix
+    eigen_values, eigen_vectors = EigComplex.apply(complex_matrix)
+    
+    # Use the results in a differentiable computation
+    result = torch.matmul(eigen_vectors, torch.diag(eigen_values))
+    
+    # Backward pass will compute gradients through the eigendecomposition
+    loss = compute_loss(result)
+    loss.backward()
+    ```
     """
 
     @staticmethod
@@ -226,20 +226,20 @@ def create_material(
         MaterialClass: A material object that can be used in TorchRDIT simulations.
     
     Example:
-        ```python
-        # Create simple materials with constant properties
-        air = create_material(name='air', permittivity=1.0)
-        silicon = create_material(name='silicon', permittivity=11.7)
-        
-        # Create a dispersive material from data file
-        gold = create_material(
-            name='gold',
-            dielectric_dispersion=True,
-            user_dielectric_file='gold_data.txt',
-            data_format='wl-nk',
-            data_unit='um'
-        )
-        ```
+    ```python
+    # Create simple materials with constant properties
+    air = create_material(name='air', permittivity=1.0)
+    silicon = create_material(name='silicon', permittivity=11.7)
+    
+    # Create a dispersive material from data file
+    gold = create_material(
+        name='gold',
+        dielectric_dispersion=True,
+        user_dielectric_file='gold_data.txt',
+        data_format='wl-nk',
+        data_unit='um'
+    )
+    ```
     """
     return MaterialClass(name=name,
                      permittivity=permittivity,
@@ -277,22 +277,22 @@ def blockmat2x2(mlist: list):
         torch.Tensor: The concatenated block matrix.
         
     Example:
-        ```python
-        # Create four 2×2 matrices
-        A = torch.tensor([[1, 2], [3, 4]])
-        B = torch.tensor([[5, 6], [7, 8]])
-        C = torch.tensor([[9, 10], [11, 12]])
-        D = torch.tensor([[13, 14], [15, 16]])
-        
-        # Combine them into a block matrix
-        block_matrix = blockmat2x2([[A, B], [C, D]])
-        
-        # Result is a 4×4 matrix:
-        # [[1, 2, 5, 6],
-        #  [3, 4, 7, 8],
-        #  [9, 10, 13, 14],
-        #  [11, 12, 15, 16]]
-        ```
+    ```python
+    # Create four 2x2 matrices
+    A = torch.tensor([[1, 2], [3, 4]])
+    B = torch.tensor([[5, 6], [7, 8]])
+    C = torch.tensor([[9, 10], [11, 12]])
+    D = torch.tensor([[13, 14], [15, 16]])
+    
+    # Combine them into a block matrix
+    block_matrix = blockmat2x2([[A, B], [C, D]])
+    
+    # Result is a 4x4 matrix:
+    # [[1, 2, 5, 6],
+    #  [3, 4, 7, 8],
+    #  [9, 10, 13, 14],
+    #  [11, 12, 15, 16]]
+    ```
     """
     return torch.cat((torch.cat((mlist[0][0], mlist[0][1]), -1),
                       torch.cat((mlist[1][0], mlist[1][1]), -1)),
@@ -429,9 +429,10 @@ def _create_blur_kernel(radius: int, device: torch.device = torch.device('cpu'),
         torch.Tensor: Normalized circular convolution kernel.
         
     Examples:
-        >>> kernel = _create_blur_kernel(radius=5)
-        >>> kernel.shape
-        torch.Size([11, 11])
+    ```python
+    kernel = _create_blur_kernel(radius=5)
+    kernel.shape  # Returns torch.Size([11, 11])
+    ```
         
     Keywords:
         convolution, kernel, blur, disk, circle, filter, topology optimization
@@ -471,12 +472,13 @@ def operator_blur(rho: torch.Tensor,
         torch.Tensor: Blurred tensor with the same shape as the input.
         
     Examples:
-        >>> import torch
-        >>> from torchrdit.utils import operator_blur
-        >>> input_tensor = torch.rand(1, 1, 32, 32)
-        >>> blurred = operator_blur(input_tensor, radius=3, num_blur=2)
-        >>> blurred.shape
-        torch.Size([1, 1, 32, 32])
+    ```python
+    import torch
+    from torchrdit.utils import operator_blur
+    input_tensor = torch.rand(1, 1, 32, 32)
+    blurred = operator_blur(input_tensor, radius=3, num_blur=2)
+    blurred.shape  # Returns torch.Size([1, 1, 32, 32])
+    ```
         
     Note:
         This function is often used in conjunction with projection operations
@@ -529,12 +531,14 @@ def operator_proj(rho: torch.Tensor, eta: float = 0.5, beta: int = 100, num_proj
                    values pushed toward 0 or 1.
     
     Examples:
-        >>> import torch
-        >>> from torchrdit.utils import operator_proj
-        >>> input_tensor = torch.rand(10, 10)  # Random values between 0 and 1
-        >>> binary_result = operator_proj(input_tensor, beta=200)
-        >>> print(binary_result)
-        >>> # Values will be pushed closer to 0 or 1
+    ```python
+    import torch
+    from torchrdit.utils import operator_proj
+    input_tensor = torch.rand(10, 10)  # Random values between 0 and 1
+    binary_result = operator_proj(input_tensor, beta=200)
+    print(binary_result)
+    # Values will be pushed closer to 0 or 1
+    ```
     
     Note:
         This function is commonly used in topology optimization to enforce binary
@@ -599,12 +603,14 @@ def blur_filter(rho: torch.Tensor,
         torch.Tensor: Filtered tensor with the same shape as the input.
     
     Examples:
-        >>> import torch
-        >>> from torchrdit.utils import blur_filter
-        >>> design = torch.rand(1, 1, 64, 64)  # Initial random design
-        >>> filtered = blur_filter(design, radius=3, num_blur=2, beta=150)
-        >>> print(filtered)
-        >>> # Result will have smoother features and more binary values
+    ```python
+    import torch
+    from torchrdit.utils import blur_filter
+    design = torch.rand(1, 1, 64, 64)  # Initial random design
+    filtered = blur_filter(design, radius=3, num_blur=2, beta=150)
+    print(filtered)
+    # Result will have smoother features and more binary values
+    ```
     
     Note:
         This function is a convenience wrapper that combines the operator_blur
@@ -647,15 +653,15 @@ def to_diag_util(input_mat: torch.Tensor, kdim: List[int]) -> torch.Tensor:
                    [..., 2*n_harmonics, 2*n_harmonics].
     
     Examples:
-        >>> import torch
-        >>> from torchrdit.utils import to_diag_util
-        >>> input_vector = torch.ones(5)  # A vector with 5 elements
-        >>> kdim = [1, 5]  # 1x5 k-space dimension resulting in 5 harmonics
-        >>> diagonal_matrix = to_diag_util(input_vector, kdim)
-        >>> print(diagonal_matrix.shape)
-        torch.Size([5, 5])
-        >>> print(torch.allclose(diagonal_matrix, torch.eye(5)))
-        True
+    ```python
+    import torch
+    from torchrdit.utils import to_diag_util
+    input_vector = torch.ones(5)  # A vector with 5 elements
+    kdim = [1, 5]  # 1x5 k-space dimension resulting in 5 harmonics
+    diagonal_matrix = to_diag_util(input_vector, kdim)
+    print(diagonal_matrix.shape)  # Outputs torch.Size([5, 5])
+    print(torch.allclose(diagonal_matrix, torch.eye(5)))  # Outputs True
+    ```
     
     Note:
         This function is used extensively in the RCWA and R-DIT algorithms when

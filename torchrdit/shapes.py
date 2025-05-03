@@ -22,16 +22,18 @@ class ShapeGenerator:
         is_cartesian (bool): Flag indicating if the coordinate system is Cartesian.
     
     Examples:
-        >>> import torch
-        >>> from torchrdit.shapes import ShapeGenerator
-        >>> # Create coordinate grids
-        >>> x = torch.linspace(-1, 1, 128)
-        >>> y = torch.linspace(-1, 1, 128)
-        >>> X, Y = torch.meshgrid(x, y, indexing='ij')
-        >>> # Initialize shape generator
-        >>> sg = ShapeGenerator(X, Y, (128, 128))
-        >>> # Generate a circle mask
-        >>> circle = sg.generate_circle_mask(center=(0.0, 0.0), radius=0.5)
+    ```python
+    import torch
+    from torchrdit.shapes import ShapeGenerator
+    # Create coordinate grids
+    x = torch.linspace(-1, 1, 128)
+    y = torch.linspace(-1, 1, 128)
+    X, Y = torch.meshgrid(x, y, indexing='ij')
+    # Initialize shape generator
+    sg = ShapeGenerator(X, Y, (128, 128))
+    # Generate a circle mask
+    circle = sg.generate_circle_mask(center=(0.0, 0.0), radius=0.5)
+    ```
     
     Keywords:
         shape, mask, photonics, circle, rectangle, polygon, lattice, binary mask
@@ -59,14 +61,16 @@ class ShapeGenerator:
             AssertionError: If XO and YO are not torch.Tensor objects.
             
         Examples:
-            >>> import torch
-            >>> from torchrdit.shapes import ShapeGenerator
-            >>> # Create coordinate grids
-            >>> x = torch.linspace(-1, 1, 128)
-            >>> y = torch.linspace(-1, 1, 128)
-            >>> X, Y = torch.meshgrid(x, y, indexing='ij')
-            >>> # Initialize shape generator with default Cartesian coordinates
-            >>> sg = ShapeGenerator(X, Y, (128, 128))
+        ```python
+        import torch
+        from torchrdit.shapes import ShapeGenerator
+        # Create coordinate grids
+        x = torch.linspace(-1, 1, 128)
+        y = torch.linspace(-1, 1, 128)
+        X, Y = torch.meshgrid(x, y, indexing='ij')
+        # Initialize shape generator with default Cartesian coordinates
+        sg = ShapeGenerator(X, Y, (128, 128))
+        ```
             
         Keywords:
             initialization, lattice, coordinates, grid, tensor types
@@ -117,18 +121,20 @@ class ShapeGenerator:
             ShapeGenerator: A new ShapeGenerator initialized with the solver's parameters.
             
         Examples:
-            >>> from torchrdit.solver import create_solver
-            >>> from torchrdit.constants import Algorithm
-            >>> import torch
-            >>> from torchrdit.shapes import ShapeGenerator
-            >>> solver = create_solver(
-            ...     algorithm=Algorithm.RDIT,
-            ...     rdim=[1024, 1024],
-            ...     kdim=[7, 7]
-            ... )
-            >>> shape_gen = ShapeGenerator.from_solver(solver)
-            >>> # Now shape_gen uses the same coordinate system as solver
-            >>> circle_mask = shape_gen.generate_circle_mask(radius=0.3)
+        ```python
+        from torchrdit.solver import create_solver
+        from torchrdit.constants import Algorithm
+        import torch
+        from torchrdit.shapes import ShapeGenerator
+        solver = create_solver(
+            algorithm=Algorithm.RDIT,
+            rdim=[1024, 1024],
+            kdim=[7, 7]
+        )
+        shape_gen = ShapeGenerator.from_solver(solver)
+        # Now shape_gen uses the same coordinate system as solver
+        circle_mask = shape_gen.generate_circle_mask(radius=0.3)
+        ```
             
         Keywords:
             factory, solver, initialization, coordinate system
@@ -156,17 +162,19 @@ class ShapeGenerator:
             with a smooth transition at the edge if soft_edge > 0.
             
         Examples:
-            >>> import torch
-            >>> from torchrdit.shapes import ShapeGenerator
-            >>> # Create coordinate grids
-            >>> x = torch.linspace(-1, 1, 128)
-            >>> y = torch.linspace(-1, 1, 128)
-            >>> X, Y = torch.meshgrid(x, y, indexing='ij')
-            >>> sg = ShapeGenerator(X, Y, (128, 128))
-            >>> # Generate a circle mask with hard edges
-            >>> hard_circle = sg.generate_circle_mask(center=(0.2, -0.3), radius=0.4, soft_edge=0)
-            >>> # Generate a circle mask with soft edges
-            >>> soft_circle = sg.generate_circle_mask(center=(0.2, -0.3), radius=0.4, soft_edge=0.02)
+        ```python
+        import torch
+        from torchrdit.shapes import ShapeGenerator
+        # Create coordinate grids
+        x = torch.linspace(-1, 1, 128)
+        y = torch.linspace(-1, 1, 128)
+        X, Y = torch.meshgrid(x, y, indexing='ij')
+        sg = ShapeGenerator(X, Y, (128, 128))
+        # Generate a circle mask with hard edges
+        hard_circle = sg.generate_circle_mask(center=(0.2, -0.3), radius=0.4, soft_edge=0)
+        # Generate a circle mask with soft edges
+        soft_circle = sg.generate_circle_mask(center=(0.2, -0.3), radius=0.4, soft_edge=0.02)
+        ```
             
         Keywords:
             circle, mask, binary mask, shape generation, photonics
@@ -214,17 +222,19 @@ class ShapeGenerator:
             with a smooth transition at the edge if soft_edge > 0.
             
         Examples:
-            >>> import torch
-            >>> from torchrdit.shapes import ShapeGenerator
-            >>> # Create coordinate grids
-            >>> x = torch.linspace(-1, 1, 128)
-            >>> y = torch.linspace(-1, 1, 128)
-            >>> X, Y = torch.meshgrid(x, y, indexing='ij')
-            >>> sg = ShapeGenerator(X, Y, (128, 128))
-            >>> # Generate a rectangle mask
-            >>> rect = sg.generate_rectangle_mask(width=0.5, height=0.3, angle=45)
-            >>> # Generate a square mask
-            >>> square = sg.generate_rectangle_mask(width=0.4, height=0.4, angle=0)
+        ```python
+        import torch
+        from torchrdit.shapes import ShapeGenerator
+        # Create coordinate grids
+        x = torch.linspace(-1, 1, 128)
+        y = torch.linspace(-1, 1, 128)
+        X, Y = torch.meshgrid(x, y, indexing='ij')
+        sg = ShapeGenerator(X, Y, (128, 128))
+        # Generate a rectangle mask
+        rect = sg.generate_rectangle_mask(width=0.5, height=0.3, angle=45)
+        # Generate a square mask
+        square = sg.generate_rectangle_mask(width=0.4, height=0.4, angle=0)
+        ```
             
         Keywords:
             rectangle, square, mask, binary mask, shape generation, photonics, rotation
@@ -302,23 +312,25 @@ class ShapeGenerator:
             with a smooth transition at the edge if soft_edge > 0.
             
         Examples:
-            >>> import torch
-            >>> from torchrdit.shapes import ShapeGenerator
-            >>> # Create coordinate grids
-            >>> x = torch.linspace(-1, 1, 128)
-            >>> y = torch.linspace(-1, 1, 128)
-            >>> X, Y = torch.meshgrid(x, y, indexing='ij')
-            >>> sg = ShapeGenerator(X, Y, (128, 128))
-            >>> # Generate a triangle mask
-            >>> triangle_points = [(-0.2, -0.2), (0.2, -0.2), (0.0, 0.2)]
-            >>> triangle = sg.generate_polygon_mask(triangle_points)
-            >>> # Generate a hexagon mask
-            >>> import numpy as np
-            >>> n = 6  # hexagon
-            >>> angles = np.linspace(0, 2*np.pi, n, endpoint=False)
-            >>> radius = 0.3
-            >>> hexagon_points = [(radius*np.cos(a), radius*np.sin(a)) for a in angles]
-            >>> hexagon = sg.generate_polygon_mask(hexagon_points, center=(0.1, 0.1), angle=30)
+        ```python
+        import torch
+        from torchrdit.shapes import ShapeGenerator
+        # Create coordinate grids
+        x = torch.linspace(-1, 1, 128)
+        y = torch.linspace(-1, 1, 128)
+        X, Y = torch.meshgrid(x, y, indexing='ij')
+        sg = ShapeGenerator(X, Y, (128, 128))
+        # Generate a triangle mask
+        triangle_points = [(-0.2, -0.2), (0.2, -0.2), (0.0, 0.2)]
+        triangle = sg.generate_polygon_mask(triangle_points)
+        # Generate a hexagon mask
+        import numpy as np
+        n = 6  # hexagon
+        angles = np.linspace(0, 2*np.pi, n, endpoint=False)
+        radius = 0.3
+        hexagon_points = [(radius*np.cos(a), radius*np.sin(a)) for a in angles]
+        hexagon = sg.generate_polygon_mask(hexagon_points, center=(0.1, 0.1), angle=30)
+        ```
             
         Keywords:
             polygon, mask, binary mask, shape generation, photonics, arbitrary shape
@@ -517,21 +529,23 @@ class ShapeGenerator:
             ValueError: If an invalid operation is specified.
             
         Examples:
-            >>> import torch
-            >>> from torchrdit.shapes import ShapeGenerator
-            >>> # Create coordinate grids
-            >>> x = torch.linspace(-1, 1, 128)
-            >>> y = torch.linspace(-1, 1, 128)
-            >>> X, Y = torch.meshgrid(x, y, indexing='ij')
-            >>> sg = ShapeGenerator(X, Y, (128, 128))
-            >>> # Create two circular masks
-            >>> circle1 = sg.generate_circle_mask(center=(-0.1, 0), radius=0.3)
-            >>> circle2 = sg.generate_circle_mask(center=(0.1, 0), radius=0.3)
-            >>> # Combine masks using different operations
-            >>> union = sg.combine_masks(circle1, circle2, operation="union")
-            >>> intersection = sg.combine_masks(circle1, circle2, operation="intersection")
-            >>> difference = sg.combine_masks(circle1, circle2, operation="difference")
-            >>> circle1_minus_circle2 = sg.combine_masks(circle1, circle2, operation="subtract")
+        ```python
+        import torch
+        from torchrdit.shapes import ShapeGenerator
+        # Create coordinate grids
+        x = torch.linspace(-1, 1, 128)
+        y = torch.linspace(-1, 1, 128)
+        X, Y = torch.meshgrid(x, y, indexing='ij')
+        sg = ShapeGenerator(X, Y, (128, 128))
+        # Create two circular masks
+        circle1 = sg.generate_circle_mask(center=(-0.1, 0), radius=0.3)
+        circle2 = sg.generate_circle_mask(center=(0.1, 0), radius=0.3)
+        # Combine masks using different operations
+        union = sg.combine_masks(circle1, circle2, operation="union")
+        intersection = sg.combine_masks(circle1, circle2, operation="intersection")
+        difference = sg.combine_masks(circle1, circle2, operation="difference")
+        circle1_minus_circle2 = sg.combine_masks(circle1, circle2, operation="subtract")
+        ```
             
         Keywords:
             mask combination, boolean operations, union, intersection, difference, compound shape
