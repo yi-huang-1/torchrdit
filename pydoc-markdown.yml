@@ -45,6 +45,21 @@ modules:
   - name: torchrdit.layers
     source_path: ./
     output_file: Layers.md
+  - name: torchrdit.results
+    source_path: ./
+    output_file: Results-API.md
+  - name: torchrdit.constants
+    source_path: ./
+    output_file: Constants-API.md
+  - name: torchrdit.material_proxy
+    source_path: ./
+    output_file: MaterialProxy-API.md
+  - name: torchrdit.observers
+    source_path: ./
+    output_file: Observers-API.md
+  - name: torchrdit.shapes
+    source_path: ./
+    output_file: Shapes-API.md
   - name: torchrdit.utils
     source_path: ./
     output_file: Utils.md

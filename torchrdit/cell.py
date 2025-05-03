@@ -10,8 +10,10 @@ These classes form the foundation for defining the geometric and material proper
 of structures to be simulated with RCWA or R-DIT algorithms.
 
 Examples:
-    Basic usage: The Cell3D class is not intended to be used directly. Instead, it serves as a
-    parent class for solver implementations in solver.py (RCWASolver and RDITSolver).
+```python
+# Basic usage: The Cell3D class is not intended to be used directly. Instead, it serves as a
+# parent class for solver implementations in solver.py (RCWASolver and RDITSolver).
+```
 
 Keywords:
     unit cell, geometry, shape generation, mask, material, layer, photonics
@@ -43,17 +45,19 @@ class CellType:
             or rotated structures.
     
     Examples:
-        >>> # Check the cell type
-        >>> import torch
-        >>> from torchrdit.cell import Cell3D
-        >>> cell = Cell3D()
-        >>> print(cell.cell_type)
-        Cartesian
-        >>> # Cell type is automatically determined from lattice vectors
-        >>> cell = Cell3D(t1=torch.tensor([[1.0, 0.5]]), 
-        ...               t2=torch.tensor([[0.0, 1.0]]))
-        >>> print(cell.cell_type)
-        Other
+    ```python
+    # Check the cell type
+    import torch
+    from torchrdit.cell import Cell3D
+    cell = Cell3D()
+    print(cell.cell_type)
+    # Cartesian
+    # Cell type is automatically determined from lattice vectors
+    cell = Cell3D(t1=torch.tensor([[1.0, 0.5]]), 
+                  t2=torch.tensor([[0.0, 1.0]]))
+    print(cell.cell_type)
+    # Other
+    ```
     
     Keywords:
         coordinate system, Cartesian, unit cell, lattice type, grid
@@ -97,35 +101,37 @@ class Cell3D():
         layer_manager (LayerManager): Manager for handling material layers
         
     Examples:
-        >>> # Create a solver (recommended way) instead of using Cell3D directly
-        >>> import torch
-        >>> import numpy as np
-        >>> from torchrdit.solver import create_solver
-        >>> from torchrdit.utils import create_material
-        >>> from torchrdit.constants import Algorithm
-        >>> 
-        >>> # Create an RCWA solver
-        >>> solver = create_solver(
-        ...     algorithm=Algorithm.RCWA,
-        ...     lam0=np.array([1.55]),
-        ...     rdim=[256, 256],
-        ...     kdim=[5, 5]
-        ... )
-        >>> 
-        >>> # Add materials
-        >>> silicon = create_material(name="silicon", permittivity=11.7)
-        >>> sio2 = create_material(name="sio2", permittivity=2.25)
-        >>> solver.add_materials([silicon, sio2])
-        >>> 
-        >>> # Add layers
-        >>> solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
-        >>> solver.add_layer(material_name="sio2", thickness=torch.tensor(0.1))
-        >>> 
-        >>> # Create a patterned layer
-        >>> solver.add_layer(material_name="silicon", thickness=torch.tensor(0.3),
-        ...                is_homogeneous=False)
-        >>> circle_mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
-        
+    ```python
+    # Create a solver (recommended way) instead of using Cell3D directly
+    import torch
+    import numpy as np
+    from torchrdit.solver import create_solver
+    from torchrdit.utils import create_material
+    from torchrdit.constants import Algorithm
+    
+    # Create an RCWA solver
+    solver = create_solver(
+        algorithm=Algorithm.RCWA,
+        lam0=np.array([1.55]),
+        rdim=[256, 256],
+        kdim=[5, 5]
+    )
+    
+    # Add materials
+    silicon = create_material(name="silicon", permittivity=11.7)
+    sio2 = create_material(name="sio2", permittivity=2.25)
+    solver.add_materials([silicon, sio2])
+    
+    # Add layers
+    solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
+    solver.add_layer(material_name="sio2", thickness=torch.tensor(0.1))
+    
+    # Create a patterned layer
+    solver.add_layer(material_name="silicon", thickness=torch.tensor(0.3),
+                   is_homogeneous=False)
+    circle_mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
+    ```
+    
     Keywords:
         base class, parent class, solver foundation, electromagnetic simulation, 
         photonics, layers, materials, computational grid, Fourier transform, 
@@ -186,31 +192,33 @@ class Cell3D():
             ValueError: If any of the input parameters have invalid values or formats.
                       
         Examples:
-            >>> # Instead of creating Cell3D directly, create a solver:
-            >>> from torchrdit.solver import create_solver
-            >>> from torchrdit.constants import Algorithm
-            >>> import torch
-            >>> # Create an RDIT solver
-            >>> rdit_solver = create_solver(
-            ...     algorithm=Algorithm.RDIT,
-            ...     rdim=[1024, 1024],
-            ...     kdim=[7, 7]
-            ... )
-            >>> 
-            >>> # Create an RCWA solver with non-rectangular lattice
-            >>> rcwa_solver = create_solver(
-            ...     algorithm=Algorithm.RCWA,
-            ...     t1=torch.tensor([[1.0, 0.0]]),
-            ...     t2=torch.tensor([[0.5, 0.866]]),  # 30-degree lattice
-            ...     rdim=[512, 512],
-            ...     kdim=[5, 5]
-            ... )
-            >>> 
-            >>> # Create a solver with GPU acceleration
-            >>> gpu_solver = create_solver(
-            ...     algorithm=Algorithm.RCWA,
-            ...     device="cuda"
-            ... )
+        ```python
+        # Instead of creating Cell3D directly, create a solver:
+        from torchrdit.solver import create_solver
+        from torchrdit.constants import Algorithm
+        import torch
+        # Create an RDIT solver
+        rdit_solver = create_solver(
+            algorithm=Algorithm.RDIT,
+            rdim=[1024, 1024],
+            kdim=[7, 7]
+        )
+        
+        # Create an RCWA solver with non-rectangular lattice
+        rcwa_solver = create_solver(
+            algorithm=Algorithm.RCWA,
+            t1=torch.tensor([[1.0, 0.0]]),
+            t2=torch.tensor([[0.5, 0.866]]),  # 30-degree lattice
+            rdim=[512, 512],
+            kdim=[5, 5]
+        )
+        
+        # Create a solver with GPU acceleration
+        gpu_solver = create_solver(
+            algorithm=Algorithm.RCWA,
+            device="cuda"
+        )
+        ```
         
         Keywords:
             initialization, base class, parent class, computational grid, lattice vectors, 
@@ -276,17 +284,19 @@ class Cell3D():
             dict: Dictionary containing the parameters for the shape generator.
 
         Examples:
-            >>> from torchrdit.solver import create_solver
-            >>> from torchrdit.constants import Algorithm
-            >>> import torch
-            >>> from torchrdit.shapes import ShapeGenerator
-            >>> solver = create_solver(
-            ...     algorithm=Algorithm.RDIT,
-            ...     rdim=[1024, 1024],
-            ...     kdim=[7, 7]
-            ... )
-            >>> params = solver.get_shape_generator_params()
-            >>> shape_gen = ShapeGenerator(**params)
+        ```python
+        from torchrdit.solver import create_solver
+        from torchrdit.constants import Algorithm
+        import torch
+        from torchrdit.shapes import ShapeGenerator
+        solver = create_solver(
+            algorithm=Algorithm.RDIT,
+            rdim=[1024, 1024],
+            kdim=[7, 7]
+        )
+        params = solver.get_shape_generator_params()
+        shape_gen = ShapeGenerator(**params)
+        ```
         """
         return {"XO": self.XO, "YO": self.YO, "rdim": tuple(self.rdim),
                 "lattice_t1": self.lattice_t1, "lattice_t2": self.lattice_t2,
@@ -311,22 +321,24 @@ class Cell3D():
                       if the input is not a list.
                         
         Examples:
-            >>> from torchrdit.solver import create_solver
-            >>> from torchrdit.constants import Algorithm
-            >>> solver = create_solver(
-            ...     algorithm=Algorithm.RDIT,
-            ...     rdim=[1024, 1024],
-            ...     kdim=[7, 7]
-            ... )
-            >>> # Create and add materials
-            >>> from torchrdit.utils import create_material
-            >>> silicon = create_material(name='silicon', permittivity=11.7)
-            >>> sio2 = create_material(name='sio2', permittivity=2.25)
-            >>> # Add multiple materials at once
-            >>> solver.add_materials([silicon, sio2])
-            >>> # Add a single material
-            >>> gold = create_material(name='gold', permittivity=complex(-10.0, 1.5))
-            >>> solver.add_materials([gold])
+        ```python
+        from torchrdit.solver import create_solver
+        from torchrdit.constants import Algorithm
+        solver = create_solver(
+            algorithm=Algorithm.RDIT,
+            rdim=[1024, 1024],
+            kdim=[7, 7]
+        )
+        # Create and add materials
+        from torchrdit.utils import create_material
+        silicon = create_material(name='silicon', permittivity=11.7)
+        sio2 = create_material(name='sio2', permittivity=2.25)
+        # Add multiple materials at once
+        solver.add_materials([silicon, sio2])
+        # Add a single material
+        gold = create_material(name='gold', permittivity=complex(-10.0, 1.5))
+        solver.add_materials([gold])
+        ```
             
         Note:
             The 'air' material (permittivity=1.0) is automatically added to all
@@ -378,35 +390,37 @@ class Cell3D():
             RuntimeError: If the specified material does not exist in the material library.
             
         Examples:
-            >>> # Create a cell and add materials
-            >>> from torchrdit.cell import Cell3D
-            >>> from torchrdit.utils import create_material
-            >>> import torch
-            >>> cell = Cell3D()
-            >>> silicon = create_material(name='silicon', permittivity=11.7)
-            >>> sio2 = create_material(name='sio2', permittivity=2.25)
-            >>> cell.add_materials([silicon, sio2])
-            >>> 
-            >>> # Add a homogeneous silicon layer with thickness 0.2 μm
-            >>> cell.add_layer(material_name='silicon', thickness=torch.tensor(0.2))
-            >>> 
-            >>> # Add a layer using a material object directly
-            >>> air = create_material(name='air2', permittivity=1.0)
-            >>> cell.add_layer(material_name=air, thickness=torch.tensor(0.1))
-            >>> 
-            >>> # Add a patterned (non-homogeneous) layer
-            >>> cell.add_layer(
-            ...     material_name='silicon',
-            ...     thickness=torch.tensor(0.3),
-            ...     is_homogeneous=False
-            ... )
-            >>> 
-            >>> # Add a layer that will be optimized
-            >>> cell.add_layer(
-            ...     material_name='sio2',
-            ...     thickness=torch.tensor(0.15),
-            ...     is_optimize=True
-            ... )
+        ```python
+        # Create a cell and add materials
+        from torchrdit.cell import Cell3D
+        from torchrdit.utils import create_material
+        import torch
+        cell = Cell3D()
+        silicon = create_material(name='silicon', permittivity=11.7)
+        sio2 = create_material(name='sio2', permittivity=2.25)
+        cell.add_materials([silicon, sio2])
+        
+        # Add a homogeneous silicon layer with thickness 0.2 μm
+        cell.add_layer(material_name='silicon', thickness=torch.tensor(0.2))
+        
+        # Add a layer using a material object directly
+        air = create_material(name='air2', permittivity=1.0)
+        cell.add_layer(material_name=air, thickness=torch.tensor(0.1))
+        
+        # Add a patterned (non-homogeneous) layer
+        cell.add_layer(
+            material_name='silicon',
+            thickness=torch.tensor(0.3),
+            is_homogeneous=False
+        )
+        
+        # Add a layer that will be optimized
+        cell.add_layer(
+            material_name='sio2',
+            thickness=torch.tensor(0.15),
+            is_optimize=True
+        )
+        ```
         
         Keywords:
             layer, material, thickness, homogeneous, patterned, photonic structure,
@@ -463,16 +477,18 @@ class Cell3D():
             List: All created layers in the layer_manager instance.
             
         Examples:
-            >>> from torchrdit.cell import Cell3D
-            >>> import torch
-            >>> # Access all layers
-            >>> cell = Cell3D()
-            >>> cell.add_layer(material_name='air', thickness=torch.tensor(0.2))
-            >>> cell.add_layer(material_name='air', thickness=torch.tensor(0.3))
-            >>> print(f"Number of layers: {len(cell.layers)}")
-            >>> # Access properties of specific layers
-            >>> for i, layer in enumerate(cell.layers):
-            ...     print(f"Layer {i}: {layer.material_name}, thickness={layer.thickness}")
+        ```python
+        from torchrdit.cell import Cell3D
+        import torch
+        # Access all layers
+        cell = Cell3D()
+        cell.add_layer(material_name='air', thickness=torch.tensor(0.2))
+        cell.add_layer(material_name='air', thickness=torch.tensor(0.3))
+        print(f"Number of layers: {len(cell.layers)}")
+        # Access properties of specific layers
+        for i, layer in enumerate(cell.layers):
+            print(f"Layer {i}: {layer.material_name}, thickness={layer.thickness}")
+        ```
         
         Keywords:
             layers, layer access, layer properties, layer stack
@@ -525,17 +541,19 @@ class Cell3D():
                         and is not a MaterialClass instance.
                         
         Examples:
-            >>> from torchrdit.cell import Cell3D
-            >>> from torchrdit.utils import create_material
-            >>> # Set transmission material by name
-            >>> cell = Cell3D()
-            >>> silicon = create_material(name='silicon', permittivity=11.7)
-            >>> cell.add_materials([silicon])
-            >>> cell.update_trn_material(trn_material='silicon')
-            >>> 
-            >>> # Set transmission material by providing a material object
-            >>> water = create_material(name='water', permittivity=1.77)
-            >>> cell.update_trn_material(trn_material=water)
+        ```python
+        from torchrdit.cell import Cell3D
+        from torchrdit.utils import create_material
+        # Set transmission material by name
+        cell = Cell3D()
+        silicon = create_material(name='silicon', permittivity=11.7)
+        cell.add_materials([silicon])
+        cell.update_trn_material(trn_material='silicon')
+        
+        # Set transmission material by providing a material object
+        water = create_material(name='water', permittivity=1.77)
+        cell.update_trn_material(trn_material=water)
+        ```
         
         Keywords:
             transmission layer, output medium, boundary condition, semi-infinite region
@@ -570,17 +588,19 @@ class Cell3D():
                         and is not a MaterialClass instance.
                         
         Examples:
-            >>> from torchrdit.cell import Cell3D
-            >>> from torchrdit.utils import create_material
-            >>> # Set reflection material by name
-            >>> cell = Cell3D()
-            >>> silicon = create_material(name='silicon', permittivity=11.7)
-            >>> cell.add_materials([silicon])
-            >>> cell.update_ref_material(ref_material='silicon')
-            >>> 
-            >>> # Set reflection material by providing a material object
-            >>> metal = create_material(name='silver', permittivity=complex(-15.0, 1.0))
-            >>> cell.update_ref_material(ref_material=metal)
+        ```python
+        from torchrdit.cell import Cell3D
+        from torchrdit.utils import create_material
+        # Set reflection material by name
+        cell = Cell3D()
+        silicon = create_material(name='silicon', permittivity=11.7)
+        cell.add_materials([silicon])
+        cell.update_ref_material(ref_material='silicon')
+        
+        # Set reflection material by providing a material object
+        metal = create_material(name='silver', permittivity=complex(-15.0, 1.0))
+        cell.update_ref_material(ref_material=metal)
+        ```
         
         Keywords:
             reflection layer, input medium, boundary condition, semi-infinite region
@@ -609,17 +629,19 @@ class Cell3D():
         - Whether the layer is dispersive, homogeneous, or to be optimized
         
         Examples:
-            >>> from torchrdit.cell import Cell3D
-            >>> from torchrdit.utils import create_material
-            >>> import torch
-            >>> # Create a cell with multiple layers and display information
-            >>> cell = Cell3D()
-            >>> silicon = create_material(name='silicon', permittivity=11.7)
-            >>> sio2 = create_material(name='sio2', permittivity=2.25)
-            >>> cell.add_materials([silicon, sio2])
-            >>> cell.add_layer(material_name='silicon', thickness=torch.tensor(0.2))
-            >>> cell.add_layer(material_name='sio2', thickness=torch.tensor(0.1))
-            >>> cell.get_layer_structure()
+        ```python
+        from torchrdit.cell import Cell3D
+        from torchrdit.utils import create_material
+        import torch
+        # Create a cell with multiple layers and display information
+        cell = Cell3D()
+        silicon = create_material(name='silicon', permittivity=11.7)
+        sio2 = create_material(name='sio2', permittivity=2.25)
+        cell.add_materials([silicon, sio2])
+        cell.add_layer(material_name='silicon', thickness=torch.tensor(0.2))
+        cell.add_layer(material_name='sio2', thickness=torch.tensor(0.1))
+        cell.get_layer_structure()
+        ```
         
         Keywords:
             layer structure, information display, debugging, layer properties
@@ -663,20 +685,22 @@ class Cell3D():
                                             each with shape (rdim[0], rdim[1]).
                                             
         Examples:
-            >>> # Get coordinate grids and use them for visualization
-            >>> import matplotlib.pyplot as plt
-            >>> import torch
-            >>> from torchrdit.cell import Cell3D
-            >>> cell = Cell3D()
-            >>> X, Y = cell.get_layout()
-            >>> plt.figure(figsize=(6, 6))
-            >>> plt.pcolormesh(X.cpu().numpy(), Y.cpu().numpy(), torch.ones_like(X).cpu().numpy())
-            >>> plt.axis('equal')
-            >>> plt.title('Unit Cell Coordinate Grid')
-            >>> plt.colorbar(label='Grid Visualization')
-            >>> plt.xlabel('X')
-            >>> plt.ylabel('Y')
-            >>> plt.show()
+        ```python
+        # Get coordinate grids and use them for visualization
+        import matplotlib.pyplot as plt
+        import torch
+        from torchrdit.cell import Cell3D
+        cell = Cell3D()
+        X, Y = cell.get_layout()
+        plt.figure(figsize=(6, 6))
+        plt.pcolormesh(X.cpu().numpy(), Y.cpu().numpy(), torch.ones_like(X).cpu().numpy())
+        plt.axis('equal')
+        plt.title('Unit Cell Coordinate Grid')
+        plt.colorbar(label='Grid Visualization')
+        plt.xlabel('X')
+        plt.ylabel('Y')
+        plt.show()
+        ```
         
         Keywords:
             coordinate grid, layout, visualization, real-space coordinates
@@ -759,14 +783,16 @@ class Cell3D():
             CellType: The type of cell (CellType.Cartesian or CellType.Other).
             
         Examples:
-            >>> # Create cells with different lattice vectors and check their types
-            >>> import torch
-            >>> from torchrdit.cell import Cell3D
-            >>> cell1 = Cell3D(t1=torch.tensor([[1.0, 0.0]]), t2=torch.tensor([[0.0, 1.0]]))
-            >>> print(cell1.get_cell_type())  # Cartesian
-            >>> 
-            >>> cell2 = Cell3D(t1=torch.tensor([[1.0, 0.2]]), t2=torch.tensor([[0.0, 1.0]]))
-            >>> print(cell2.get_cell_type())  # Other
+        ```python
+        # Create cells with different lattice vectors and check their types
+        import torch
+        from torchrdit.cell import Cell3D
+        cell1 = Cell3D(t1=torch.tensor([[1.0, 0.0]]), t2=torch.tensor([[0.0, 1.0]]))
+        print(cell1.get_cell_type())  # Cartesian
+        
+        cell2 = Cell3D(t1=torch.tensor([[1.0, 0.2]]), t2=torch.tensor([[0.0, 1.0]]))
+        print(cell2.get_cell_type())  # Other
+        ```
         
         Keywords:
             cell type, lattice vectors, coordinate system, Cartesian

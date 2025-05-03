@@ -132,5 +132,92 @@ result = torchrdit_sim.solve(src)
 
 # Print the efficiency at each wavelength
 for i in range(len(torchrdit_sim.lam0)):
-    print(f"The transmission efficiency at wavelength \t{torchrdit_sim.lam0[i] * 1e3} nm is \t{result['TRN'][i] * 100}%")
-    print(f"The reflection efficiency at wavelength \t{torchrdit_sim.lam0[i] * 1e3} nm is \t{result['REF'][i] * 100}%")
+    print(f"The transmission efficiency at wavelength \t{torchrdit_sim.lam0[i] * 1e3} nm is \t{result.transmission[i] * 100}%")
+    print(f"The reflection efficiency at wavelength \t{torchrdit_sim.lam0[i] * 1e3} nm is \t{result.reflection[i] * 100}%")
+
+print("\n===== Demonstrating SolverResults API with Dispersive Materials =====\n")
+
+# Example 1: Get zero-order field components
+print("Example 1: Getting zero-order field components")
+tx, ty, tz = result.get_zero_order_transmission()
+rx, ry, rz = result.get_zero_order_reflection()
+
+print(f"Zero-order transmission field amplitudes (first wavelength):")
+tx_amplitude = torch.abs(tx[0])
+ty_amplitude = torch.abs(ty[0])
+tz_amplitude = torch.abs(tz[0])
+print(f"  x-component amplitude: {tx_amplitude.item():.6f}")
+print(f"  y-component amplitude: {ty_amplitude.item():.6f}")
+print(f"  z-component amplitude: {tz_amplitude.item():.6f}")
+
+# Example 2: Analyzing phase for dispersive materials
+print("\nExample 2: Phase analysis across multiple wavelengths")
+tx_phase_rad = torch.angle(tx)
+ty_phase_rad = torch.angle(ty)
+
+# Convert to degrees
+rad_to_deg = 180.0 / np.pi
+
+print("Phase of transmission x-component across wavelengths (in degrees):")
+for i in range(len(torchrdit_sim.lam0)):
+    wavelength = torchrdit_sim.lam0[i] * 1e3  # in nm
+    print(f"  Wavelength {wavelength:.1f} nm: {tx_phase_rad[i].item() * rad_to_deg:.2f}°")
+
+# Example 3: Phase differences vs wavelength
+print("\nExample 3: Phase differences between x and y components across wavelengths")
+tx_ty_phase_diff = tx_phase_rad - ty_phase_rad
+
+# Normalize phase differences to [-180°, 180°]
+for i in range(len(torchrdit_sim.lam0)):
+    diff_deg = tx_ty_phase_diff[i].item() * rad_to_deg
+    while diff_deg > 180:
+        diff_deg -= 360
+    while diff_deg < -180:
+        diff_deg += 360
+    print(f"  Wavelength {torchrdit_sim.lam0[i] * 1e3:.1f} nm: {diff_deg:.2f}°")
+
+# Example 4: Diffraction efficiency vs wavelength
+print("\nExample 4: Zero-order diffraction efficiency vs wavelength")
+zero_order_t = result.get_order_transmission_efficiency(0, 0)
+zero_order_r = result.get_order_reflection_efficiency(0, 0)
+
+print("Zero-order efficiencies for each wavelength:")
+for i in range(len(torchrdit_sim.lam0)):
+    wavelength = torchrdit_sim.lam0[i] * 1e3  # in nm
+    print(f"  Wavelength {wavelength:.1f} nm:")
+    print(f"    Transmission: {zero_order_t[i].item() * 100:.4f}%")
+    print(f"    Reflection: {zero_order_r[i].item() * 100:.4f}%")
+    print(f"    Sum: {(zero_order_t[i].item() + zero_order_r[i].item()) * 100:.4f}%")
+
+# Example 5: Analyzing propagating orders for each wavelength
+print("\nExample 5: Propagating diffraction orders vs wavelength")
+for i in range(len(torchrdit_sim.lam0)):
+    wavelength = torchrdit_sim.lam0[i] * 1e3  # in nm
+    prop_orders = result.get_propagating_orders(wavelength_idx=i)
+    print(f"  Wavelength {wavelength:.1f} nm: {len(prop_orders)} propagating orders")
+    print(f"    Orders: {prop_orders}")
+
+# Example 6: Exploring scattering matrix for dispersive materials
+print("\nExample 6: Structure scattering matrix analysis")
+s11 = result.structure_matrix.S11
+s12 = result.structure_matrix.S12
+print(f"S11 shape: {s11.shape} - Shows matrix for each wavelength ({len(torchrdit_sim.lam0)} wavelengths)")
+print(f"S-matrix values vary with wavelength due to material dispersion")
+
+# Example 7: Effect of wavelength on wave vectors
+print("\nExample 7: Wave vector analysis with dispersive materials")
+print(f"Wave vectors are affected by wavelength-dependent material properties:")
+print(f"kzref for different wavelengths:")
+for i in range(len(torchrdit_sim.lam0)):
+    wavelength = torchrdit_sim.lam0[i] * 1e3  # in nm
+    # Get the central value (zero-order)
+    idx = result.get_diffraction_order_indices(0, 0)
+    kzref_val = result.wave_vectors.kzref[i].reshape(result.reflection_diffraction.shape[1:3])[idx]
+    print(f"  Wavelength {wavelength:.1f} nm: kzref = {torch.abs(kzref_val).item():.6f}")
+
+# Calculate and display energy conservation for the dispersive system
+print("\nEnergy conservation check for dispersive system:")
+for i in range(len(torchrdit_sim.lam0)):
+    wavelength = torchrdit_sim.lam0[i] * 1e3  # in nm
+    total = result.transmission[i].item() + result.reflection[i].item()
+    print(f"  Wavelength {wavelength:.1f} nm: {total * 100:.4f}% (T+R)")

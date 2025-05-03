@@ -10,6 +10,107 @@ import yaml
 import subprocess
 from pathlib import Path
 
+def create_material_proxy_page(docs_dir):
+    """Create a MaterialProxy page for the wiki."""
+    # First check if the auto-generated API file exists
+    api_file = docs_dir / "MaterialProxy-API.md"
+    
+    # Create the custom intro content
+    intro_content = """---
+title: "Material Data Handling"
+category: "Core Components"
+tags: ["materials", "unit conversion", "data loading", "proxy pattern", "permittivity", "dispersion"]
+related: ["Materials", "Constants"]
+complexity: "intermediate"
+---
+
+# Material Proxy Module
+
+## Overview
+The `torchrdit.material_proxy` module provides classes for loading, processing, and converting material data with appropriate unit handling for electromagnetic simulations. It serves as a foundation for the materials system in TorchRDIT.
+
+## Key Components
+
+### UnitConverter
+A class for handling unit conversions for wavelength, frequency, and derived quantities:
+- Converting between different length units
+- Converting between different frequency units
+- Converting between wavelength and frequency domains
+
+### MaterialDataProxy
+A class implementing the proxy pattern for material data handling:
+- Loading material data from files with different formats (eps, n/k)
+- Processing data with appropriate unit conversions
+- Extracting material properties at specific wavelengths
+
+## Usage Examples
+
+```python
+# Basic unit conversion
+from torchrdit.material_proxy import UnitConverter
+converter = UnitConverter()
+
+# Convert from nanometers to micrometers
+wavelength_um = converter.convert_length(1550, 'nm', 'um')
+print(f"1550 nm = {wavelength_um} μm")  # 1550 nm = 1.55 μm
+
+# Convert from frequency to wavelength
+wavelength = converter.freq_to_wavelength(193.5, 'thz', 'um')
+print(f"193.5 THz = {wavelength:.2f} μm")  # 193.5 THz = 1.55 μm
+
+# Loading material data
+from torchrdit.material_proxy import MaterialDataProxy
+import numpy as np
+
+# Initialize proxy
+proxy = MaterialDataProxy()
+
+# Load data from file (wavelength-permittivity format with units in um)
+si_data = proxy.load_data('Si_data.txt', 'wl-eps', 'um')
+
+# Extract permittivity at specific wavelengths
+wavelengths = np.array([1.3, 1.55, 1.7])
+eps_real, eps_imag = proxy.extract_permittivity(si_data, wavelengths)
+```
+
+## API Reference
+
+Below is the complete API reference for the material_proxy module, automatically generated from the source code.
+
+"""
+    
+    # Create the MaterialProxy.md file
+    with open(docs_dir / "MaterialProxy.md", "w") as f:
+        f.write(intro_content)
+        
+        # If the auto-generated API file exists, append its content (skipping the header)
+        if api_file.exists():
+            with open(api_file, "r") as api_f:
+                api_content = api_f.read()
+                
+                # Find the first heading and skip everything before it
+                import re
+                match = re.search(r'^#', api_content, re.MULTILINE)
+                if match:
+                    api_content = api_content[match.start():]
+                
+                f.write(api_content)
+        else:
+            # If API file doesn't exist, include a warning
+            f.write("""
+**Note: Automatic API documentation could not be generated. 
+Please ensure that the module is properly installed and importable.**
+""")
+    
+    print("  -> Created MaterialProxy.md")
+    
+    # Try to remove the temporary API file to keep things clean
+    if api_file.exists():
+        try:
+            api_file.unlink()
+        except:
+            pass
+
 def main():
     # Create wiki directory if it doesn't exist
     wiki_dir = Path("wiki")
@@ -93,6 +194,15 @@ Please check that the module exists and is properly installed.
     # Create an Observers page
     create_observers_page(docs_dir)
     
+    # Create a Results page
+    create_results_page(docs_dir)
+    
+    # Create a Constants page
+    create_constants_page(docs_dir)
+    
+    # Create a MaterialProxy page
+    create_material_proxy_page(docs_dir)
+    
     # Create a README file for the wiki directory
     create_readme(docs_dir)
 
@@ -125,9 +235,12 @@ Welcome to the `TorchRDIT` documentation. `TorchRDIT` is an advanced software pa
 - [Algorithm Module](Algorithm) - Implementation of electromagnetic solvers
 - [Builder Module](Builder) - Fluent API for creating simulations
 - [Cell Module](Cell) - Cell geometry definitions
+- [Constants Module](Constants) - Physical constants and enumerations
 - [Layers Module](Layers) - Layer definitions and operations
 - [Materials Module](Materials) - Material property definitions
+- [Material Proxy Module](MaterialProxy) - Material data handling and unit conversion
 - [Observers Module](Observers) - Progress tracking and reporting
+- [Results Module](Results) - Structured data containers for simulation results
 - [Shapes Module](Shapes) - Shape generation for photonic structures
 - [Solver Module](Solver) - Core solver functionality
 - [Utils](Utils) - Utility functions
@@ -159,9 +272,12 @@ def create_sidebar(docs_dir):
   - [Algorithm](Algorithm)
   - [Builder](Builder)
   - [Cell](Cell)
+  - [Constants](Constants)
   - [Layers](Layers)
   - [Materials](Materials)
+  - [MaterialProxy](MaterialProxy)
   - [Observers](Observers)
+  - [Results](Results)
   - [Shapes](Shapes)
   - [Solver](Solver)
   - [Utils](Utils)
@@ -254,11 +370,14 @@ source = device.add_source(
 )
 
 # Run the simulation
-results = device.solve(source)
+results = device.solve(source) # SolverResults object
 
 # Extract the results
-print(f"Transmission: {results['TRN'][0] * 100:.2f}%")
-print(f"Reflection: {results['REF'][0] * 100:.2f}%")
+print(f"Transmission: {results.transmission * 100:.2f}%")
+print(f"Reflection: {results.reflection * 100:.2f}%")
+                
+print("Phase of the transmission field x-component: ", torch.angle(results.transmission_field.x))
+print("Phase of the reflection field x-component: ", torch.angle(results.reflection_field.x))
 ```
 
 ## Using the Fluent Interface
@@ -302,10 +421,10 @@ One of the key features of TorchRDIT is its support for automatic differentiatio
 mask.requires_grad = True
 
 # Run simulation
-results = device.solve(source)
+results = device.solve(source) # SolverResults object
 
 # Backpropagate to compute gradients
-target_value = results['TRN'][0]
+target_value = results.transmission[0]
 target_value.backward()
 
 # Access gradients
@@ -469,10 +588,10 @@ display_fitted_permittivity(device, fig_ax=axes)
 mask.requires_grad = True
 
 # Solve and calculate efficiencies
-data = device.solve(src)
+data = device.solve(src) # SolverResults object
 
 # Compute backward pass for optimization
-torch.sum(data['TRN'][0]).backward()
+torch.sum(data.transmission[0]).backward()
 
 # Access gradients
 print(f"The gradient with respect to the mask is {torch.mean(mask.grad)}")
@@ -506,8 +625,11 @@ These examples demonstrate the key capabilities of TorchRDIT, including differen
 
 def create_shapes_page(docs_dir):
     """Create a dedicated Shapes page for the wiki."""
-    with open(docs_dir / "Shapes.md", "w") as f:
-        f.write("""---
+    # First check if the auto-generated API file exists
+    api_file = docs_dir / "Shapes-API.md"
+    
+    # Create the custom intro content
+    intro_content = """---
 title: "Shape Generation"
 category: "Core Components"
 tags: ["shapes", "mask", "geometry", "photonics"]
@@ -551,295 +673,51 @@ combined = shape_gen.combine_masks(circle, rect, operation='union')
 solver.update_er_with_mask(combined, layer_index=0)
 ```
 
-## Detailed Description
+## API Reference
 
-The `torchrdit.shapes` module centers around the `ShapeGenerator` class, which provides methods for creating binary mask tensors. These masks represent the geometry of photonic structures and can be used to define the permittivity distribution in patterned layers.
+Below is the complete API reference for the shapes module, automatically generated from the source code.
 
-The module supports both Cartesian and non-Cartesian coordinate systems through the use of lattice vectors. This allows for simulating structures with various symmetries, such as hexagonal lattices.
-
-All operations in the module are performed using PyTorch tensors, ensuring compatibility with GPU acceleration and automatic differentiation. This makes the module suitable for gradient-based optimization of photonic structures.
-
-## Main Components
-
-### ShapeGenerator
-
-The main class for generating and manipulating shape masks. It provides methods for creating common shapes and combining them using boolean operations.
-
-```python
-class ShapeGenerator:
-    \"\"\"Class to generate binary shape masks for photonic structures with lattice vector support.\"\"\"
+"""
     
-    def __init__(self, XO, YO, rdim, lattice_t1=None, lattice_t2=None):
-        \"\"\"Initialize a shape generator with coordinate grids and lattice vectors.\"\"\"
-        # ...
-```
-
-#### Initialization
-
-The `ShapeGenerator` class can be initialized in three ways:
-
-1. Directly with coordinate grids:
-   ```python
-   import torch
-   import numpy as np
-   from torchrdit.shapes import ShapeGenerator
-   
-   # Create coordinate grids
-   x = torch.linspace(-1, 1, 128)
-   y = torch.linspace(-1, 1, 128)
-   X, Y = torch.meshgrid(x, y, indexing='ij')
-   
-   # Initialize shape generator
-   shape_gen = ShapeGenerator(X, Y, (128, 128))
-   ```
-
-2. From an existing solver using the `from_solver` class method:
-   ```python
-   from torchrdit.solver import create_solver
-   from torchrdit.constants import Algorithm
-   from torchrdit.shapes import ShapeGenerator
-   
-   # Create a solver
-   solver = create_solver(algorithm=Algorithm.RDIT, rdim=[512, 512], kdim=[7, 7])
-   
-   # Create a shape generator from the solver
-   shape_gen = ShapeGenerator.from_solver(solver)
-   ```
-
-3. Using solver's parameter dictionary with `get_shape_generator_params`:
-   ```python
-   from torchrdit.solver import create_solver
-   from torchrdit.constants import Algorithm
-   from torchrdit.shapes import ShapeGenerator
-   
-   # Create a solver
-   solver = create_solver(algorithm=Algorithm.RDIT, rdim=[512, 512], kdim=[7, 7])
-   
-   # Get parameters from solver and create a shape generator
-   params = solver.get_shape_generator_params()
-   shape_gen = ShapeGenerator(**params)
-   
-   # This method is useful when you need to customize parameters
-   # before creating the shape generator
-   params["tfloat"] = torch.float32  # Change precision if needed
-   custom_shape_gen = ShapeGenerator(**params)
-   ```
-
-#### Shape Generation Methods
-
-##### generate_circle_mask
-```python
-def generate_circle_mask(self, center=None, radius=0.1, soft_edge=0.001):
-    \"\"\"Generate a mask for a circle in Cartesian coordinates.\"\"\"
-    # ...
-```
-
-Creates a circular mask with the specified center, radius, and edge softness.
-
-##### generate_rectangle_mask
-```python
-def generate_rectangle_mask(self, center=(0.0, 0.0), width=0.2, height=0.2, angle=0.0, soft_edge=0.001):
-    \"\"\"Generate a mask for a rectangle in Cartesian coordinates.\"\"\"
-    # ...
-```
-
-Creates a rectangular mask with the specified center, dimensions, rotation angle, and edge softness.
-
-##### generate_polygon_mask
-```python
-def generate_polygon_mask(self, polygon_points, center=None, angle=None, invert=False, soft_edge=0.001):
-    \"\"\"Generate a mask for a polygon in Cartesian coordinates.\"\"\"
-    # ...
-```
-
-Creates a mask for an arbitrary polygon defined by its vertices.
-
-#### Mask Combination
-
-##### combine_masks
-```python
-def combine_masks(self, mask1, mask2, operation=\"union\"):
-    \"\"\"Combine two masks using a specified operation.\"\"\"
-    # ...
-```
-
-Combines two masks using a boolean operation. Supported operations are:
-- `\"union\"`: Logical OR (maximum) of the masks
-- `\"intersection\"`: Logical AND (minimum) of the masks
-- `\"difference\"`: Absolute difference between the masks
-- `\"subtract\"`: Remove mask2 from mask1
-
-## Examples
-
-### Creating a Circle Mask
-
-```python
-import torch
-from torchrdit.shapes import ShapeGenerator
-
-# Create coordinate grids
-x = torch.linspace(-1, 1, 128)
-y = torch.linspace(-1, 1, 128)
-X, Y = torch.meshgrid(x, y, indexing='ij')
-shape_gen = ShapeGenerator(X, Y, (128, 128))
-
-# Generate a circle mask with hard edges
-hard_circle = shape_gen.generate_circle_mask(
-    center=(0.2, -0.3),
-    radius=0.4,
-    soft_edge=0
-)
-
-# Generate a circle mask with soft edges
-soft_circle = shape_gen.generate_circle_mask(
-    center=(0.2, -0.3),
-    radius=0.4,
-    soft_edge=0.02
-)
-```
-
-### Creating a Rectangle Mask
-
-```python
-# Generate a rectangle mask
-rectangle = shape_gen.generate_rectangle_mask(
-    center=(0.1, 0.1),
-    width=0.5,
-    height=0.3,
-    angle=45,
-    soft_edge=0.01
-)
-```
-
-### Creating a Polygon Mask
-
-```python
-# Create a triangle mask
-triangle_points = [(-0.2, -0.2), (0.2, -0.2), (0.0, 0.2)]
-triangle = shape_gen.generate_polygon_mask(
-    polygon_points=triangle_points,
-    soft_edge=0.01
-)
-
-# Create a hexagon mask
-import numpy as np
-n = 6  # hexagon
-angles = np.linspace(0, 2*np.pi, n, endpoint=False)
-radius = 0.3
-hexagon_points = [(radius*np.cos(a), radius*np.sin(a)) for a in angles]
-hexagon = shape_gen.generate_polygon_mask(
-    polygon_points=hexagon_points,
-    center=(0.1, 0.1),
-    angle=30
-)
-```
-
-### Combining Masks
-
-```python
-# Create two circular masks
-circle1 = shape_gen.generate_circle_mask(center=(-0.1, 0), radius=0.3)
-circle2 = shape_gen.generate_circle_mask(center=(0.1, 0), radius=0.3)
-
-# Combine masks using different operations
-union = shape_gen.combine_masks(circle1, circle2, operation="union")
-intersection = shape_gen.combine_masks(circle1, circle2, operation="intersection")
-difference = shape_gen.combine_masks(circle1, circle2, operation="difference")
-circle1_minus_circle2 = shape_gen.combine_masks(circle1, circle2, operation="subtract")
-```
-
-### Creating Complex Patterns
-
-```python
-# Create a pattern of four circles in a square arrangement
-c1 = shape_gen.generate_circle_mask(center=[0.2, 0.2], radius=0.1)
-c2 = shape_gen.generate_circle_mask(center=[0.2, -0.2], radius=0.1)
-c3 = shape_gen.generate_circle_mask(center=[-0.2, 0.2], radius=0.1)
-c4 = shape_gen.generate_circle_mask(center=[-0.2, -0.2], radius=0.1)
-
-# Combine all circles
-mask = c1
-mask = shape_gen.combine_masks(mask, c2, operation='union')
-mask = shape_gen.combine_masks(mask, c3, operation='union')
-mask = shape_gen.combine_masks(mask, c4, operation='union')
-
-# Add a square in the middle
-square = shape_gen.generate_rectangle_mask(width=0.2, height=0.2, angle=0)
-final_mask = shape_gen.combine_masks(mask, square, operation='union')
-```
-
-### Using Masks in Simulations
-
-```python
-from torchrdit.solver import create_solver
-from torchrdit.constants import Algorithm
-import torch
-
-# Create a solver
-solver = create_solver(
-    algorithm=Algorithm.RCWA,
-    rdim=[512, 512],
-    kdim=[7, 7]
-)
-
-# Create a shape generator
-shape_gen = ShapeGenerator.from_solver(solver)
-
-# Generate a mask
-mask = shape_gen.generate_circle_mask(radius=0.3)
-
-# Make the mask differentiable for optimization
-mask = mask.clone().detach().requires_grad_(True)
-
-# Apply the mask to a layer
-solver.update_er_with_mask(mask=mask, layer_index=0)
-
-# Run the simulation and compute gradients
-source = solver.add_source(theta=0, phi=0, pte=1, ptm=0)
-results = solver.solve(source)
-transmission = results['TRN'][0]
-transmission.backward()
-
-# Access gradients for shape optimization
-gradient = mask.grad
-```
-
-## Common Issues
-
-### Memory Usage
-
-When working with large grid sizes, memory usage can become significant. Consider these tips:
-- Use smaller grid sizes during prototyping and increase only when needed
-- Release unused tensors to free memory
-- If using GPUs with limited memory, consider moving computations to CPU for large grids
-
-### Edge Effects
-
-When using soft edges, be careful with the `soft_edge` parameter:
-- Too small values can lead to aliasing effects on coarse grids
-- Too large values can cause shapes to lose their definition
-- A general guideline is to use `soft_edge` values around 1-5% of the shape's characteristic dimension
-
-### Coordinate Systems
-
-When using non-Cartesian coordinate systems:
-- Ensure that lattice vectors are properly defined
-- Remember that shape parameters (center, radius, etc.) are in the Cartesian coordinate system
-- The coordinate transformation is handled internally by the ShapeGenerator
-
-## See Also
-- [Solver Module](Solver) - Core solver functionality
-- [Layers Module](Layers) - Layer definitions and operations
-- [Utils Module](Utils) - Utility functions
-
-## Keywords
-shape, mask, binary mask, photonics, circle, rectangle, polygon, lattice, geometry, structure generation, boolean operations
+    # Create the Shapes.md file
+    with open(docs_dir / "Shapes.md", "w") as f:
+        f.write(intro_content)
+        
+        # If the auto-generated API file exists, append its content (skipping the header)
+        if api_file.exists():
+            with open(api_file, "r") as api_f:
+                api_content = api_f.read()
+                
+                # Find the first heading and skip everything before it
+                import re
+                match = re.search(r'^#', api_content, re.MULTILINE)
+                if match:
+                    api_content = api_content[match.start():]
+                
+                f.write(api_content)
+        else:
+            # If API file doesn't exist, include a warning
+            f.write("""
+**Note: Automatic API documentation could not be generated. 
+Please ensure that the module is properly installed and importable.**
 """)
-        print("  -> Created Shapes.md")
+    
+    print("  -> Created Shapes.md")
+    
+    # Try to remove the temporary API file to keep things clean
+    if api_file.exists():
+        try:
+            api_file.unlink()
+        except:
+            pass
 
 def create_observers_page(docs_dir):
     """Create a dedicated Observers page for the wiki."""
-    content = """---
+    # First check if the auto-generated API file exists
+    api_file = docs_dir / "Observers-API.md"
+    
+    # Create the custom intro content
+    intro_content = """---
 title: "Progress Tracking and Reporting"
 category: "Utility Components"
 tags: ["progress", "monitoring", "feedback", "observer pattern", "console", "progress bar"]
@@ -850,58 +728,350 @@ complexity: "beginner"
 # Observer Module
 
 ## Overview
-The `torchrdit.observers` module provides implementations of the Observer pattern for tracking and reporting progress during electromagnetic simulations. These observers can be attached to solvers to receive notifications about various stages of the calculation process, allowing for real-time feedback during potentially long-running simulations.
+The `torchrdit.observers` module provides implementations of the Observer pattern for tracking and reporting progress during electromagnetic simulations.
 
-## Key Features
-- Implementation of the Observer design pattern for solver progress tracking
-- Console output for detailed progress information
-- Progress bar visualization using tqdm (optional)
-- Event-based notification system
-- Compatible with all solver types (RCWA, RDIT)
+## Key Components
+The module includes several observer classes for monitoring simulation progress:
 
-## Usage
+- **ConsoleProgressObserver**: Prints progress information to the console
+- **TqdmProgressObserver**: Displays a progress bar using the tqdm library (if available)
+
+## Usage Examples
+
 ```python
 from torchrdit.solver import create_solver
-from torchrdit.observers import ConsoleProgressObserver, TqdmProgressObserver
+from torchrdit.observers import ConsoleProgressObserver
+from torchrdit.constants import Algorithm
 
-# Create a solver
-solver = create_solver()
+# Create a solver and add a console observer
+solver = create_solver(algorithm=Algorithm.RCWA)
+observer = ConsoleProgressObserver(verbose=True)
+solver.add_observer(observer)
 
-# Add observers
-verbose_observer = ConsoleProgressObserver(verbose=True)
-progress_observer = TqdmProgressObserver()
-solver.add_observer(verbose_observer)
-solver.add_observer(progress_observer)
-
-# Run the simulation - progress will be reported
+# Run the solver - progress will be reported to the console
 source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
-results = solver.solve(source)
+result = solver.solve(source)
 ```
 
-## Main Components
+## API Reference
 
-### ConsoleProgressObserver
-Prints progress information to the console. Useful for detailed tracking of solver stages.
+Below is the complete API reference for the observers module, automatically generated from the source code.
 
-### TqdmProgressObserver
-Displays a progress bar using the tqdm library (if available).
-
-## Common Issues
-- If tqdm is not installed, TqdmProgressObserver will not be available
-- In Jupyter notebooks, console output may not update in real-time
-
-## See Also
-- [Solver Module](Solver) - Core solver functionality that generates the events
-- [Utils Module](Utils) - Utility functions and tools
-
-## Keywords
-observer pattern, progress tracking, console output, progress bar, tqdm, simulation monitoring
 """
     
+    # Create the Observers.md file
     with open(docs_dir / "Observers.md", "w") as f:
-        f.write(content)
+        f.write(intro_content)
+        
+        # If the auto-generated API file exists, append its content (skipping the header)
+        if api_file.exists():
+            with open(api_file, "r") as api_f:
+                api_content = api_f.read()
+                
+                # Find the first heading and skip everything before it
+                import re
+                match = re.search(r'^#', api_content, re.MULTILINE)
+                if match:
+                    api_content = api_content[match.start():]
+                
+                f.write(api_content)
+        else:
+            # If API file doesn't exist, include a warning
+            f.write("""
+**Note: Automatic API documentation could not be generated. 
+Please ensure that the module is properly installed and importable.**
+""")
     
     print("  -> Created Observers.md")
+    
+    # Try to remove the temporary API file to keep things clean
+    if api_file.exists():
+        try:
+            api_file.unlink()
+        except:
+            pass
+
+def create_results_page(docs_dir):
+    """Create the Results page for the wiki."""
+    # First check if the auto-generated API file exists
+    api_file = docs_dir / "Results-API.md"
+    
+    # Create the custom intro content
+    intro_content = """---
+title: "Simulation Results"
+category: "Core Components"
+tags: ["results", "dataclass", "simulation", "fields", "diffraction"]
+related: ["Solver", "Algorithm"]
+complexity: "intermediate"
+---
+
+# Results Module
+
+## Overview
+
+The `torchrdit.results` module provides structured data containers for electromagnetic simulation results. It defines dataclasses that organize field components, scattering matrices, wave vectors, and diffraction efficiencies, making simulation results more accessible and easier to work with.
+
+## Key Components
+
+The module consists of several dataclasses that organize different aspects of simulation results:
+
+### ScatteringMatrix
+
+Contains the four components of the scattering matrix:
+
+```python
+@dataclass
+class ScatteringMatrix:
+    \"\"\"Scattering matrix components for electromagnetic simulation\"\"\"
+    S11: torch.Tensor  # (n_freqs, 2*n_harmonics, 2*n_harmonics)
+    S12: torch.Tensor  # (n_freqs, 2*n_harmonics, 2*n_harmonics)
+    S21: torch.Tensor  # (n_freqs, 2*n_harmonics, 2*n_harmonics)
+    S22: torch.Tensor  # (n_freqs, 2*n_harmonics, 2*n_harmonics)
+```
+
+### FieldComponents
+
+Organizes the x, y, and z components of electromagnetic fields:
+
+```python
+@dataclass
+class FieldComponents:
+    \"\"\"Field components in x, y, z directions\"\"\"
+    x: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
+    y: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
+    z: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
+```
+
+### WaveVectors
+
+Stores wave vector components for the simulation:
+
+```python
+@dataclass
+class WaveVectors:
+    \"\"\"Wave vector components for the simulation\"\"\"
+    kx: torch.Tensor  # (kdim[0], kdim[1])
+    ky: torch.Tensor  # (kdim[0], kdim[1])
+    kinc: torch.Tensor  # (n_freqs, 3)
+    kzref: torch.Tensor  # (n_freqs, kdim[0]*kdim[1])
+    kztrn: torch.Tensor  # (n_freqs, kdim[0]*kdim[1])
+```
+
+### SolverResults
+
+The main results container that includes reflection and transmission data, field components, and methods for analyzing diffraction orders.
+
+## Usage Examples
+
+### Basic Usage
+
+```python
+import torch
+from torchrdit.solver import create_solver
+from torchrdit.constants import Algorithm
+
+# Create a solver
+solver = create_solver(algorithm=Algorithm.RCWA)
+
+# Set up the simulation
+# ...
+
+# Run the simulation
+source = solver.add_source(theta=0, phi=0, pte=1, ptm=0)
+results = solver.solve(source)  # Returns a SolverResults object
+
+# Access overall efficiencies
+print(f"Reflection: {results.reflection[0].item():.3f}")
+print(f"Transmission: {results.transmission[0].item():.3f}")
+```
+
+### Accessing Field Components
+
+```python
+# Get field components for the zero-order diffraction
+tx, ty, tz = results.get_zero_order_transmission()
+
+# Calculate field amplitude and phase
+amplitude = torch.abs(tx[0])  # Amplitude of x-component (first wavelength)
+phase = torch.angle(tx[0])    # Phase in radians
+```
+
+### Analyzing Diffraction Orders
+
+```python
+# Get efficiency of specific diffraction order
+order_1_1_efficiency = results.get_order_transmission_efficiency(order_x=1, order_y=1)
+
+# Get all available diffraction orders
+all_orders = results.get_all_diffraction_orders()
+
+# Find all propagating orders
+propagating = results.get_propagating_orders(wavelength_idx=0)
+print(f"Propagating orders: {propagating}")
+```
+
+### Backward Compatibility
+
+```python
+# For code that expects the old dictionary format
+data_dict = results.to_dict()
+
+# Access data using the old dictionary keys
+trn = data_dict['TRN']
+ref = data_dict['REF']
+```
+
+## API Reference
+
+Below is the complete API reference for the results module, automatically generated from the source code.
+
+"""
+
+    # Create the Results.md file
+    with open(docs_dir / "Results.md", "w") as f:
+        f.write(intro_content)
+        
+        # If the auto-generated API file exists, append its content (skipping the header)
+        if api_file.exists():
+            with open(api_file, "r") as api_f:
+                # Skip the first line which is usually the module header
+                api_content = api_f.read()
+                
+                # Find the first heading and skip everything before it
+                import re
+                match = re.search(r'^#', api_content, re.MULTILINE)
+                if match:
+                    api_content = api_content[match.start():]
+                
+                f.write(api_content)
+        else:
+            # If API file doesn't exist, include a warning
+            f.write("""
+**Note: Automatic API documentation could not be generated. 
+Please ensure that the module is properly installed and importable.**
+
+## Key Methods
+
+### Factory and Conversion Methods
+
+- `from_dict`: Create a SolverResults instance from a dictionary
+- `to_dict`: Convert to dictionary for backward compatibility
+
+### Diffraction Order Analysis
+
+- `get_diffraction_order_indices`: Get indices for specific diffraction orders
+- `get_zero_order_transmission/reflection`: Get field components for zero-order diffraction
+- `get_order_transmission/reflection_efficiency`: Get efficiency for specific orders
+- `get_all_diffraction_orders`: List all available diffraction orders
+- `get_propagating_orders`: List only propagating diffraction orders
+""")
+    
+    print("  -> Created Results.md")
+    
+    # Try to remove the temporary Results-API.md file to keep things clean
+    if api_file.exists():
+        try:
+            api_file.unlink()
+        except:
+            pass
+
+def create_constants_page(docs_dir):
+    """Create a Constants page for the wiki."""
+    # First check if the auto-generated API file exists
+    api_file = docs_dir / "Constants-API.md"
+    
+    # Create the custom intro content
+    intro_content = """---
+title: "Constants and Enumerations"
+category: "Core Components"
+tags: ["constants", "enumerations", "physical constants", "units", "algorithms", "precision"]
+related: ["Solver", "Materials"]
+complexity: "beginner"
+---
+
+# Constants Module
+
+## Overview
+The `torchrdit.constants` module defines physical constants, unit conversion factors, and enumerations used throughout the TorchRDIT package for electromagnetic simulations.
+
+## Key Components
+
+### Physical Constants
+- `EPS_0`: Vacuum permittivity (8.85418782e-12 F/m)
+- `MU_0`: Vacuum permeability (1.25663706e-6 H/m)
+- `C_0`: Speed of light in vacuum (2.99792458e8 m/s)
+- `ETA_0`: Vacuum impedance (376.730313668 Ω)
+- `Q_E`: Elementary charge (1.602176634e-19 C)
+
+### Unit Conversion Dictionaries
+- `frequnit_dict`: Frequency unit conversion factors (Hz to PHz)
+- `lengthunit_dict`: Length unit conversion factors (meter to angstrom)
+
+### Enumerations
+- `Algorithm`: Supported electromagnetic solver algorithms (RCWA, RDIT)
+- `Precision`: Numerical precision options (SINGLE, DOUBLE)
+
+## Usage Examples
+
+```python
+# Using physical constants
+from torchrdit.constants import EPS_0, MU_0, C_0
+# Calculate the refractive index from relative permittivity
+epsilon_r = 2.25  # SiO2
+n = (epsilon_r)**0.5
+print(f"Refractive index: {n}")  # Refractive index: 1.5
+
+# Converting between units
+from torchrdit.constants import lengthunit_dict
+# Convert 1550 nm to meters
+wavelength_nm = 1550
+wavelength_m = wavelength_nm * lengthunit_dict['nm']
+print(f"Wavelength in meters: {wavelength_m}")  # Wavelength in meters: 1.55e-06
+
+# Using algorithm enumeration
+from torchrdit.constants import Algorithm
+# Create a solver with specific algorithm
+from torchrdit.solver import create_solver
+solver = create_solver(algorithm=Algorithm.RCWA)
+```
+
+## API Reference
+
+Below is the complete API reference for the constants module, automatically generated from the source code.
+
+"""
+    
+    # Create the Constants.md file
+    with open(docs_dir / "Constants.md", "w") as f:
+        f.write(intro_content)
+        
+        # If the auto-generated API file exists, append its content (skipping the header)
+        if api_file.exists():
+            with open(api_file, "r") as api_f:
+                api_content = api_f.read()
+                
+                # Find the first heading and skip everything before it
+                import re
+                match = re.search(r'^#', api_content, re.MULTILINE)
+                if match:
+                    api_content = api_content[match.start():]
+                
+                f.write(api_content)
+        else:
+            # If API file doesn't exist, include a warning
+            f.write("""
+**Note: Automatic API documentation could not be generated. 
+Please ensure that the module is properly installed and importable.**
+""")
+    
+    print("  -> Created Constants.md")
+    
+    # Try to remove the temporary API file to keep things clean
+    if api_file.exists():
+        try:
+            api_file.unlink()
+        except:
+            pass
 
 def create_readme(docs_dir):
     """Create a README file for the wiki directory explaining how it's generated."""
@@ -924,9 +1094,12 @@ The documentation is generated automatically using pydoc-markdown. To update it:
 - **Algorithm.md**: Documentation for the algorithm module
 - **Builder.md**: Documentation for the builder module
 - **Cell.md**: Documentation for the cell module
+- **Constants.md**: Documentation for physical constants and enumerations
 - **Layers.md**: Documentation for the layers module
 - **Materials.md**: Documentation for the materials module
+- **MaterialProxy.md**: Documentation for the material data proxy and unit conversion
 - **Observers.md**: Documentation for the observers module
+- **Results.md**: Documentation for the results module
 - **Shapes.md**: Documentation for the shapes module
 - **Solver.md**: Documentation for the solver module
 - **Utils.md**: Documentation for utility functions
@@ -972,9 +1145,11 @@ def calculate_field(mesh, material_properties, frequency):
     
     Examples
     --------
-    >>> mesh = create_rectangular_mesh(0.1, 10, 10, 10)
-    >>> props = {'epsilon': 1.0, 'mu': 1.0, 'sigma': 0.0}
-    >>> E = calculate_field(mesh, props, 1e9)
+    ```python
+    mesh = create_rectangular_mesh(0.1, 10, 10, 10)
+    props = {'epsilon': 1.0, 'mu': 1.0, 'sigma': 0.0}
+    E = calculate_field(mesh, props, 1e9)
+    ```
     \"\"\"
 ```
 

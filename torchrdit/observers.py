@@ -14,34 +14,35 @@ during potentially long-running simulations, making it easier to monitor
 the progress and estimated completion time of calculations.
 
 Examples:
-    Basic usage with a console observer:
-    
-    >>> from torchrdit.solver import create_solver
-    >>> from torchrdit.observers import ConsoleProgressObserver
-    >>> from torchrdit.constants import Algorithm
-    >>> 
-    >>> # Create a solver and add a console observer
-    >>> solver = create_solver(algorithm=Algorithm.RCWA)
-    >>> observer = ConsoleProgressObserver(verbose=True)
-    >>> solver.add_observer(observer)
-    >>> 
-    >>> # Run the solver - progress will be reported to the console
-    >>> source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
-    >>> result = solver.solve(source)
-    
-    Using a progress bar with tqdm:
-    
-    >>> from torchrdit.solver import create_solver
-    >>> from torchrdit.observers import TqdmProgressObserver
-    >>> 
-    >>> # Create a solver and add a progress bar observer
-    >>> solver = create_solver(algorithm=Algorithm.RCWA)
-    >>> observer = TqdmProgressObserver()
-    >>> solver.add_observer(observer)
-    >>> 
-    >>> # Run the solver - progress will be displayed with a progress bar
-    >>> source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
-    >>> result = solver.solve(source)
+```python
+from torchrdit.solver import create_solver
+from torchrdit.observers import ConsoleProgressObserver
+from torchrdit.constants import Algorithm
+
+# Create a solver and add a console observer
+solver = create_solver(algorithm=Algorithm.RCWA)
+observer = ConsoleProgressObserver(verbose=True)
+solver.add_observer(observer)
+
+# Run the solver - progress will be reported to the console
+source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+result = solver.solve(source)
+```
+
+Using a progress bar with tqdm:
+```python
+from torchrdit.solver import create_solver
+from torchrdit.observers import TqdmProgressObserver
+
+# Create a solver and add a progress bar observer
+solver = create_solver(algorithm=Algorithm.RCWA)
+observer = TqdmProgressObserver()
+solver.add_observer(observer)
+
+# Run the solver - progress will be displayed with a progress bar
+source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+result = solver.solve(source)
+```
 
 Keywords:
     observer pattern, progress tracking, simulation monitoring, console output,
@@ -76,23 +77,25 @@ class ConsoleProgressObserver(SolverObserver):
         start_time (float): The timestamp when calculation started.
     
     Examples:
-        >>> from torchrdit.solver import create_solver
-        >>> from torchrdit.observers import ConsoleProgressObserver
-        >>> 
-        >>> # Create a solver
-        >>> solver = create_solver()
-        >>> 
-        >>> # Add a verbose observer for detailed output
-        >>> verbose_observer = ConsoleProgressObserver(verbose=True)
-        >>> solver.add_observer(verbose_observer)
-        >>> 
-        >>> # Or use a non-verbose observer for minimal output
-        >>> minimal_observer = ConsoleProgressObserver(verbose=False)
-        >>> solver.add_observer(minimal_observer)
-        >>> 
-        >>> # Run the solver - progress will be reported to the console
-        >>> source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
-        >>> result = solver.solve(source)
+    ```python
+    from torchrdit.solver import create_solver
+    from torchrdit.observers import ConsoleProgressObserver
+    
+    # Create a solver
+    solver = create_solver()
+    
+    # Add a verbose observer for detailed output
+    verbose_observer = ConsoleProgressObserver(verbose=True)
+    solver.add_observer(verbose_observer)
+    
+    # Or use a non-verbose observer for minimal output
+    minimal_observer = ConsoleProgressObserver(verbose=False)
+    solver.add_observer(minimal_observer)
+    
+    # Run the solver - progress will be reported to the console
+    source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+    result = solver.solve(source)
+    ```
     
     Note:
         This observer is useful for tracking long-running simulations and
@@ -114,16 +117,18 @@ class ConsoleProgressObserver(SolverObserver):
                      Default is True.
         
         Examples:
-            >>> from torchrdit.observers import ConsoleProgressObserver
-            >>> from torchrdit.solver import create_solver
-            >>> solver = create_solver()
-            >>> # Create a verbose observer
-            >>> verbose_observer = ConsoleProgressObserver(verbose=True)
-            >>> solver.add_observer(verbose_observer)
-            >>> 
-            >>> # Create a minimal observer
-            >>> minimal_observer = ConsoleProgressObserver(verbose=False)
-            >>> solver.add_observer(minimal_observer)
+        ```python
+        from torchrdit.observers import ConsoleProgressObserver
+        from torchrdit.solver import create_solver
+        solver = create_solver()
+        # Create a verbose observer
+        verbose_observer = ConsoleProgressObserver(verbose=True)
+        solver.add_observer(verbose_observer)
+        
+        # Create a minimal observer
+        minimal_observer = ConsoleProgressObserver(verbose=False)
+        solver.add_observer(minimal_observer)
+        ```
         
         Keywords:
             initialization, verbosity setting, observer creation
@@ -159,16 +164,18 @@ class ConsoleProgressObserver(SolverObserver):
                   - "progress": Percentage complete
         
         Examples:
-            >>> from torchrdit.observers import ConsoleProgressObserver
-            >>> from torchrdit.solver import create_solver
-            >>> solver = create_solver()
-            >>> observer = ConsoleProgressObserver()
-            >>> solver.add_observer(observer)
-            >>> # Example of how the solver would call this method
-            >>> observer.update(
-            ...     "calculation_starting", 
-            ...     {"mode": "RCWA", "n_freqs": 1, "n_layers": 3}
-            ... )
+        ```python
+        from torchrdit.observers import ConsoleProgressObserver
+        from torchrdit.solver import create_solver
+        solver = create_solver()
+        observer = ConsoleProgressObserver()
+        solver.add_observer(observer)
+        # Example of how the solver would call this method
+        observer.update(
+            "calculation_starting", 
+            {"mode": "RCWA", "n_freqs": 1, "n_layers": 3}
+        )
+        ```
         
         Note:
             This method is part of the Observer pattern implementation and
@@ -233,19 +240,21 @@ if TQDM_AVAILABLE:
             is not available, this class will not be defined.
             
         Examples:
-            >>> from torchrdit.solver import create_solver
-            >>> from torchrdit.observers import TqdmProgressObserver
-            >>> 
-            >>> # Create a solver
-            >>> solver = create_solver()
-            >>> 
-            >>> # Add a progress bar observer
-            >>> observer = TqdmProgressObserver()
-            >>> solver.add_observer(observer)
-            >>> 
-            >>> # Run the solver - progress will be displayed with a progress bar
-            >>> source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
-            >>> result = solver.solve(source)
+        ```python
+        from torchrdit.solver import create_solver
+        from torchrdit.observers import TqdmProgressObserver
+        
+        # Create a solver
+        solver = create_solver()
+        
+        # Add a progress bar observer
+        observer = TqdmProgressObserver()
+        solver.add_observer(observer)
+        
+        # Run the solver - progress will be displayed with a progress bar
+        source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+        result = solver.solve(source) # SolverResult object
+        ```
             
         Keywords:
             progress bar, tqdm, visual feedback, solver monitoring, progress tracking,
@@ -259,10 +268,12 @@ if TQDM_AVAILABLE:
             Progress bars are created when appropriate events are received.
             
             Examples:
-                >>> from torchrdit.observers import TqdmProgressObserver
-                >>> # Create a progress bar observer
-                >>> observer = TqdmProgressObserver()
-                >>> # Progress bars will be created when events are received
+            ```python
+            from torchrdit.observers import TqdmProgressObserver
+            # Create a progress bar observer
+            observer = TqdmProgressObserver()
+            # Progress bars will be created when events are received
+            ```
             
             Keywords:
                 initialization, progress bar, observer creation
@@ -285,15 +296,17 @@ if TQDM_AVAILABLE:
                       - "total": Total number of items (e.g., layers)
             
             Examples:
-                >>> from torchrdit.observers import TqdmProgressObserver
-                >>> # This method is typically called by the solver, not directly
-                >>> observer = TqdmProgressObserver()
-                >>> # Example of how the solver would call this method
-                >>> observer.update("processing_layers", {"total": 5})
-                >>> # Later when a layer is completed
-                >>> observer.update("layer_completed", {})
-                >>> # Finally when calculation is done
-                >>> observer.update("calculation_completed", {})
+            ```python
+            from torchrdit.observers import TqdmProgressObserver
+            # This method is typically called by the solver, not directly
+            observer = TqdmProgressObserver()
+            # Example of how the solver would call this method
+            observer.update("processing_layers", {"total": 5})
+            # Later when a layer is completed
+            observer.update("layer_completed", {})
+            # Finally when calculation is done
+            observer.update("calculation_completed", {})
+            ```
             
             Note:
                 This method is part of the Observer pattern implementation and

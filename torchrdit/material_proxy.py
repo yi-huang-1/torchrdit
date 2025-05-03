@@ -15,30 +15,30 @@ Classes:
     MaterialDataProxy: Loads and processes material data files with appropriate unit handling.
     
 Examples:
-    Basic unit conversion:
-    
-    >>> from torchrdit.material_proxy import UnitConverter
-    >>> converter = UnitConverter()
-    >>> # Convert from nanometers to micrometers
-    >>> wavelength_um = converter.convert_length(1550, 'nm', 'um')
-    >>> print(f"1550 nm = {wavelength_um} μm")
-    1550 nm = 1.55 μm
-    >>> # Convert from frequency to wavelength
-    >>> wavelength = converter.freq_to_wavelength(193.5, 'thz', 'um')
-    >>> print(f"193.5 THz = {wavelength:.2f} μm")
-    193.5 THz = 1.55 μm
-    
-    Loading material data:
-    
-    >>> from torchrdit.material_proxy import MaterialDataProxy
-    >>> import numpy as np
-    >>> # Load silicon data from file
-    >>> proxy = MaterialDataProxy()
-    >>> # File contains wavelength (um) and permittivity data
-    >>> si_data = proxy.load_data('Si_data.txt', 'wl-eps', 'um')
-    >>> # Extract permittivity at specific wavelengths
-    >>> wavelengths = np.array([1.3, 1.55, 1.7])
-    >>> eps_real, eps_imag = proxy.extract_permittivity(si_data, wavelengths)
+```python
+# Basic unit conversion:
+from torchrdit.material_proxy import UnitConverter
+converter = UnitConverter()
+# Convert from nanometers to micrometers
+wavelength_um = converter.convert_length(1550, 'nm', 'um')
+print(f"1550 nm = {wavelength_um} μm")
+# 1550 nm = 1.55 μm
+# Convert from frequency to wavelength
+wavelength = converter.freq_to_wavelength(193.5, 'thz', 'um')
+print(f"193.5 THz = {wavelength:.2f} μm")
+# 193.5 THz = 1.55 μm
+
+# Loading material data:
+from torchrdit.material_proxy import MaterialDataProxy
+import numpy as np
+# Load silicon data from file
+proxy = MaterialDataProxy()
+# File contains wavelength (um) and permittivity data
+si_data = proxy.load_data('Si_data.txt', 'wl-eps', 'um')
+# Extract permittivity at specific wavelengths
+wavelengths = np.array([1.3, 1.55, 1.7])
+eps_real, eps_imag = proxy.extract_permittivity(si_data, wavelengths)
+```
     
 Keywords:
     material data, unit conversion, wavelength, frequency, permittivity,
@@ -65,20 +65,22 @@ class UnitConverter:
         _freq_units (dict): Dictionary of frequency unit conversion factors.
         
     Examples:
-        >>> from torchrdit.material_proxy import UnitConverter
-        >>> converter = UnitConverter()
-        >>> # Length conversion
-        >>> print(converter.convert_length(1.0, 'mm', 'um'))
-        1000.0
-        >>> # Frequency conversion
-        >>> print(converter.convert_frequency(1.0, 'ghz', 'mhz'))
-        1000.0
-        >>> # Convert from frequency to wavelength
-        >>> print(converter.freq_to_wavelength(200, 'thz', 'nm'))
-        1499.0
-        >>> # Convert from wavelength to frequency
-        >>> print(converter.wavelength_to_freq(1.55, 'um', 'thz'))
-        193.5
+    ```python
+    from torchrdit.material_proxy import UnitConverter
+    converter = UnitConverter()
+    # Length conversion
+    print(converter.convert_length(1.0, 'mm', 'um'))
+    # 1000.0
+    # Frequency conversion
+    print(converter.convert_frequency(1.0, 'ghz', 'mhz'))
+    # 1000.0
+    # Convert from frequency to wavelength
+    print(converter.freq_to_wavelength(200, 'thz', 'nm'))
+    # 1499.0
+    # Convert from wavelength to frequency
+    print(converter.wavelength_to_freq(1.55, 'um', 'thz'))
+    # 193.5
+    ```
     
     Keywords:
         unit conversion, wavelength, frequency, length units, frequency units,
@@ -115,18 +117,20 @@ class UnitConverter:
             ValueError: If the unit is not recognized for the specified type.
             
         Examples:
-            >>> from torchrdit.material_proxy import UnitConverter
-            >>> converter = UnitConverter()
-            >>> print(converter.validate_units('um', 'length'))
-            'um'
-            >>> print(converter.validate_units('THz', 'frequency'))
-            'thz'
-            >>> # This would raise an error
-            >>> try:
-            ...     print(converter.validate_units('invalid', 'length'))
-            ... except ValueError as e:
-            ...     print(f"Error: {e}")
-            Error: Unknown length unit: invalid. Valid units: [...]
+        ```python
+        from torchrdit.material_proxy import UnitConverter
+        converter = UnitConverter()
+        print(converter.validate_units('um', 'length'))
+        # 'um'
+        print(converter.validate_units('THz', 'frequency'))
+        # 'thz'
+        # This would raise an error
+        try:
+            print(converter.validate_units('invalid', 'length'))
+        except ValueError as e:
+            print(f"Error: {e}")
+        # Error: Unknown length unit: invalid. Valid units: [...]
+        ```
         
         Keywords:
             unit validation, error checking, case normalization
@@ -153,17 +157,19 @@ class UnitConverter:
             float or array: Converted length value(s) in the target unit.
             
         Examples:
-            >>> from torchrdit.material_proxy import UnitConverter
-            >>> converter = UnitConverter()
-            >>> print(converter.convert_length(1550, 'nm', 'um'))
-            1.55
-            >>> print(converter.convert_length(0.001, 'meter', 'mm'))
-            1.0
-            >>> # Converting an array of values
-            >>> import numpy as np
-            >>> wavelengths_nm = np.array([1310, 1550, 1625])
-            >>> print(converter.convert_length(wavelengths_nm, 'nm', 'um'))
-            array([1.31, 1.55, 1.625])
+        ```python
+        from torchrdit.material_proxy import UnitConverter
+        converter = UnitConverter()
+        print(converter.convert_length(1550, 'nm', 'um'))
+        # 1.55
+        print(converter.convert_length(0.001, 'meter', 'mm'))
+        # 1.0
+        # Converting an array of values
+        import numpy as np
+        wavelengths_nm = np.array([1310, 1550, 1625])
+        print(converter.convert_length(wavelengths_nm, 'nm', 'um'))
+        # array([1.31, 1.55, 1.625])
+        ```
         
         Keywords:
             length conversion, unit transformation, dimension scaling
@@ -188,17 +194,19 @@ class UnitConverter:
             float or array: Converted frequency value(s) in the target unit.
             
         Examples:
-            >>> from torchrdit.material_proxy import UnitConverter
-            >>> converter = UnitConverter()
-            >>> print(converter.convert_frequency(1, 'thz', 'ghz'))
-            1000.0
-            >>> print(converter.convert_frequency(2.5, 'ghz', 'mhz'))
-            2500.0
-            >>> # Converting an array of values
-            >>> import numpy as np
-            >>> frequencies_ghz = np.array([100, 200, 300])
-            >>> print(converter.convert_frequency(frequencies_ghz, 'ghz', 'thz'))
-            array([0.1, 0.2, 0.3])
+        ```python
+        from torchrdit.material_proxy import UnitConverter
+        converter = UnitConverter()
+        print(converter.convert_frequency(1, 'thz', 'ghz'))
+        # 1000.0
+        print(converter.convert_frequency(2.5, 'ghz', 'mhz'))
+        # 2500.0
+        # Converting an array of values
+        import numpy as np
+        frequencies_ghz = np.array([100, 200, 300])
+        print(converter.convert_frequency(frequencies_ghz, 'ghz', 'thz'))
+        # array([0.1, 0.2, 0.3])
+        ```
         
         Keywords:
             frequency conversion, unit transformation, scale conversion
@@ -223,19 +231,21 @@ class UnitConverter:
             float or array: Wavelength value(s) in the target unit.
             
         Examples:
-            >>> from torchrdit.material_proxy import UnitConverter
-            >>> converter = UnitConverter()
-            >>> # Convert 193.5 THz to wavelength in μm
-            >>> print(converter.freq_to_wavelength(193.5, 'thz', 'um'))
-            1.55
-            >>> # Convert 100 GHz to wavelength in mm
-            >>> print(converter.freq_to_wavelength(100, 'ghz', 'mm'))
-            3.0
-            >>> # Converting an array of frequencies
-            >>> import numpy as np
-            >>> freqs_thz = np.array([193.5, 230.0, 350.0])
-            >>> print(converter.freq_to_wavelength(freqs_thz, 'thz', 'um'))
-            array([1.55, 1.30, 0.86])
+        ```python
+        from torchrdit.material_proxy import UnitConverter
+        converter = UnitConverter()
+        # Convert 193.5 THz to wavelength in μm
+        print(converter.freq_to_wavelength(193.5, 'thz', 'um'))
+        # 1.55
+        # Convert 100 GHz to wavelength in mm
+        print(converter.freq_to_wavelength(100, 'ghz', 'mm'))
+        # 3.0
+        # Converting an array of frequencies
+        import numpy as np
+        freqs_thz = np.array([193.5, 230.0, 350.0])
+        print(converter.freq_to_wavelength(freqs_thz, 'thz', 'um'))
+        # array([1.55, 1.30, 0.86])
+        ```
         
         Keywords:
             frequency to wavelength, unit conversion, electromagnetic spectrum,
@@ -264,19 +274,21 @@ class UnitConverter:
             float or array: Frequency value(s) in the target unit.
             
         Examples:
-            >>> from torchrdit.material_proxy import UnitConverter
-            >>> converter = UnitConverter()
-            >>> # Convert 1.55 μm to frequency in THz
-            >>> print(converter.wavelength_to_freq(1.55, 'um', 'thz'))
-            193.5
-            >>> # Convert 3 mm to frequency in GHz
-            >>> print(converter.wavelength_to_freq(3, 'mm', 'ghz'))
-            100.0
-            >>> # Converting an array of wavelengths
-            >>> import numpy as np
-            >>> wavelengths_um = np.array([1.31, 1.55, 2.0])
-            >>> print(converter.wavelength_to_freq(wavelengths_um, 'um', 'thz'))
-            array([229.0, 193.5, 150.0])
+        ```python
+        from torchrdit.material_proxy import UnitConverter
+        converter = UnitConverter()
+        # Convert 1.55 μm to frequency in THz
+        print(converter.wavelength_to_freq(1.55, 'um', 'thz'))
+        # 193.5
+        # Convert 3 mm to frequency in GHz
+        print(converter.wavelength_to_freq(3, 'mm', 'ghz'))
+        # 100.0
+        # Converting an array of wavelengths
+        import numpy as np
+        wavelengths_um = np.array([1.31, 1.55, 2.0])
+        print(converter.wavelength_to_freq(wavelengths_um, 'um', 'thz'))
+        # array([229.0, 193.5, 150.0])
+        ```
         
         Keywords:
             wavelength to frequency, unit conversion, electromagnetic spectrum,
@@ -313,23 +325,25 @@ class MaterialDataProxy:
         _converter (UnitConverter): Unit converter instance for handling unit transformations.
     
     Examples:
-        >>> from torchrdit.material_proxy import MaterialDataProxy
-        >>> proxy = MaterialDataProxy()
-        >>> 
-        >>> # Load permittivity data from a file with wavelength in μm
-        >>> data = proxy.load_data('materials/SiO2.txt', 'wl-eps', 'um')
-        >>> 
-        >>> # Get the first few rows of the loaded and converted data
-        >>> print(f"Wavelength (μm) | ε_real | ε_imag")
-        >>> for i in range(min(3, data.shape[0])):
-        ...     print(f"{data[i, 0]:.2f} | {data[i, 1]:.2f} | {data[i, 2]:.4f}")
-        >>> 
-        >>> # Extract permittivity at specific wavelengths
-        >>> import numpy as np
-        >>> wavelengths = np.array([1.31, 1.55, 1.85])
-        >>> eps_real, eps_imag = proxy.extract_permittivity(data, wavelengths)
-        >>> for wl, er, ei in zip(wavelengths, eps_real(wavelengths), eps_imag(wavelengths)):
-        ...     print(f"λ={wl}μm: ε={er:.4f}{'-' if ei < 0 else '+'}{abs(ei):.4f}j")
+    ```python
+    from torchrdit.material_proxy import MaterialDataProxy
+    proxy = MaterialDataProxy()
+    
+    # Load permittivity data from a file with wavelength in μm
+    data = proxy.load_data('materials/SiO2.txt', 'wl-eps', 'um')
+    
+    # Get the first few rows of the loaded and converted data
+    print(f"Wavelength (μm) | ε_real | ε_imag")
+    for i in range(min(3, data.shape[0])):
+        print(f"{data[i, 0]:.2f} | {data[i, 1]:.2f} | {data[i, 2]:.4f}")
+    
+    # Extract permittivity at specific wavelengths
+    import numpy as np
+    wavelengths = np.array([1.31, 1.55, 1.85])
+    eps_real, eps_imag = proxy.extract_permittivity(data, wavelengths)
+    for wl, er, ei in zip(wavelengths, eps_real(wavelengths), eps_imag(wavelengths)):
+        print(f"λ={wl}μm: ε={er:.4f}{'-' if ei < 0 else '+'}{abs(ei):.4f}j")
+    ```
     
     Keywords:
         material data, data loading, proxy pattern, permittivity, refractive index,
@@ -346,14 +360,16 @@ class MaterialDataProxy:
                             UnitConverter instance is created. Default is None.
         
         Examples:
-            >>> from torchrdit.material_proxy import MaterialDataProxy
-            >>> # Create with default unit converter
-            >>> proxy = MaterialDataProxy()
-            >>> 
-            >>> # Create with custom unit converter
-            >>> from torchrdit.material_proxy import UnitConverter
-            >>> converter = UnitConverter()
-            >>> proxy = MaterialDataProxy(unit_converter=converter)
+        ```python
+        from torchrdit.material_proxy import MaterialDataProxy
+        # Create with default unit converter
+        proxy = MaterialDataProxy()
+        
+        # Create with custom unit converter
+        from torchrdit.material_proxy import UnitConverter
+        converter = UnitConverter()
+        proxy = MaterialDataProxy(unit_converter=converter)
+        ```
         
         Keywords:
             initialization, proxy creation, unit converter
@@ -395,17 +411,19 @@ class MaterialDataProxy:
                       errors occur during loading or processing.
                       
         Examples:
-            >>> from torchrdit.material_proxy import MaterialDataProxy
-            >>> proxy = MaterialDataProxy()
-            >>> 
-            >>> # Load wavelength-permittivity data (wavelengths in nm)
-            >>> silica_data = proxy.load_data('SiO2.txt', 'wl-eps', 'nm', 'um')
-            >>> print(f"Loaded {silica_data.shape[0]} data points")
-            >>> 
-            >>> # Load frequency-based n,k data (frequencies in THz)
-            >>> silicon_data = proxy.load_data('Si.txt', 'freq-nk', 'thz', 'um')
-            >>> print(f"Wavelength range: {silicon_data[:, 0].min():.2f} - "
-            ...       f"{silicon_data[:, 0].max():.2f} μm")
+        ```python
+        from torchrdit.material_proxy import MaterialDataProxy
+        proxy = MaterialDataProxy()
+        
+        # Load wavelength-permittivity data (wavelengths in nm)
+        silica_data = proxy.load_data('SiO2.txt', 'wl-eps', 'nm', 'um')
+        print(f"Loaded {silica_data.shape[0]} data points")
+        
+        # Load frequency-based n,k data (frequencies in THz)
+        silicon_data = proxy.load_data('Si.txt', 'freq-nk', 'thz', 'um')
+        print(f"Wavelength range: {silicon_data[:, 0].min():.2f} - "
+              f"{silicon_data[:, 0].max():.2f} μm")
+        ```
         
         Keywords:
             data loading, file reading, unit conversion, data processing,
@@ -532,20 +550,22 @@ class MaterialDataProxy:
                  Each is a numpy.ndarray with the same shape as the input wavelengths.
         
         Examples:
-            >>> import numpy as np
-            >>> from torchrdit.material_proxy import MaterialDataProxy
-            >>> proxy = MaterialDataProxy()
-            >>> 
-            >>> # Load material data
-            >>> data = proxy.load_data('SiO2.txt', 'wl-eps', 'um')
-            >>> 
-            >>> # Extract permittivity at specific wavelengths
-            >>> operating_wl = np.array([1.31, 1.55, 1.7])
-            >>> eps_real, eps_imag = proxy.extract_permittivity(data, operating_wl)
-            >>> 
-            >>> # Display the results
-            >>> for wl, er, ei in zip(operating_wl, eps_real(operating_wl), eps_imag(operating_wl)):
-            ...     print(f"At {wl} μm: ε = {er:.4f} {ei:.4f}j")
+        ```python
+        import numpy as np
+        from torchrdit.material_proxy import MaterialDataProxy
+        proxy = MaterialDataProxy()
+        
+        # Load material data
+        data = proxy.load_data('SiO2.txt', 'wl-eps', 'um')
+        
+        # Extract permittivity at specific wavelengths
+        operating_wl = np.array([1.31, 1.55, 1.7])
+        eps_real, eps_imag = proxy.extract_permittivity(data, operating_wl)
+        
+        # Display the results
+        for wl, er, ei in zip(operating_wl, eps_real(operating_wl), eps_imag(operating_wl)):
+            print(f"At {wl} μm: ε = {er:.4f} {ei:.4f}j")
+        ```
         
         Keywords:
             permittivity extraction, interpolation, polynomial fitting, 

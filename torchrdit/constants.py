@@ -21,30 +21,29 @@ Dictionaries:
     lengthunit_dict: Length unit conversion factors (meter to angstrom)
     
 Examples:
-    Using physical constants:
-    
-    >>> from torchrdit.constants import EPS_0, MU_0, C_0
-    >>> # Calculate the refractive index from relative permittivity
-    >>> epsilon_r = 2.25  # SiO2
-    >>> n = (epsilon_r)**0.5
-    >>> print(f"Refractive index: {n}")
-    Refractive index: 1.5
-    
-    Converting between units:
-    
-    >>> from torchrdit.constants import lengthunit_dict
-    >>> # Convert 1550 nm to meters
-    >>> wavelength_nm = 1550
-    >>> wavelength_m = wavelength_nm * lengthunit_dict['nm']
-    >>> print(f"Wavelength in meters: {wavelength_m}")
-    Wavelength in meters: 1.55e-06
-    
-    Using algorithm enumeration:
-    
-    >>> from torchrdit.algorithm import RCWAAlgorithm
-    >>> # Create a solver with specific algorithm
-    >>> from torchrdit.solver import create_solver
-    >>> solver = create_solver(algorithm=RCWAAlgorithm)
+```python
+# Using physical constants
+from torchrdit.constants import EPS_0, MU_0, C_0
+# Calculate the refractive index from relative permittivity
+epsilon_r = 2.25  # SiO2
+n = (epsilon_r)**0.5
+print(f"Refractive index: {n}")
+# Refractive index: 1.5
+
+# Converting between units
+from torchrdit.constants import lengthunit_dict
+# Convert 1550 nm to meters
+wavelength_nm = 1550
+wavelength_m = wavelength_nm * lengthunit_dict['nm']
+print(f"Wavelength in meters: {wavelength_m}")
+# Wavelength in meters: 1.55e-06
+
+# Using algorithm enumeration
+from torchrdit.constants import Algorithm
+# Create a solver with specific algorithm
+from torchrdit.solver import create_solver
+solver = create_solver(algorithm=Algorithm.RCWA)
+```
     
 Keywords:
     physical constants, electromagnetic constants, unit conversion, frequency, 
@@ -105,25 +104,27 @@ class Algorithm(Enum):
               typically faster than RCWA for many problems.
     
     Examples:
-        >>> # Create solver with RCWA algorithm
-        >>> from torchrdit.solver import create_solver
-        >>> from torchrdit.constants import Algorithm
-        >>> rcwa_solver = create_solver(
-        ...     algorithm=Algorithm.RCWA,
-        ...     rdim=[256, 256],
-        ...     kdim=[5, 5]
-        ... )
-        >>> 
-        >>> # Create solver with RDIT algorithm
-        >>> rdit_solver = create_solver(
-        ...     algorithm=Algorithm.RDIT,
-        ...     rdim=[512, 512],
-        ...     kdim=[7, 7]
-        ... )
-        >>> 
-        >>> # Check which algorithm a solver uses
-        >>> print(f"Solver uses: {rcwa_solver.algorithm.name}")
-        Solver uses: RCWA
+    ```python
+    # Create solver with RCWA algorithm
+    from torchrdit.solver import create_solver
+    from torchrdit.constants import Algorithm
+    rcwa_solver = create_solver(
+        algorithm=Algorithm.RCWA,
+        rdim=[256, 256],
+        kdim=[5, 5]
+    )
+    
+    # Create solver with RDIT algorithm
+    rdit_solver = create_solver(
+        algorithm=Algorithm.RDIT,
+        rdim=[512, 512],
+        kdim=[7, 7]
+    )
+    
+    # Check which algorithm a solver uses
+    print(f"Solver uses: {rcwa_solver.algorithm.name}")
+    # Solver uses: RCWA
+    ```
     
     Note:
         The choice of algorithm affects both accuracy and performance. RCWA is
@@ -160,24 +161,28 @@ class Precision(Enum):
                 with ill-conditioned matrices.
     
     Examples:
-        >>> # Create solver with single precision
-        >>> from torchrdit.solver import create_solver
-        >>> from torchrdit.constants import Algorithm, Precision
-        >>> single_prec_solver = create_solver(
-        ...     algorithm=Algorithm.RCWA,
-        ...     precision=Precision.SINGLE
-        ... )
-        >>> 
-        >>> # Create solver with double precision
-        >>> double_prec_solver = create_solver(
-        ...     algorithm=Algorithm.RCWA,
-        ...     precision=Precision.DOUBLE
-        ... )
-        >>> 
-        >>> # The precision affects internal tensor dtype
-        >>> import torch
-        >>> print(f"Single precision uses dtype: {torch.float32}")
-        >>> print(f"Double precision uses dtype: {torch.float64}")
+    ```python
+    # Create solver with single precision
+    from torchrdit.solver import create_solver
+    from torchrdit.constants import Algorithm, Precision
+    single_prec_solver = create_solver(
+        algorithm=Algorithm.RCWA,
+        precision=Precision.SINGLE
+    )
+    
+    # Create solver with double precision
+    double_prec_solver = create_solver(
+        algorithm=Algorithm.RCWA,
+        precision=Precision.DOUBLE
+    )
+    
+    # The precision affects internal tensor dtype
+    import torch
+    print(f"Single precision uses dtype: {torch.float32}")
+    # Single precision uses dtype: torch.float32
+    print(f"Double precision uses dtype: {torch.float64}")
+    # Double precision uses dtype: torch.float64
+    ```
     
     Note:
         For most simulations, SINGLE precision provides sufficient accuracy

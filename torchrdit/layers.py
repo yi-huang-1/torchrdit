@@ -26,25 +26,26 @@ Note:
     methods for adding and manipulating layers.
 
 Examples:
-    Users typically add layers through solver interfaces:
-    
-    >>> from torchrdit.solver import create_solver
-    >>> from torchrdit.constants import Algorithm
-    >>> from torchrdit.utils import create_material
-    >>> import torch
-    >>> # Create a solver
-    >>> solver = create_solver(algorithm=Algorithm.RCWA)
-    >>> # Add a material to the solver
-    >>> silicon = create_material(name="silicon", permittivity=11.7)
-    >>> solver.add_materials([silicon])
-    >>> # Add a homogeneous layer
-    >>> solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
-    >>> # Add a patterned layer
-    >>> solver.add_layer(material_name="silicon", thickness=torch.tensor(0.3), 
-    ...                is_homogeneous=False)
-    >>> # Pattern the layer with a circle
-    >>> circle_mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
-    >>> solver.update_er_with_mask(circle_mask, layer_index=1)
+```python
+# Users typically add layers through solver interfaces:
+from torchrdit.solver import create_solver
+from torchrdit.constants import Algorithm
+from torchrdit.utils import create_material
+import torch
+# Create a solver
+solver = create_solver(algorithm=Algorithm.RCWA)
+# Add a material to the solver
+silicon = create_material(name="silicon", permittivity=11.7)
+solver.add_materials([silicon])
+# Add a homogeneous layer
+solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
+# Add a patterned layer
+solver.add_layer(material_name="silicon", thickness=torch.tensor(0.3), 
+               is_homogeneous=False)
+# Pattern the layer with a circle
+circle_mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
+solver.update_er_with_mask(circle_mask, layer_index=1)
+```
     
 Keywords:
     layers, material layers, layer management, homogeneous layers, grating layers,
@@ -398,18 +399,20 @@ class HomogeneousLayer(Layer):
         Inherits all attributes from the Layer base class.
         
     Examples:
-        >>> # Create a homogeneous layer through the solver interface
-        >>> from torchrdit.solver import create_solver
-        >>> from torchrdit.utils import create_material
-        >>> import torch
-        >>> solver = create_solver()
-        >>> silicon = create_material(name="silicon", permittivity=11.7)
-        >>> solver.add_materials([silicon])
-        >>> # Add a homogeneous layer with thickness 0.2 μm
-        >>> solver.add_layer(
-        ...     material_name="silicon", 
-        ...     thickness=torch.tensor(0.2)
-        ... )
+    ```python
+    # Create a homogeneous layer through the solver interface
+    from torchrdit.solver import create_solver
+    from torchrdit.utils import create_material
+    import torch
+    solver = create_solver()
+    silicon = create_material(name="silicon", permittivity=11.7)
+    solver.add_materials([silicon])
+    # Add a homogeneous layer with thickness 0.2 μm
+    solver.add_layer(
+        material_name="silicon", 
+        thickness=torch.tensor(0.2)
+    )
+    ```
     
     Keywords:
         homogeneous layer, uniform material, bulk material, thin film, constant properties
@@ -462,29 +465,31 @@ class GratingLayer(Layer):
         The attribute is_homogeneous is always False for grating layers.
         
     Examples:
-        >>> # Create a patterned (grating) layer through the solver interface
-        >>> from torchrdit.solver import create_solver
-        >>> from torchrdit.utils import create_material
-        >>> import torch
-        >>> solver = create_solver()
-        >>> silicon = create_material(name="silicon", permittivity=11.7)
-        >>> air = create_material(name="air", permittivity=1.0)
-        >>> solver.add_materials([silicon, air])
-        >>> 
-        >>> # Add a patterned layer with thickness 0.5 μm
-        >>> solver.add_layer(
-        ...     material_name="silicon", 
-        ...     thickness=torch.tensor(0.5),
-        ...     is_homogeneous=False
-        ... )
-        >>> 
-        >>> # Create a circular pattern in the layer
-        >>> circle_mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
-        >>> solver.update_er_with_mask(
-        ...     mask=circle_mask, 
-        ...     layer_index=0, 
-        ...     bg_material="air"
-        ... )
+    ```python
+    # Create a patterned (grating) layer through the solver interface
+    from torchrdit.solver import create_solver
+    from torchrdit.utils import create_material
+    import torch
+    solver = create_solver()
+    silicon = create_material(name="silicon", permittivity=11.7)
+    air = create_material(name="air", permittivity=1.0)
+    solver.add_materials([silicon, air])
+    
+    # Add a patterned layer with thickness 0.5 μm
+    solver.add_layer(
+        material_name="silicon", 
+        thickness=torch.tensor(0.5),
+        is_homogeneous=False
+    )
+    
+    # Create a circular pattern in the layer
+    circle_mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
+    solver.update_er_with_mask(
+        mask=circle_mask, 
+        layer_index=0, 
+        bg_material="air"
+    )
+    ```
     
     Keywords:
         grating layer, patterned layer, inhomogeneous, photonic crystal, metamaterial,
@@ -694,24 +699,25 @@ class LayerManager:
         vec_q (torch.Tensor): Vector of q-coordinates in the unit cell.
     
     Examples:
-        Users typically interact with layers through the solver interface:
-        
-        >>> from torchrdit.solver import create_solver
-        >>> from torchrdit.utils import create_material
-        >>> import torch
-        >>> # Create solver with RCWA algorithm
-        >>> solver = create_solver()
-        >>> # Add materials
-        >>> silicon = create_material(name="silicon", permittivity=11.7)
-        >>> sio2 = create_material(name="sio2", permittivity=2.25)
-        >>> solver.add_materials([silicon, sio2])
-        >>> # Add layers
-        >>> solver.add_layer(material_name="sio2", thickness=torch.tensor(0.1))
-        >>> solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
-        >>> # Set bottom (reflection) region to silicon
-        >>> solver.update_ref_material("silicon")
-        >>> # Set top (transmission) region to sio2
-        >>> solver.update_trn_material("sio2")
+    ```python
+    # Users typically interact with layers through the solver interface:
+    from torchrdit.solver import create_solver
+    from torchrdit.utils import create_material
+    import torch
+    # Create solver with RCWA algorithm
+    solver = create_solver()
+    # Add materials
+    silicon = create_material(name="silicon", permittivity=11.7)
+    sio2 = create_material(name="sio2", permittivity=2.25)
+    solver.add_materials([silicon, sio2])
+    # Add layers
+    solver.add_layer(material_name="sio2", thickness=torch.tensor(0.1))
+    solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
+    # Set bottom (reflection) region to silicon
+    solver.update_ref_material("silicon")
+    # Set top (transmission) region to sio2
+    solver.update_trn_material("sio2")
+    ```
     
     Keywords:
         layer management, layer stack, structure definition, layer organization,

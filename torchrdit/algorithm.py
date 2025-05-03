@@ -17,17 +17,19 @@ class SolverAlgorithm(ABC):
         way to configure and create solvers with the appropriate algorithm.
     
     Examples:
-        >>> # Use SolverBuilder to configure and create a solver
-        >>> from torchrdit.builder import SolverBuilder
-        >>> from torchrdit.constants import Algorithm
-        >>> builder = SolverBuilder()
-        >>> # Configure with RCWA algorithm
-        >>> solver_rcwa = builder.with_algorithm(Algorithm.RCWA).build()
-        >>> # Configure with R-DIT algorithm
-        >>> solver_rdit = builder.with_algorithm(Algorithm.RDIT).build()
-        >>> # Check which algorithm a solver uses
-        >>> print(f"Solver uses: {solver_rcwa.algorithm.name}")
-        >>> print(f"Solver uses: {solver_rdit.algorithm.name}")
+    ```python
+    # Use SolverBuilder to configure and create a solver
+    from torchrdit.builder import SolverBuilder
+    from torchrdit.constants import Algorithm
+    builder = SolverBuilder()
+    # Configure with RCWA algorithm
+    solver_rcwa = builder.with_algorithm(Algorithm.RCWA).build()
+    # Configure with R-DIT algorithm
+    solver_rdit = builder.with_algorithm(Algorithm.RDIT).build()
+    # Check which algorithm a solver uses
+    print(f"Solver uses: {solver_rcwa.algorithm.name}")
+    print(f"Solver uses: {solver_rdit.algorithm.name}")
+    ```
 
     
     Keywords:
@@ -101,16 +103,18 @@ class RCWAAlgorithm(SolverAlgorithm):
         _rdit_order (int): Order parameter for compatibility with R-DIT.
     
     Examples:
-        >>> # Using SolverBuilder to create a solver with RCWA algorithm
-        >>> from torchrdit.builder import SolverBuilder
-        >>> from torchrdit.constants import Algorithm
-        >>> builder = SolverBuilder()
-        >>> solver = builder.with_algorithm(Algorithm.RCWA).build()
-        >>> # Additional configuration can be applied through the builder
-        >>> solver = builder.with_algorithm(Algorithm.RCWA) \
-        ...                 .with_wavelengths(1.55) \
-        ...                 .with_k_dimensions([5, 5]) \
-        ...                 .build()
+    ```python
+    # Using SolverBuilder to create a solver with RCWA algorithm
+    from torchrdit.builder import SolverBuilder
+    from torchrdit.constants import Algorithm
+    builder = SolverBuilder()
+    solver = builder.with_algorithm(Algorithm.RCWA).build()
+    # Additional configuration can be applied through the builder
+    solver = builder.with_algorithm(Algorithm.RCWA) \\
+                    .with_wavelengths(1.55) \\
+                    .with_k_dimensions([5, 5]) \\
+                    .build()
+    ```
     
     Keywords:
         RCWA, electromagnetic, eigendecomposition, Fourier, Maxwell, scattering
@@ -203,13 +207,15 @@ class RCWAAlgorithm(SolverAlgorithm):
                        minimal effect in the RCWA implementation.
         
         Examples:
-            >>> # Setting RDIT order through the builder
-            >>> from torchrdit.builder import SolverBuilder
-            >>> from torchrdit.constants import Algorithm
-            >>> solver = SolverBuilder() \
-            ...                 .with_algorithm(Algorithm.RCWA) \
-            ...                 .with_rdit_order(4) \
-            ...                 .build()
+        ```python
+        # Setting RDIT order through the builder
+        from torchrdit.builder import SolverBuilder
+        from torchrdit.constants import Algorithm
+        solver = SolverBuilder() \\
+                .with_algorithm(Algorithm.RCWA) \\
+                .with_rdit_order(4) \\
+                .build()
+        ```
         
         Keywords:
             RCWA, R-DIT, compatibility, order parameter
@@ -234,16 +240,18 @@ class RDITAlgorithm(SolverAlgorithm):
         _rdit_order (int): Order parameter for the R-DIT algorithm approximation.
     
     Examples:
-        >>> # Using SolverBuilder to create a solver with R-DIT algorithm
-        >>> from torchrdit.builder import SolverBuilder
-        >>> from torchrdit.constants import Algorithm
-        >>> builder = SolverBuilder()
-        >>> # Configure with R-DIT algorithm and set order
-        >>> solver = builder.with_algorithm(Algorithm.RDIT) \
-        ...                 .with_rdit_order(8) \
-        ...                 .build()
-        >>> # Or load configuration from a file
-        >>> solver = SolverBuilder().from_config("config.json").build()
+    ```python
+    # Using SolverBuilder to create a solver with R-DIT algorithm
+    from torchrdit.builder import SolverBuilder
+    from torchrdit.constants import Algorithm
+    builder = SolverBuilder()
+    # Configure with R-DIT algorithm and set order
+    solver = builder.with_algorithm(Algorithm.RDIT) \\
+                    .with_rdit_order(8) \\
+                    .build()
+    # Or load configuration from a file
+    solver = SolverBuilder().from_config("config.json").build()
+    ```
     
     Keywords:
         R-DIT, electromagnetic, eigendecomposition-free, optimization, speedup, scattering
@@ -364,13 +372,15 @@ class RDITAlgorithm(SolverAlgorithm):
                        efficiency.
         
         Examples:
-            >>> # Setting RDIT order through the builder
-            >>> from torchrdit.builder import SolverBuilder
-            >>> from torchrdit.constants import Algorithm
-            >>> solver = SolverBuilder() \
-            ...                 .with_algorithm(Algorithm.RDIT) \
-            ...                 .with_rdit_order(8) \
-            ...                 .build()
+        ```python
+        # Setting RDIT order through the builder
+        from torchrdit.builder import SolverBuilder
+        from torchrdit.constants import Algorithm
+        solver = SolverBuilder() \\
+                        .with_algorithm(Algorithm.RDIT) \\
+                        .with_rdit_order(8) \\
+                        .build()
+        ```
         
         Keywords:
             R-DIT, order, approximation, accuracy, performance, tradeoff

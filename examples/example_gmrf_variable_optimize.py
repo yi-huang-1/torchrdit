@@ -49,7 +49,7 @@ def GMRF_simulator(radius, lams, rdit_orders=10, kdims=9, is_showinfo=False):
         is_showinfo: Whether to show additional info during simulation
         
     Returns:
-        dict: Results dictionary with transmission and reflection data
+        SolverResults: Results object with transmission, reflection, and field data
     """
     # Setup units and angles
     degrees = DEGREES
@@ -159,8 +159,8 @@ def plot_spectrum(lamswp0, data_rdit):
     ncon_gmrf_rdit = np.zeros(nlam)
 
     for ilam, elem in enumerate(lamswp0):
-        nref_gmrf_rdit[ilam] = data_rdit['REF'][ilam].detach().clone()
-        ntrn_gmrf_rdit[ilam] = data_rdit['TRN'][ilam].detach().clone()
+        nref_gmrf_rdit[ilam] = data_rdit.reflection[ilam].detach().clone()
+        ntrn_gmrf_rdit[ilam] = data_rdit.transmission[ilam].detach().clone()
         ncon_gmrf_rdit[ilam] = nref_gmrf_rdit[ilam] + ntrn_gmrf_rdit[ilam]
 
     plt.rcParams['font.sans-serif'] = ['Times New Roman']
@@ -210,12 +210,12 @@ def plot_spectrum_compare_opt(lamswp0, data_org, data_opt):
     ncon_gmrf_opt = np.zeros(nlam)
 
     for ilam, elem in enumerate(lamswp0):
-        nref_gmrf_org[ilam] = data_org['REF'][ilam].detach().clone()
-        ntrn_gmrf_org[ilam] = data_org['TRN'][ilam].detach().clone()
+        nref_gmrf_org[ilam] = data_org.reflection[ilam].detach().clone()
+        ntrn_gmrf_org[ilam] = data_org.transmission[ilam].detach().clone()
         ncon_gmrf_org[ilam] = nref_gmrf_org[ilam] + ntrn_gmrf_org[ilam]
 
-        nref_gmrf_opt[ilam] = data_opt['REF'][ilam].detach().clone()
-        ntrn_gmrf_opt[ilam] = data_opt['TRN'][ilam].detach().clone()
+        nref_gmrf_opt[ilam] = data_opt.reflection[ilam].detach().clone()
+        ntrn_gmrf_opt[ilam] = data_opt.transmission[ilam].detach().clone()
         ncon_gmrf_opt[ilam] = nref_gmrf_opt[ilam] + ntrn_gmrf_opt[ilam]
 
     plt.rcParams['font.sans-serif'] = ['Times New Roman']
@@ -278,7 +278,7 @@ def objective_GMRF(dev, src, radius):
     
     data = dev.solve(src)
     
-    return data['TRN'][0] * 1e2  # return transmission efficiency as FoM to be minimized
+    return data.transmission[0] * 1e2  # return transmission efficiency as FoM to be minimized
 
 def setup_gmrf_solver(lam_opt):
     """
@@ -413,10 +413,10 @@ def main():
     data_rdit = GMRF_simulator(r0_rdit, lam00, rdit_orders=10, kdims=15, is_showinfo=False)
 
     # Print efficiency and calculate gradient
-    print(f"The T efficiency (R-DIT) is {data_rdit['TRN'][0] * 100:.2f}%")
-    print(f"The R efficiency (R-DIT) is {data_rdit['REF'][0] * 100:.2f}%")
+    print(f"The T efficiency (R-DIT) is {data_rdit.transmission[0] * 100:.2f}%")
+    print(f"The R efficiency (R-DIT) is {data_rdit.reflection[0] * 100:.2f}%")
 
-    torch.sum(data_rdit['TRN'][0]).backward()
+    torch.sum(data_rdit.transmission[0]).backward()
     print(f"The derivative of transmission w.r.t. radius: {r0_rdit.grad}")
     
     # Part 2: Spectrum calculation
@@ -468,8 +468,8 @@ def main():
         lamswp0=lamswp_gmrf, data_org=data_gmrfswp_rdit, data_opt=data_optimized_rdit)
     
     # Find the transmission dip for both the original and optimized designs
-    orig_idx = np.argmin(data_gmrfswp_rdit['TRN'].detach().numpy())
-    opt_idx = np.argmin(data_optimized_rdit['TRN'].detach().numpy())
+    orig_idx = np.argmin(data_gmrfswp_rdit.transmission.detach().numpy())
+    opt_idx = np.argmin(data_optimized_rdit.transmission.detach().numpy())
     
     print(f"Original resonance wavelength: {lamswp_gmrf[orig_idx]:.4f} um")
     print(f"Optimized resonance wavelength: {lamswp_gmrf[opt_idx]:.4f} um")

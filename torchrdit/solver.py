@@ -27,70 +27,76 @@ The solvers handle:
 - Automatic differentiation for gradient-based optimization
 
 Examples:
-    Basic usage with RCWA:
-    
-    >>> import numpy as np
-    >>> import torch
-    >>> from torchrdit.solver import create_solver
-    >>> from torchrdit.constants import Algorithm
-    >>> from torchrdit.utils import create_material
-    >>> 
-    >>> # Create a solver with RCWA algorithm
-    >>> solver = create_solver(
-    ...     algorithm=Algorithm.RCWA,
-    ...     lam0=np.array([1.55]),  # Wavelength in micrometers
-    ...     rdim=[512, 512],        # Real space grid dimensions
-    ...     kdim=[5, 5],            # Fourier space dimensions
-    ...     device="cuda"           # Use GPU acceleration
-    ... )
-    >>> 
-    >>> # Create materials
-    >>> silicon = create_material(name="silicon", permittivity=11.7)
-    >>> sio2 = create_material(name="sio2", permittivity=2.25)
-    >>> solver.add_materials([silicon, sio2])
-    >>> 
-    >>> # Define layers
-    >>> solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
-    >>> solver.add_layer(material_name="sio2", thickness=torch.tensor(0.3))
-    >>> 
-    >>> # Add a source with normal incidence and TE polarization
-    >>> source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
-    >>> 
-    >>> # Run the solver
-    >>> result = solver.solve(source)
-    >>> print(f"Reflection: {result['REF'][0].item():.3f}, Transmission: {result['TRN'][0].item():.3f}") # reflection and transmission of the first wavelength
-    
-    Creating a patterned layer using a mask:
-    
-    >>> # Add a patterned layer
-    >>> solver.add_layer(material_name="silicon", thickness=torch.tensor(0.5), is_homogeneous=False)
-    >>> 
-    >>> # Create a circular pattern
-    >>> mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
-    >>> 
-    >>> # Use the mask to define material distribution
-    >>> solver.update_er_with_mask(mask=mask, layer_index=2)
-    >>> 
-    >>> # Solve again with the patterned layer
-    >>> result = solver.solve(source)
-    
-    Inverse design with automatic differentiation:
-    
-    >>> # Create a mask parameter with gradients enabled
-    >>> mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
-    >>> mask = mask.to(torch.float32)
-    >>> mask.requires_grad = True
-    >>> 
-    >>> # Configure the patterned layer with the mask
-    >>> solver.update_er_with_mask(mask=mask, layer_index=0)
-    >>> 
-    >>> # Solve and compute gradient to maximize transmission
-    >>> result = solver.solve(source)
-    >>> (-result['TRN'][0]).backward()  # Maximize transmission of the first wavelength
-    >>> 
-    >>> # Access gradients for optimization
-    >>> grad = mask.grad
-    >>> print(f"Mean gradient: {grad.abs().mean().item():.6f}")
+Basic usage with RCWA:
+
+```python
+import numpy as np
+import torch
+from torchrdit.solver import create_solver
+from torchrdit.constants import Algorithm
+from torchrdit.utils import create_material
+
+# Create a solver with RCWA algorithm
+solver = create_solver(
+    algorithm=Algorithm.RCWA,
+    lam0=np.array([1.55]),  # Wavelength in micrometers
+    rdim=[512, 512],        # Real space grid dimensions
+    kdim=[5, 5],            # Fourier space dimensions
+    device="cuda"           # Use GPU acceleration
+)
+
+# Create materials
+silicon = create_material(name="silicon", permittivity=11.7)
+sio2 = create_material(name="sio2", permittivity=2.25)
+solver.add_materials([silicon, sio2])
+
+# Define layers
+solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
+solver.add_layer(material_name="sio2", thickness=torch.tensor(0.3))
+
+# Add a source with normal incidence and TE polarization
+source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+
+# Run the solver
+result = solver.solve(source) # SolverResults object
+print(f"Reflection: {result.reflection[0].item():.3f}, Transmission: {result.transmission[0].item():.3f}")  # reflection and transmission of the first wavelength
+```
+
+Creating a patterned layer using a mask:
+
+```python
+# Add a patterned layer
+solver.add_layer(material_name="silicon", thickness=torch.tensor(0.5), is_homogeneous=False)
+
+# Create a circular pattern
+mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
+
+# Use the mask to define material distribution
+solver.update_er_with_mask(mask=mask, layer_index=2)
+
+# Solve again with the patterned layer
+result = solver.solve(source) # SolverResults object
+```
+
+Inverse design with automatic differentiation:
+
+```python
+# Create a mask parameter with gradients enabled
+mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
+mask = mask.to(torch.float32)
+mask.requires_grad = True
+
+# Configure the patterned layer with the mask
+solver.update_er_with_mask(mask=mask, layer_index=0)
+
+# Solve and compute gradient to maximize transmission
+result = solver.solve(source) # SolverResults object
+(-result.transmission[0]).backward()  # Maximize transmission of the first wavelength
+
+# Access gradients for optimization
+grad = mask.grad
+print(f"Mean gradient: {grad.abs().mean().item():.6f}")
+```
 
 Keywords:
     electromagnetic solver, RCWA, R-DIT, photonics, meta-optics, inverse design,
@@ -110,7 +116,7 @@ from .utils import blockmat2x2, redhstar, init_smatrix, blur_filter, to_diag_uti
 from .constants import Algorithm, Precision
 from .materials import MaterialClass
 from .algorithm import RCWAAlgorithm, RDITAlgorithm, SolverAlgorithm
-import time
+from .results import SolverResults
 
 class SolverObserver:
     """Interface for observers that track solver progress.
@@ -132,33 +138,33 @@ class SolverObserver:
         None
     
     Examples:
-        Creating a custom observer:
+    ```python
+    from torchrdit.solver import SolverObserver, create_solver
+    import time
+    
+    class TimingObserver(SolverObserver):
+        def __init__(self):
+            self.start_times = {}
+            self.end_times = {}
         
-        >>> from torchrdit.solver import SolverObserver, create_solver
-        >>> import time
-        >>> 
-        >>> class TimingObserver(SolverObserver):
-        ...     def __init__(self):
-        ...         self.start_times = {}
-        ...         self.end_times = {}
-        ...     
-        ...     def update(self, event_type, data):
-        ...         if event_type == "layer_started":
-        ...             layer = data.get("current", 0)
-        ...             self.start_times[layer] = time.time()
-        ...         elif event_type == "layer_completed":
-        ...             layer = data.get("current", 0)
-        ...             self.end_times[layer] = time.time()
-        ...             elapsed = self.end_times[layer] - self.start_times[layer]
-        ...             print(f"Layer {layer} processed in {elapsed:.3f} seconds")
-        >>> 
-        >>> # Create a solver with the custom observer
-        >>> solver = create_solver()
-        >>> solver.add_observer(TimingObserver())
-        >>> 
-        >>> # The observer will now receive notifications during solving
-        >>> source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
-        >>> result = solver.solve(source)
+        def update(self, event_type, data):
+            if event_type == "layer_started":
+                layer = data.get("current", 0)
+                self.start_times[layer] = time.time()
+            elif event_type == "layer_completed":
+                layer = data.get("current", 0)
+                self.end_times[layer] = time.time()
+                elapsed = self.end_times[layer] - self.start_times[layer]
+                print(f"Layer {layer} processed in {elapsed:.3f} seconds")
+    
+    # Create a solver with the custom observer
+    solver = create_solver()
+    solver.add_observer(TimingObserver())
+    
+    # The observer will now receive notifications during solving
+    source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+    result = solver.solve(source) # SolverResults object
+    ```
     
     Keywords:
         observer pattern, progress tracking, monitoring, notification, event handling,
@@ -195,12 +201,14 @@ class SolverObserver:
                   - "progress": Percentage complete (0-100)
         
         Examples:
-            >>> # Example implementation in a concrete observer class
-            >>> def update(self, event_type, data):
-            ...     if event_type == "calculation_starting":
-            ...         print(f"Starting calculation with {data.get('n_freqs')} wavelengths")
-            ...     elif event_type == "calculation_completed":
-            ...         print("Calculation finished!")
+        ```python
+        # Example implementation in a concrete observer class
+        def update(self, event_type, data):
+            if event_type == "calculation_starting":
+                print(f"Starting calculation with {data.get('n_freqs')} wavelengths")
+            elif event_type == "calculation_completed":
+                print("Calculation finished!")
+        ```
         
         Note:
             This is an abstract method that should be overridden by concrete observer
@@ -228,49 +236,49 @@ class SolverSubjectMixin:
         _observers (list): List of observer objects registered to receive notifications
     
     Examples:
-        Using SolverSubjectMixin in a custom class:
-        
-        >>> from torchrdit.solver import SolverSubjectMixin, SolverObserver
-        >>> 
-        >>> class MyProcessingClass(SolverSubjectMixin):
-        ...     def __init__(self):
-        ...         SolverSubjectMixin.__init__(self)  # Initialize the observer list
-        ...         
-        ...     def process_data(self, data):
-        ...         # Notify observers that processing is starting
-        ...         self.notify_observers('processing_started', {'data_size': len(data)})
-        ...         
-        ...         # Do some processing
-        ...         result = []
-        ...         for i, item in enumerate(data):
-        ...             # Process the item
-        ...             result.append(item * 2)
-        ...             
-        ...             # Notify observers of progress
-        ...             self.notify_observers('item_processed', {
-        ...                 'current': i + 1,
-        ...                 'total': len(data),
-        ...                 'progress': (i + 1) / len(data) * 100
-        ...             })
-        ...             
-        ...         # Notify observers that processing is complete
-        ...         self.notify_observers('processing_completed', {'result_size': len(result)})
-        ...         return result
-        >>> 
-        >>> # Create a simple observer to monitor progress
-        >>> class SimpleObserver(SolverObserver):
-        ...     def update(self, event_type, data):
-        ...         if event_type == 'processing_started':
-        ...             print(f"Starting to process {data['data_size']} items")
-        ...         elif event_type == 'item_processed':
-        ...             print(f"Progress: {data['progress']:.1f}%")
-        ...         elif event_type == 'processing_completed':
-        ...             print(f"Processing completed with {data['result_size']} results")
-        >>> 
-        >>> # Use the observer with our processing class
-        >>> processor = MyProcessingClass()
-        >>> processor.add_observer(SimpleObserver())
-        >>> result = processor.process_data([1, 2, 3, 4, 5])
+    ```python
+    from torchrdit.solver import SolverSubjectMixin, SolverObserver
+    
+    class MyProcessingClass(SolverSubjectMixin):
+        def __init__(self):
+            SolverSubjectMixin.__init__(self)  # Initialize the observer list
+            
+        def process_data(self, data):
+            # Notify observers that processing is starting
+            self.notify_observers('processing_started', {'data_size': len(data)})
+            
+            # Do some processing
+            result = []
+            for i, item in enumerate(data):
+                # Process the item
+                result.append(item * 2)
+                
+                # Notify observers of progress
+                self.notify_observers('item_processed', {
+                    'current': i + 1,
+                    'total': len(data),
+                    'progress': (i + 1) / len(data) * 100
+                })
+                
+            # Notify observers that processing is complete
+            self.notify_observers('processing_completed', {'result_size': len(result)})
+            return result
+    
+    # Create a simple observer to monitor progress
+    class SimpleObserver(SolverObserver):
+        def update(self, event_type, data):
+            if event_type == 'processing_started':
+                print(f"Starting to process {data['data_size']} items")
+            elif event_type == 'item_processed':
+                print(f"Progress: {data['progress']:.1f}%")
+            elif event_type == 'processing_completed':
+                print(f"Processing completed with {data['result_size']} results")
+    
+    # Use the observer with our processing class
+    processor = MyProcessingClass()
+    processor.add_observer(SimpleObserver())
+    result = processor.process_data([1, 2, 3, 4, 5])
+    ```
     
     Keywords:
         observer pattern, subject, notification, progress tracking, design pattern,
@@ -284,9 +292,11 @@ class SolverSubjectMixin:
         called in the constructor of any class that inherits from this mixin.
         
         Examples:
-            >>> class MyClass(SolverSubjectMixin):
-            ...     def __init__(self):
-            ...         SolverSubjectMixin.__init__(self)  # Initialize observer list
+        ```python
+        class MyClass(SolverSubjectMixin):
+            def __init__(self):
+                SolverSubjectMixin.__init__(self)  # Initialize observer list
+        ```
         
         Keywords:
             initialization, observer list, constructor
@@ -304,13 +314,15 @@ class SolverSubjectMixin:
                       the SolverObserver interface with an update method.
         
         Examples:
-            >>> # Create a solver and add an observer
-            >>> from torchrdit.solver import create_solver
-            >>> from torchrdit.observers import ConsoleProgressObserver
-            >>> 
-            >>> solver = create_solver()
-            >>> observer = ConsoleProgressObserver()
-            >>> solver.add_observer(observer)
+        ```python
+        # Create a solver and add an observer
+        from torchrdit.solver import create_solver
+        from torchrdit.observers import ConsoleProgressObserver
+        
+        solver = create_solver()
+        observer = ConsoleProgressObserver()
+        solver.add_observer(observer)
+        ```
         
         Keywords:
             register observer, add listener, subscribe, event notification
@@ -328,16 +340,18 @@ class SolverSubjectMixin:
             observer (SolverObserver): The observer object to remove.
         
         Examples:
-            >>> # Remove an observer from a solver
-            >>> from torchrdit.solver import create_solver
-            >>> from torchrdit.observers import ConsoleProgressObserver
-            >>> 
-            >>> solver = create_solver()
-            >>> observer = ConsoleProgressObserver()
-            >>> solver.add_observer(observer)
-            >>> 
-            >>> # Later, remove the observer
-            >>> solver.remove_observer(observer)
+        ```python
+        # Remove an observer from a solver
+        from torchrdit.solver import create_solver
+        from torchrdit.observers import ConsoleProgressObserver
+        
+        solver = create_solver()
+        observer = ConsoleProgressObserver()
+        solver.add_observer(observer)
+        
+        # Later, remove the observer
+        solver.remove_observer(observer)
+        ```
         
         Keywords:
             unregister observer, remove listener, unsubscribe, notification management
@@ -366,24 +380,26 @@ class SolverSubjectMixin:
                    Default is an empty dictionary.
         
         Examples:
-            >>> # Example usage within a solver method
-            >>> def solve_layer(self, layer_index):
-            ...     # Notify observers that we're starting a layer
-            ...     self.notify_observers('layer_started', {
-            ...         'current': layer_index,
-            ...         'total': self.layer_manager.nlayer,
-            ...         'progress': layer_index / self.layer_manager.nlayer * 100
-            ...     })
-            ...     
-            ...     # Process the layer
-            ...     # ...
-            ...     
-            ...     # Notify observers that the layer is complete
-            ...     self.notify_observers('layer_completed', {
-            ...         'current': layer_index,
-            ...         'total': self.layer_manager.nlayer,
-            ...         'progress': (layer_index + 1) / self.layer_manager.nlayer * 100
-            ...     })
+        ```python
+        # Example usage within a solver method
+        def solve_layer(self, layer_index):
+            # Notify observers that we're starting a layer
+            self.notify_observers('layer_started', {
+                'current': layer_index,
+                'total': self.layer_manager.nlayer,
+                'progress': layer_index / self.layer_manager.nlayer * 100
+            })
+            
+            # Process the layer
+            # ...
+            
+            # Notify observers that the layer is complete
+            self.notify_observers('layer_completed', {
+                'current': layer_index,
+                'total': self.layer_manager.nlayer,
+                'progress': (layer_index + 1) / self.layer_manager.nlayer * 100
+            })
+        ```
         
         Keywords:
             broadcast event, notify listeners, event dispatch, observer notification,
@@ -427,31 +443,35 @@ def create_solver_from_config(config: Union[str, Dict[str, Any]], flip: bool = F
         to the provided parameters.
     
     Examples:
-        Creating a solver from a dictionary configuration:
-        
-        >>> from torchrdit.solver import create_solver_from_config
-        >>> # Define a configuration dictionary
-        >>> config = {
-        ...     "algorithm": "RDIT",
-        ...     "wavelengths": [1.55],
-        ...     "length_unit": "um",
-        ...     "rdim": [512, 512],
-        ...     "kdim": [5, 5],
-        ...     "device": "cuda"
-        ... }
-        >>> solver = create_solver_from_config(config)
-        
-        Creating a solver from a JSON configuration file:
-        
-        >>> # Create a config file (config.json)
-        >>> # {
-        >>> #   "algorithm": "RCWA",
-        >>> #   "wavelengths": [1.31, 1.55],
-        >>> #   "length_unit": "um",
-        >>> #   "rdim": [256, 256],
-        >>> #   "kdim": [3, 3]
-        >>> # }
-        >>> solver = create_solver_from_config("config.json")
+    Creating a solver from a dictionary configuration:
+    
+    ```python
+    from torchrdit.solver import create_solver_from_config
+    # Define a configuration dictionary
+    config = {
+        "algorithm": "RDIT",
+        "wavelengths": [1.55],
+        "length_unit": "um",
+        "rdim": [512, 512],
+        "kdim": [5, 5],
+        "device": "cuda"
+    }
+    solver = create_solver_from_config(config)
+    ```
+    
+    Creating a solver from a JSON configuration file:
+    
+    ```python
+    # Create a config file (config.json)
+    # {
+    #   "algorithm": "RCWA",
+    #   "wavelengths": [1.31, 1.55],
+    #   "length_unit": "um",
+    #   "rdim": [256, 256],
+    #   "kdim": [3, 3]
+    # }
+    solver = create_solver_from_config("config.json")
+    ```
     
     Note:
         This function is particularly useful for reproducible simulations or
@@ -540,35 +560,36 @@ def create_solver(algorithm: Algorithm = Algorithm.RDIT,
         enabling gradient-based optimization for inverse design.
     
     Examples:
-        Creating an R-DIT solver (recommended for inverse design):
-        
-        >>> import torch
-        >>> import numpy as np
-        >>> from torchrdit.solver import create_solver
-        >>> from torchrdit.constants import Algorithm, Precision
-        >>> 
-        >>> # Create an R-DIT solver with GPU acceleration
-        >>> solver = create_solver(
-        ...     algorithm=Algorithm.RDIT,
-        ...     lam0=np.array([1.55]),  # Wavelength (μm)
-        ...     rdim=[512, 512],        # Real space resolution
-        ...     kdim=[5, 5],            # Fourier space harmonics
-        ...     device='cuda'           # Use GPU acceleration
-        ... )
-        
-        Creating an RCWA solver with non-rectangular lattice:
-        
-        >>> # Create an RCWA solver with a triangular lattice
-        >>> solver = create_solver(
-        ...     algorithm=Algorithm.RCWA,
-        ...     precision=Precision.DOUBLE,  # Use double precision
-        ...     lam0=np.array([0.8, 1.0, 1.2]),  # Multiple wavelengths
-        ...     t1=torch.tensor([[1.0, 0.0]]),
-        ...     t2=torch.tensor([[0.5, 0.866]]),  # 60-degree lattice
-        ...     rdim=[1024, 1024],
-        ...     kdim=[7, 7],
-        ...     device='cuda'
-        ... )
+    ```python
+    import torch
+    import numpy as np
+    from torchrdit.solver import create_solver
+    from torchrdit.constants import Algorithm, Precision
+    
+    # Create an R-DIT solver with GPU acceleration
+    solver = create_solver(
+        algorithm=Algorithm.RDIT,
+        lam0=np.array([1.55]),  # Wavelength (μm)
+        rdim=[512, 512],        # Real space resolution
+        kdim=[5, 5],            # Fourier space harmonics
+        device='cuda'           # Use GPU acceleration
+    )
+    ```
+    
+    Creating an RCWA solver with non-rectangular lattice:
+    ```python
+    # Create an RCWA solver with a triangular lattice
+    solver = create_solver(
+        algorithm=Algorithm.RCWA,
+        precision=Precision.DOUBLE,  # Use double precision
+        lam0=np.array([0.8, 1.0, 1.2]),  # Multiple wavelengths
+        t1=torch.tensor([[1.0, 0.0]]),
+        t2=torch.tensor([[0.5, 0.866]]),  # 60-degree lattice
+        rdim=[1024, 1024],
+        kdim=[7, 7],
+        device='cuda'
+    )
+    ```
     
     Note:
         To optimize memory usage and performance:
@@ -629,31 +650,30 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         create_solver() function to create an appropriate solver instance.
     
     Examples:
-        Although FourierBaseSolver should not be used directly, here's how to
-        use its derived classes:
-        
-        >>> import numpy as np
-        >>> import torch
-        >>> from torchrdit.solver import create_solver
-        >>> from torchrdit.constants import Algorithm
-        >>> from torchrdit.utils import create_material
-        >>> 
-        >>> # Create a derived solver (RCWA)
-        >>> solver = create_solver(
-        ...     algorithm=Algorithm.RCWA,
-        ...     lam0=np.array([1.55]),
-        ...     rdim=[512, 512],
-        ...     kdim=[5, 5]
-        ... )
-        >>> 
-        >>> # Add materials and layers
-        >>> silicon = create_material(name="Si", permittivity=11.7)
-        >>> solver.add_materials([silicon])
-        >>> solver.add_layer(material_name="Si", thickness=torch.tensor(0.5))
-        >>> 
-        >>> # Set up a source and solve
-        >>> source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
-        >>> result = solver.solve(source)
+    ```python
+    import numpy as np
+    import torch
+    from torchrdit.solver import create_solver
+    from torchrdit.constants import Algorithm
+    from torchrdit.utils import create_material
+    
+    # Create a derived solver (RCWA)
+    solver = create_solver(
+        algorithm=Algorithm.RCWA,
+        lam0=np.array([1.55]),
+        rdim=[512, 512],
+        kdim=[5, 5]
+    )
+    
+    # Add materials and layers
+    silicon = create_material(name="Si", permittivity=11.7)
+    solver.add_materials([silicon])
+    solver.add_layer(material_name="Si", thickness=torch.tensor(0.5))
+    
+    # Set up a source and solve
+    source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+    result = solver.solve(source) # SolverResults object
+    ```
     
     Keywords:
         base class, Fourier solver, RCWA, R-DIT, electromagnetic simulation,
@@ -821,38 +841,40 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             - 'norm_te_dir': Direction of normal component for TE wave
         
         Examples:
-            Normal incidence with pure TE polarization:
-            
-            >>> import numpy as np
-            >>> from torchrdit.solver import create_solver
-            >>> 
-            >>> solver = create_solver()
-            >>> source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
-            >>> result = solver.solve(source)
-            
-            45-degree incidence with mixed polarization:
-            
-            >>> import numpy as np
-            >>> # Convert degrees to radians
-            >>> theta_rad = 45 * np.pi / 180
-            >>> # Create source with 45-degree incidence and equal TE/TM components
-            >>> source = solver.add_source(
-            ...     theta=theta_rad, 
-            ...     phi=0, 
-            ...     pte=0.7071, 
-            ...     ptm=0.7071
-            ... )
-            
-            Normal incidence with circular polarization:
-            
-            >>> import numpy as np
-            >>> # Create source with circular polarization (90° phase shift between components)
-            >>> source = solver.add_source(
-            ...     theta=0,
-            ...     phi=0,
-            ...     pte=1.0,
-            ...     ptm=1.0j  # 90° phase shift
-            ... )
+        ```python
+        import numpy as np
+        from torchrdit.solver import create_solver
+        
+        solver = create_solver()
+        source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+        result = solver.solve(source) # SolverResults object
+        ```
+        
+        45-degree incidence with mixed polarization:
+        ```python
+        import numpy as np
+        # Convert degrees to radians
+        theta_rad = 45 * np.pi / 180
+        # Create source with 45-degree incidence and equal TE/TM components
+        source = solver.add_source(
+            theta=theta_rad, 
+            phi=0, 
+            pte=0.7071, 
+            ptm=0.7071
+        )
+        ```
+        
+        Normal incidence with circular polarization:
+        ```python
+        import numpy as np
+        # Create source with circular polarization (90° phase shift between components)
+        source = solver.add_source(
+            theta=0,
+            phi=0,
+            pte=1.0,
+            ptm=1.0j  # 90° phase shift
+        )
+        ```
         
         Note:
             The convention used in TorchRDIT defines the TE polarization as having
@@ -1115,7 +1137,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         
         return smat_layer
 
-    def _solve_structure(self, **kwargs) -> dict:
+    def _solve_structure(self, **kwargs) -> SolverResults:
         """Solve the electromagnetic problem for all frequencies in batch.
         
         Implements the simultaneous solution of all wavelengths in the simulation.
@@ -1124,7 +1146,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             **kwargs: Additional parameters that may be required by specific solvers
             
         Returns:
-            Dictionary containing the solution results
+            SolverResults: data class containing the solution results
         """
         # Notify that calculation is starting
         self.notify_observers("calculation_starting", {
@@ -1192,7 +1214,6 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         # Assemble the final data dictionary
         data = {
             'smat_structure': smat_structure,
-            'smat_layers': self.smat_layers,
             'rx': rx,
             'ry': ry,
             'rz': rz,
@@ -1212,11 +1233,11 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         
         self.notify_observers("calculation_completed", {"n_freqs": self.n_freqs})
         
-        return data
+        return SolverResults.from_dict(data)
 
     def solve(self,
               source: dict,
-              **kwargs) -> dict:
+              **kwargs) -> SolverResults:
         """Solve the electromagnetic problem for the configured structure.
 
         This is the main entry point for running simulations. The function computes
@@ -1258,58 +1279,99 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                        Default is False. Setting to True increases memory usage.
 
         Returns:
-            dict: A dictionary containing the solution results with keys:
-                - 'smat_structure': (Dict (subkeys: 'S11', 'S12', 'S21', 'S22'), dimensions of each subkey (torch.Tensor): (n_freqs, 2*n_harmonics, 2*n_harmonics)) Scattering matrix for the entire structure.
-                - 'smat_layers': (Dict (subkeys: 'S11', 'S12', 'S21', 'S22'), dimensions of each subkey (torch.Tensor): (n_freqs, 2*n_harmonics, 2*n_harmonics)) Scattering matrices for individual layers.
-                - 'rx', 'ry', 'rz': (torch.Tensor), dimensions: (n_freqs, kdim[0], kdim[1]) Reflection field components in x, y, z directions.
-                - 'tx', 'ty', 'tz': (torch.Tensor), dimensions: (n_freqs, kdim[0], kdim[1]) Transmission field components in x, y, z directions.
-                - 'RDE': (torch.Tensor), dimensions: (n_freqs, kdim[0], kdim[1]) Reflection diffraction efficiencies for each diffraction order.
-                - 'TDE': (torch.Tensor), dimensions: (n_freqs, kdim[0], kdim[1]) Transmission diffraction efficiencies for each diffraction order.
-                - 'REF': (torch.Tensor), dimensions: (n_freqs) Total reflection efficiencies for each wavelength.
-                - 'TRN': (torch.Tensor), dimensions: (n_freqs) Total transmission efficiencies for each wavelength.
-                - 'kzref': (torch.Tensor), dimensions: (n_freqs, kdim[0]*kdim[1]) z-components of k-vectors in reflection region.
-                - 'kztrn': (torch.Tensor), dimensions: (n_freqs, kdim[0]*kdim[1]) z-components of k-vectors in transmission region.
-                - 'kinc': (torch.Tensor), dimensions: (n_freqs, 3) Incident k-vector components.
-                - 'kx': (torch.Tensor), dimensions: (kdim[0], kdim[1]) x-components of k-vectors.
-                - 'ky': (torch.Tensor), dimensions: (kdim[0], kdim[1]) y-components of k-vectors.
+            SolverResults: A dataclass containing the solution results with these main attributes:
+                - reflection: Total reflection efficiency for each wavelength
+                - transmission: Total transmission efficiency for each wavelength
+                - reflection_diffraction: Reflection efficiencies for each diffraction order
+                - transmission_diffraction: Transmission efficiencies for each diffraction order
+                - reflection_field: Field components (x, y, z) in reflection region
+                - transmission_field: Field components (x, y, z) in transmission region
+                - structure_matrix: Scattering matrix for the entire structure
+                - wave_vectors: Wave vector components (kx, ky, kinc, kzref, kztrn)
+
+                The results also provide helper methods for extracting specific diffraction orders
+                and analyzing propagating modes.
         
         Examples:
-            Basic usage:
-            
-            >>> import numpy as np
-            >>> from torchrdit.solver import create_solver
-            >>> from torchrdit.constants import Algorithm
-            >>> 
-            >>> # Create a solver and set up structure
-            >>> solver = create_solver(algorithm=Algorithm.RCWA)
-            >>> # ... add materials and layers here ...
-            >>> 
-            >>> # Define source with normal incidence and TE polarization
-            >>> source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
-            >>> 
-            >>> # Solve and get results
-            >>> result = solver.solve(source)
-            >>> print(f"Reflection: {result['REF'][0].item():.4f}") # reflection efficiency of the first wavelength
-            >>> print(f"Transmission: {result['TRN'][0].item():.4f}") # transmission efficiency of the first wavelength
-            
-            Gradient-based optimization:
-            
-            >>> import torch
-            >>> 
-            >>> # Create a mask parameter with gradients enabled
-            >>> mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
-            >>> mask = mask.to(torch.float32)
-            >>> mask.requires_grad = True
-            >>> 
-            >>> # Configure the patterned layer with the mask
-            >>> solver.update_er_with_mask(mask=mask, layer_index=0)
-            >>> 
-            >>> # Solve and compute gradient to maximize transmission
-            >>> result = solver.solve(source)
-            >>> (-result['TRN'][0]).backward()  # Maximize transmission
-            >>> 
-            >>> # Access gradients for optimization
-            >>> grad = mask.grad
+        ```python
+        import numpy as np
+        import torch
+        from torchrdit.solver import create_solver
+        from torchrdit.constants import Algorithm
+        
+        # Create a solver and set up structure
+        solver = create_solver(algorithm=Algorithm.RCWA)
+        # ... add materials and layers here ...
+        
+        # Define source with normal incidence and TE polarization
+        source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+        
+        # Solve and get results
+        result = solver.solve(source) # SolverResults object
+        print(f"Reflection: {result.reflection[0].item():.4f}")  # reflection efficiency of the first wavelength
+        print(f"Transmission: {result.transmission[0].item():.4f}")  # transmission efficiency of the first wavelength
+        
+        # Access specific diffraction orders
+        zero_order_efficiency = result.get_order_transmission_efficiency(0, 0)
+        
+        # Extract field components for zero-order
+        tx, ty, tz = result.get_zero_order_transmission()
+        rx, ry, rz = result.get_zero_order_reflection()
+        
+        # Calculate field amplitudes and phases
+        tx_amplitude = torch.abs(tx[0])  # Amplitude of x component (first wavelength)
+        tx_phase = torch.angle(tx[0])    # Phase in radians
+        
+        # Convert phase to degrees
+        tx_phase_degrees = tx_phase * 180 / np.pi
+        
+        # Calculate phase difference between field components
+        phase_diff = torch.angle(tx[0]) - torch.angle(ty[0])
+        
+        # Get all available diffraction orders
+        all_orders = result.get_all_diffraction_orders()
+        
+        # Find propagating orders for specific wavelength
+        propagating = result.get_propagating_orders(wavelength_idx=0)
+        
+        # Access scattering matrix components
+        s11 = result.structure_matrix.S11  # shape: (n_wavelengths, 2*n_harmonics, 2*n_harmonics)
+        
+        # Access k-vectors information
+        kx = result.wave_vectors.kx
+        ky = result.wave_vectors.ky
+        kzref = result.wave_vectors.kzref
+        ```
+        
+        Gradient-based optimization:
+        ```python
+        import torch
+        
+        # Create a mask parameter with gradients enabled
+        mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
+        mask = mask.to(torch.float32)
+        mask.requires_grad = True
+        
+        # Configure the patterned layer with the mask
+        solver.update_er_with_mask(mask=mask, layer_index=0)
+        
+        # Solve and compute gradient to maximize transmission
+        result = solver.solve(source) # SolverResults object
+        (-result.transmission[0]).backward()  # Maximize transmission
+        
+        # Access gradients for optimization
+        grad = mask.grad
+        
+        # Optimize with gradient descent
+        optimizer = torch.optim.Adam([mask], lr=0.01)
+        
+        for i in range(100):
+            optimizer.zero_grad()
+            result = solver.solve(source) # SolverResults object
+            loss = -result.transmission[0]  # Negative for maximization
+            loss.backward()
+            optimizer.step()
+        ```
         
         Note:
             Before calling solve(), you should:
@@ -1451,63 +1513,65 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             ValueError: If the mask dimensions don't match the solver's real-space dimensions.
             KeyError: If the specified background material doesn't exist in the material list.
             
-        Example:
-            ```python
-            # Basic usage: Create a binary mask for a simple grating pattern
-            mask = torch.zeros(512, 512)
-            mask[:, :256] = 1.0  # Half the domain has the foreground material
+        Examples:
+        ```python
+        # Basic usage: Create a binary mask for a simple grating pattern
+        mask = torch.zeros(512, 512)
+        mask[:, :256] = 1.0  # Half the domain has the foreground material
+        
+        # Update layer 1 with the mask, using air as background
+        solver.update_er_with_mask(mask=mask, layer_index=1, bg_material='air')
+        ```
+        
+        Inverse design usage:
+        ```python
+        import torch.nn as nn
+        
+        # Define a simple network to generate a mask
+        class MaskGenerator(nn.Module):
+            def __init__(self, dim=512):
+                super().__init__()
+                self.layers = nn.Sequential(
+                    nn.Linear(2, 128),
+                    nn.ReLU(),
+                    nn.Linear(128, 1),
+                    nn.Sigmoid()  # Output in [0, 1] range
+                )
+                # Create normalized coordinate grid
+                x = torch.linspace(-1, 1, dim)
+                y = torch.linspace(-1, 1, dim)
+                self.X, self.Y = torch.meshgrid(x, y, indexing='ij')
             
-            # Update layer 1 with the mask, using air as background
-            solver.update_er_with_mask(mask=mask, layer_index=1, bg_material='air')
+            def forward(self):
+                # Stack coordinates
+                coords = torch.stack([self.X.flatten(), self.Y.flatten()], dim=1)
+                # Generate mask values
+                mask_flat = self.layers(coords)
+                # Reshape to 2D
+                return mask_flat.reshape(self.X.shape)
+        
+        # Create and use the mask generator
+        mask_gen = MaskGenerator(dim=512).to(device)
+        optimizer = torch.optim.Adam(mask_gen.parameters(), lr=0.001)
+        
+        # Optimization loop
+        for i in range(100):
+            optimizer.zero_grad()
             
-            # Inverse design usage: Using a neural network to generate a mask
-            import torch.nn as nn
+            # Generate mask
+            mask = mask_gen()
             
-            # Define a simple network to generate a mask
-            class MaskGenerator(nn.Module):
-                def __init__(self, dim=512):
-                    super().__init__()
-                    self.layers = nn.Sequential(
-                        nn.Linear(2, 128),
-                        nn.ReLU(),
-                        nn.Linear(128, 1),
-                        nn.Sigmoid()  # Output in [0, 1] range
-                    )
-                    # Create normalized coordinate grid
-                    x = torch.linspace(-1, 1, dim)
-                    y = torch.linspace(-1, 1, dim)
-                    self.X, self.Y = torch.meshgrid(x, y, indexing='ij')
-                
-                def forward(self):
-                    # Stack coordinates
-                    coords = torch.stack([self.X.flatten(), self.Y.flatten()], dim=1)
-                    # Generate mask values
-                    mask_flat = self.layers(coords)
-                    # Reshape to 2D
-                    return mask_flat.reshape(self.X.shape)
+            # Update solver with mask
+            solver.update_er_with_mask(mask, layer_index=1)
             
-            # Create and use the mask generator
-            mask_gen = MaskGenerator(dim=512).to(device)
-            optimizer = torch.optim.Adam(mask_gen.parameters(), lr=0.001)
+            # Solve and calculate loss
+            result = solver.solve(source) # SolverResults object
+            loss = -result.transmission[0]  # Maximize transmission
             
-            # Optimization loop
-            for i in range(100):
-                optimizer.zero_grad()
-                
-                # Generate mask
-                mask = mask_gen()
-                
-                # Update solver with mask
-                solver.update_er_with_mask(mask, layer_index=1)
-                
-                # Solve and calculate loss
-                result = solver.solve(source)
-                loss = -result['T_total'][0]  # Maximize transmission
-                
-                # Backpropagate and update
-                loss.backward()
-                optimizer.step()
-            ```
+            # Backpropagate and update
+            loss.backward()
+            optimizer.step()
+        ```
             
         Note:
             This method only updates the permittivity (epsilon) distribution. To update
@@ -1578,18 +1642,72 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                             layer_index: int,
                             bg_material: str = 'air',
                             method: str = 'FFT') -> None:
-        """update_er_with_mask.
-
-        To update the layer permittivity (or permeability) distribution in a specified layer.
-
+        """Update permittivity in a layer using a mask with external normal vectors.
+        
+        This method is an advanced version of update_er_with_mask that allows you
+        to provide pre-computed normal vectors for Fast Fourier Factorization (FFF).
+        It's particularly useful for complex geometries where normal vectors need
+        to be computed using specialized algorithms or external tools.
+        
+        The method creates a patterned material distribution in the specified layer,
+        where the mask defines the regions of foreground and background materials.
+        It then uses the provided normal vectors for improved accuracy in the
+        Fourier factorization process.
+        
         Args:
-            mask (torch.Tensor): mask, the new binary pattern mask to be updated.
-            layer_index (int): layer_index
-            bg_material (str): bg_material, the background material of the pattern (mask == 0).
-            method (str): method of computing Toeplitz matrix. ['FFT': for all cell type; 'Analytical': only for Cartesian]
-
-        Returns:
-            None:
+            mask (torch.Tensor): Binary pattern mask that defines the material distribution.
+                  Regions with mask=1 use the layer's material, while regions with
+                  mask=0 use the background material. Must match the solver's rdim dimensions.
+                  
+            nv_vectors (tuple): Tuple containing two tensors (norm_vec_x, norm_vec_y) that
+                     represent the x and y components of the normal vectors at material
+                     interfaces. These vectors are used for the FFF algorithm.
+                     
+            layer_index (int): Index of the layer to update. Must be a valid index
+                        in the range 0 to (number of layers - 1).
+                        
+            bg_material (str, optional): Name of the background material to use
+                         where mask=0. Must be a valid material name in the solver's
+                         material list. Default is 'air'.
+                         
+            method (str, optional): Method for computing the Toeplitz matrix:
+                    - 'FFT': Fast Fourier Transform method (works for all cell types)
+                    - 'Analytical': Analytical method (only works for Cartesian cells)
+                    Default is 'FFT'.
+        
+        Examples:
+        ```python
+        import torch
+        import numpy as np
+        from torchrdit.solver import create_solver
+        
+        # Create a solver and add materials
+        solver = create_solver(is_use_FFF=True)  # Enable FFF
+        solver.add_materials(['Si', 'Air'])
+        solver.add_layer('Si', thickness=0.5, is_homogeneous=False)
+        
+        # Create a mask and compute normal vectors externally
+        mask = torch.zeros(512, 512)
+        mask[200:300, 200:300] = 1.0  # Square pattern
+        
+        # Pre-computed normal vectors (would normally come from specialized algorithm)
+        norm_x = torch.zeros_like(mask)
+        norm_y = torch.zeros_like(mask)
+        # ... compute normal vectors at material interfaces ...
+        
+        # Update the layer with the mask and external normal vectors
+        solver.update_er_with_mask_extern_NV(
+            mask=mask,
+            nv_vectors=(norm_x, norm_y),
+            layer_index=0,
+            bg_material='Air'
+        )
+        ```
+        
+        Note:
+            This method is specifically designed for advanced users who need precise
+            control over the Fast Fourier Factorization process. For most applications,
+            the standard update_er_with_mask method is sufficient.
         """
 
         ndim1, ndim2 = mask.size()
@@ -1615,7 +1733,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 self.layer_manager.layers[layer_index].ermat = self._matlib[bg_material].er * (1 - mask_format) + \
                     (er_bg - 1) * mask_format
             else:
-                self.layer_manager.layers[layer_index].ermat = self._matlib[bg_material].er * (1 - mask_format) + \
+                self.layer_manager.layers[layer_index].ermat = self._matlib[bg_material].er[:, None, None] * (1 - mask_format) + \
                 (er_bg - 1) * mask_format
         
         if method == 'Analytical':
@@ -1721,15 +1839,41 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
     def update_layer_thickness(self,
                                layer_index: int,
                                thickness: torch.Tensor):
-        """update_layer_thickness.
-
-        Update the thickness of the specified layer.
-
+        """Update the thickness of a specific layer in the structure.
+        
+        This method allows you to dynamically change the thickness of a layer
+        in the simulation structure. This is particularly useful for:
+        - Parametric sweeps over layer thicknesses
+        - Optimization of layer thicknesses for specific optical responses
+        - Dynamic adjustment of device structures during simulation
+        
+        The thickness parameter can be a regular Tensor or one with gradients 
+        enabled for automatic differentiation in optimization workflows.
+        
         Args:
-            layer_index (int): layer_index
-            thickness (torch.Tensor): thickness
+            layer_index (int): Index of the layer to modify. Must be a valid index
+                        in the range 0 to (number of layers - 1).
+            thickness (torch.Tensor): New thickness value for the layer.
+                        Must be a positive scalar Tensor in the solver's length units.
+                        Can have requires_grad=True for gradient-based optimization.
+        
+        Examples:
+        ```python
+        import torch
+        from torchrdit.solver import create_solver
+        
+        # Create a solver and add some layers
+        solver = create_solver()
+        solver.add_layer(material_name="Si", thickness=torch.tensor(0.5))
+        
+        # Update the thickness of the first layer
+        solver.update_layer_thickness(layer_index=0, thickness=torch.tensor(0.75))
+        
+        # For optimization, use a thickness parameter with gradients enabled
+        thickness_param = torch.tensor(0.5, requires_grad=True)
+        solver.update_layer_thickness(layer_index=0, thickness=thickness_param)
+        ```
         """
-
         self.layer_manager.update_layer_thickness(layer_index=layer_index, thickness=thickness)
         # self.layer_manager.layers[layer_index].is_solved = False
 
@@ -2064,7 +2208,7 @@ class RCWASolver(FourierBaseSolver):
         
         # Define a source and solve
         source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
-        result = solver.solve(source)
+        result = solver.solve(source) # SolverResults object
         ```
     """
     def __init__(self,
@@ -2084,7 +2228,27 @@ class RCWASolver(FourierBaseSolver):
         self._algorithm = RCWAAlgorithm(self)
     
     def set_rdit_order(self, rdit_order):
-        """Set R-DIT order."""
+        """Set the order of the R-DIT algorithm.
+        
+        This method allows you to configure the order of the Rigorous Diffraction
+        Interface Theory algorithm. The R-DIT order affects the numerical stability
+        and accuracy of the solution, especially for thick or high-contrast layers.
+
+        Args:
+            rdit_order (int): The order of the R-DIT algorithm. Higher orders generally
+                       provide better accuracy but may be computationally more expensive.
+        
+        Examples:
+        ```python
+        solver = RCWASolver(
+            lam0=np.array([1.55]), 
+            device='cuda'
+        )
+        
+        # Set RDIT order to 2 for a balance of accuracy and performance
+        solver.set_rdit_order(2)
+        ```
+        """
         self._algorithm.set_rdit_order(rdit_order)
 
 class RDITSolver(FourierBaseSolver):
@@ -2126,27 +2290,27 @@ class RDITSolver(FourierBaseSolver):
         enabling gradient-based optimization for inverse design tasks.
 
     Example:
-        ```python
-        # Create an R-DIT solver
-        solver = RDITSolver(
-            lam0=np.array([1.55]),  # Wavelength in micrometers
-            rdim=[512, 512],        # Real space dimensions
-            kdim=[5, 5],            # Fourier space dimensions
-            device='cuda'           # Use GPU acceleration
-        )
-        
-        # Set R-DIT order (optional)
-        solver.set_rdit_order(2)
-        
-        # Add layers and configure the simulation
-        solver.add_layer(0.5, 'Air')
-        solver.add_layer(0.2, 'Si')
-        solver.add_layer(1.0, 'SiO2')
-        
-        # Define a source and solve
-        source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
-        result = solver.solve(source)
-        ```
+    ```python
+    # Create an R-DIT solver
+    solver = RDITSolver(
+        lam0=np.array([1.55]),  # Wavelength in micrometers
+        rdim=[512, 512],        # Real space dimensions
+        kdim=[5, 5],            # Fourier space dimensions
+        device='cuda'           # Use GPU acceleration
+    )
+    
+    # Set R-DIT order (optional)
+    solver.set_rdit_order(2)
+    
+    # Add layers and configure the simulation
+    solver.add_layer(0.5, 'Air')
+    solver.add_layer(0.2, 'Si')
+    solver.add_layer(1.0, 'SiO2')
+    
+    # Define a source and solve
+    source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+    result = solver.solve(source) # SolverResults object
+    ```
         
     References:
         - Huang et al., "Eigendecomposition-free inverse design of meta-optics devices," 
@@ -2194,10 +2358,10 @@ class RDITSolver(FourierBaseSolver):
             None
             
         Example:
-            ```python
-            solver = RDITSolver(...)
-            solver.set_rdit_order(2)  # Set R-DIT order to 2 for good balance
-            ```
+        ```python
+        solver = RDITSolver(...)
+        solver.set_rdit_order(2)  # Set R-DIT order to 2 for good balance
+        ```
             
         Note:
             The optimal R-DIT order depends on the specific problem. For most
@@ -2209,12 +2373,72 @@ class RDITSolver(FourierBaseSolver):
 
 
 def get_solver_builder():
-    """Get a solver builder for creating a solver with a fluent interface."""
+    """Get a solver builder for creating a solver with a fluent interface.
+    
+    This function returns a new instance of the SolverBuilder class, which provides
+    a fluent interface for configuring and creating solver instances. The builder
+    pattern allows for a more readable and flexible way to specify solver parameters
+    compared to passing all parameters to the constructor at once.
+    
+    Returns:
+        SolverBuilder: A new solver builder instance.
+        
+    Examples:
+    ```python
+    from torchrdit.solver import get_solver_builder
+    
+    # Get a builder and configure it with method chaining
+    builder = get_solver_builder()
+    solver = (builder
+              .with_algorithm("RDIT")
+              .with_wavelengths([1.55])
+              .with_device("cuda")
+              .with_real_dimensions([512, 512])
+              .build())
+    ```
+    
+    See Also:
+        create_solver_from_builder: For an alternative approach using a configuration function.
+    """
     from .builder import SolverBuilder
     return SolverBuilder()
 
 def create_solver_from_builder(builder_config: Callable[['SolverBuilder'], 'SolverBuilder']) -> Union["RCWASolver", "RDITSolver"]: # type: ignore
-    """Create a solver from a builder configuration."""
+    """Create a solver from a builder configuration function.
+    
+    This function provides an alternative way to create and configure a solver
+    using a configuration function that takes a builder and returns a configured
+    builder. This approach can be particularly useful when you want to encapsulate
+    solver configuration logic in reusable functions.
+    
+    Args:
+        builder_config (Callable): A function that takes a SolverBuilder instance,
+                      configures it, and returns the configured builder.
+    
+    Returns:
+        Union[RCWASolver, RDITSolver]: A solver instance configured according
+        to the builder configuration.
+    
+    Examples:
+    ```python
+    from torchrdit.solver import create_solver_from_builder
+    
+    # Define a configuration function
+    def configure_silicon_photonics_solver(builder):
+        return (builder
+                .with_algorithm("RDIT")
+                .with_wavelengths([1.31, 1.55])
+                .with_device("cuda")
+                .with_real_dimensions([512, 512])
+                .with_k_dimensions([7, 7]))
+    
+    # Create a solver using the configuration function
+    solver = create_solver_from_builder(configure_silicon_photonics_solver)
+    ```
+    
+    See Also:
+        get_solver_builder: For direct access to a builder instance.
+    """
     from torchrdit.builder import SolverBuilder
     builder = SolverBuilder()
     builder = builder_config(builder)
