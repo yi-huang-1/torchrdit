@@ -1,5 +1,5 @@
 """
-# Example 4 - Optimization of a guided-mode resonance filter (GMRF)
+# Example - Optimization of a guided-mode resonance filter (GMRF)
 
 This example demonstrates how to optimize a guided-mode resonance filter (GMRF) using 
 differentiable RDIT algorithm in torchrdit. The device consists of a SiO hexagonal 
