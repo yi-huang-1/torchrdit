@@ -416,8 +416,9 @@ mask.requires_grad = True
 results = device.solve(source) # SolverResults object
 
 # Backpropagate to compute gradients
-target_value = results.transmission[0]
-target_value.backward()
+target_transmission = 1.0
+loss = torch.abs(results.transmission[0] - target_transmission)
+loss.backward()
 
 # Access gradients
 gradient = mask.grad
@@ -429,8 +430,19 @@ For more detailed examples, see the [Examples](Examples) section.
 
 def create_examples_page(docs_dir):
     """Create the Examples page for the wiki."""
-    with open(docs_dir / "Examples.md", "w") as f:
-        f.write("""# TorchRDIT Examples
+    # Get the examples directory
+    examples_dir = Path("examples")
+    
+    # Check if examples directory exists
+    examples_exists = examples_dir.exists()
+    example_files = []
+    
+    if examples_exists:
+        # Find all Python example files
+        example_files = sorted([f for f in examples_dir.glob("*.py") if f.is_file()])
+    
+    # Create base examples content
+    content = """# TorchRDIT Examples
 
 This page contains examples showing how to use TorchRDIT for common electromagnetic simulation tasks. The official repository includes many examples in the `examples/` folder that demonstrate different aspects of the library.
 
@@ -612,7 +624,48 @@ for epoch in trange(num_epochs):
     optimizer.step()
 ```
 
-These examples demonstrate the key capabilities of TorchRDIT, including differentiable simulation, optimization, and support for complex geometries and materials.""")
+These examples demonstrate the key capabilities of TorchRDIT, including differentiable simulation, optimization, and support for complex geometries and materials.
+
+## Available Example Files
+
+"""
+
+    # If examples directory exists, add each example with a code block
+    if examples_exists and example_files:
+        for example_file in example_files:
+            example_name = example_file.stem
+            example_content = ""
+            
+            # Read the file content
+            try:
+                with open(example_file, 'r') as f:
+                    example_content = f.read()
+                
+                # Extract docstring (if it exists)
+                docstring = ""
+                if example_content.strip().startswith('"""'):
+                    start = example_content.find('"""') + 3
+                    end = example_content.find('"""', start)
+                    if end > start:
+                        docstring = example_content[start:end].strip()
+                
+                # Add example section
+                content += f"\n### {example_name}\n\n"
+                
+                # Add docstring if available
+                if docstring:
+                    content += f"{docstring}\n\n"
+                
+                # Add code block with the full content (no truncation)
+                content += f"```python\n{example_content}\n```\n"
+                
+            except Exception as e:
+                content += f"\n### {example_name}\n\n**Error loading example: {str(e)}**\n"
+    else:
+        content += "\n**No example files found in the examples directory.**\n"
+
+    with open(docs_dir / "Examples.md", "w") as f:
+        f.write(content)
         print("  -> Created Examples.md")
 
 def create_shapes_page(docs_dir):
