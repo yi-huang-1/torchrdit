@@ -243,7 +243,10 @@ class ShapeGenerator:
         mask = torch.zeros(self.rdim, dtype=self.tfloat, device=device)
         
         # Convert angle to radians
-        angle_rad = angle * torch.pi / 180.0 if not isinstance(angle, torch.Tensor) else angle * torch.pi / 180.0
+        if not isinstance(angle, torch.Tensor):
+            angle_rad = torch.tensor(angle, device=device, dtype=self.tfloat) * torch.pi / 180.0
+        else:
+            angle_rad = angle * torch.pi / 180.0
         
         # Get coordinates relative to center
         x_centered = self.XO - center[0]
@@ -345,7 +348,10 @@ class ShapeGenerator:
         
         # Apply rotation if specified
         if angle is not None:
-            angle_rad = torch.tensor(angle, device=device) * torch.pi / 180.0 if not isinstance(angle, torch.Tensor) else angle * torch.pi / 180.0
+            if not isinstance(angle, torch.Tensor):
+                angle_rad = torch.tensor(angle, device=device, dtype=self.tfloat) * torch.pi / 180.0
+            else:
+                angle_rad = angle * torch.pi / 180.0
             
             cos_theta = torch.cos(angle_rad)
             sin_theta = torch.sin(angle_rad)
@@ -358,8 +364,15 @@ class ShapeGenerator:
         
         # Apply translation if center is provided
         if center is not None:
-            center_x = torch.tensor(center[0], device=device) if not isinstance(center[0], torch.Tensor) else center[0]
-            center_y = torch.tensor(center[1], device=device) if not isinstance(center[1], torch.Tensor) else center[1]
+            if not isinstance(center[0], torch.Tensor):
+                center_x = torch.tensor(center[0], device=device, dtype=self.tfloat)
+            else:
+                center_x = center[0]
+                
+            if not isinstance(center[1], torch.Tensor):
+                center_y = torch.tensor(center[1], device=device, dtype=self.tfloat)
+            else:
+                center_y = center[1]
             
             polygon[:, 0] = polygon[:, 0] + center_x
             polygon[:, 1] = polygon[:, 1] + center_y
