@@ -566,6 +566,8 @@ class Cell3D():
         if isinstance(trn_material, str) and trn_material in self._matlib:
             self.layer_manager.update_trn_layer(material_name=trn_material,
                                                 is_dispersive=self._matlib[trn_material].isdispersive_er)
+        elif trn_material.lower() == 'air': 
+            pass
         else:
             str_rterr = f"No materials named [{trn_material} exists in the material lib.]"
             raise RuntimeError(str_rterr)
@@ -613,6 +615,8 @@ class Cell3D():
         if isinstance(ref_material, str) and ref_material in self._matlib:
             self.layer_manager.update_ref_layer(material_name=ref_material,
                                                 is_dispersive=self._matlib[ref_material].isdispersive_er)
+        elif ref_material.lower() == 'air': 
+            pass
         else:
             str_rterr = f"No materials named [{ref_material} exists in the material lib.]"
             raise RuntimeError(str_rterr)
