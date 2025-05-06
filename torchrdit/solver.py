@@ -1601,7 +1601,9 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         self.layer_manager.layers[layer_index].mask_format = mask_format.to(self.tfloat)
 
-        if bg_material == 'air':
+        if isinstance(bg_material, str) and bg_material.lower() == 'air':
+            self.layer_manager.layers[layer_index].ermat = 1 + (er_bg - 1) * mask_format
+        elif isinstance(bg_material, MaterialClass) and bg_material.name.lower() == 'air':
             self.layer_manager.layers[layer_index].ermat = 1 + (er_bg - 1) * mask_format
         else:
             if self._matlib[bg_material].er.ndim == 0:
@@ -1726,7 +1728,9 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         self.layer_manager.layers[layer_index].mask_format = mask_format.to(self.tfloat)
 
-        if bg_material == 'air':
+        if isinstance(bg_material, str) and bg_material.lower() == 'air':
+            self.layer_manager.layers[layer_index].ermat = 1 + (er_bg - 1) * mask_format
+        elif isinstance(bg_material, MaterialClass) and bg_material.name.lower() == 'air':
             self.layer_manager.layers[layer_index].ermat = 1 + (er_bg - 1) * mask_format
         else:
             if self._matlib[bg_material].er.ndim == 0:
