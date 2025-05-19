@@ -314,7 +314,7 @@ def init_smatrix(shape: Tuple, dtype: torch.dtype, device: Union[str, torch.devi
     
     Args:
         shape: Tuple specifying the dimensions of the S-matrix components.
-              For batch processing, this is typically (batch_size, n_harmonics, n_harmonics).
+              For batch processing, this is typically (batch_size, kdim_0_tims_1, kdim_0_tims_1).
         dtype: PyTorch data type for the matrices (typically torch.complex64 or torch.complex128).
         device: Device to create the tensors on ('cpu' or 'cuda').
                Default is 'cpu'.
@@ -383,7 +383,7 @@ def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64
         have the same batch dimensions.
     """
 
-    # Input dimensions (n_batches, n_freqs, n_harmonics, n_harmonics)
+    # Input dimensions (n_batches, n_freqs, kdim_0_tims_1, kdim_0_tims_1)
     # Construct identity matrix
     if smat_a['S11'].ndim == 3:
         _, harmonic_m, harmonic_n = smat_a['S11'].shape
@@ -634,23 +634,23 @@ def to_diag_util(input_mat: torch.Tensor, kdim: List[int]) -> torch.Tensor:
     operation in electromagnetic simulations when converting material properties or
     field components to matrix form for calculations.
     
-    The function handles both regular harmonics (n_harmonics) and cases where the
-    input represents both polarizations (2*n_harmonics), automatically determining
+    The function handles both regular harmonics (kdim_0_tims_1) and cases where the
+    input represents both polarizations (2*kdim_0_tims_1), automatically determining
     the appropriate size based on the input dimensions.
     
     Args:
         input_mat: Input tensor to be converted to a diagonal matrix. This is typically
-                 a vector of length n_harmonics or 2*n_harmonics, where n_harmonics
+                 a vector of length kdim_0_tims_1 or 2*kdim_0_tims_1, where kdim_0_tims_1
                  is the product of the k-space dimensions.
         kdim: Dimensions in Fourier space as [kheight, kwidth]. These determine
              the number of harmonics used in the calculation.
     
     Returns:
         torch.Tensor: Diagonal matrix with the input values along the diagonal.
-                   If input_mat has shape [..., n_harmonics], the output will have
-                   shape [..., n_harmonics, n_harmonics]. If input_mat has shape
-                   [..., 2*n_harmonics], the output will have shape
-                   [..., 2*n_harmonics, 2*n_harmonics].
+                   If input_mat has shape [..., kdim_0_tims_1], the output will have
+                   shape [..., kdim_0_tims_1, kdim_0_tims_1]. If input_mat has shape
+                   [..., 2*kdim_0_tims_1], the output will have shape
+                   [..., 2*kdim_0_tims_1, 2*kdim_0_tims_1].
     
     Examples:
     ```python
@@ -671,8 +671,8 @@ def to_diag_util(input_mat: torch.Tensor, kdim: List[int]) -> torch.Tensor:
         diagonal matrix, electromagnetic, RCWA, R-DIT, Fourier, harmonics, 
         polarization, matrix construction
     """
-    n_harmonics = kdim[0] * kdim[1]
-    if input_mat.shape[-1] == n_harmonics:
-        return input_mat.unsqueeze(-2) * torch.eye(n_harmonics).to(input_mat.device)
+    kdim_0_tims_1 = kdim[0] * kdim[1]
+    if input_mat.shape[-1] == kdim_0_tims_1:
+        return input_mat.unsqueeze(-2) * torch.eye(kdim_0_tims_1).to(input_mat.device)
     else:
-        return input_mat.unsqueeze(-2) * torch.eye(2 * n_harmonics).to(input_mat.device)
+        return input_mat.unsqueeze(-2) * torch.eye(2 * kdim_0_tims_1).to(input_mat.device)

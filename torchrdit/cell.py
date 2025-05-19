@@ -268,6 +268,10 @@ class Cell3D():
 
         # scaling factor of lengths
         self._lenunit = lengthunit.lower()
+
+        # convert to um if μm is used
+        if self._lenunit == 'μm':
+            self._lenunit = 'um'
         self._len_scale = lengthunit_dict[self._lenunit]
 
         self.layer_manager = LayerManager(lattice_t1=self.lattice_t1,
@@ -430,6 +434,12 @@ class Cell3D():
             if material_name.name not in self._matlib:
                 self.add_materials([material_name])
             material_name = material_name.name
+
+        if not isinstance(thickness, torch.Tensor):
+            try:
+                thickness = torch.tensor(thickness)
+            except:
+                raise ValueError(f"Invalid input thickness [{thickness}]")
 
         if isinstance(material_name, str) and material_name in self._matlib:
             if is_homogeneous:

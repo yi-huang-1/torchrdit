@@ -951,10 +951,10 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             kz_ref_0: kz_ref_0
             kz_trn_0: kz_trn_0
         """
-        n_harmonics = self.kdim[0] * self.kdim[1]
+        n_harmonics_squared = self.kdim[0] * self.kdim[1]
 
-        self.ident_mat_k = torch.eye(n_harmonics, dtype=self.tcomplex, device=self.device)
-        self.ident_mat_k2 = torch.eye(2 * n_harmonics, dtype=self.tcomplex, device=self.device)
+        self.ident_mat_k = torch.eye(n_harmonics_squared, dtype=self.tcomplex, device=self.device)
+        self.ident_mat_k2 = torch.eye(2 * n_harmonics_squared, dtype=self.tcomplex, device=self.device)
         
         # Transform to diagonal matrices
         mat_kx = kx_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
@@ -978,7 +978,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         
         # Set up identity matrices appropriately
         ident_mat = self.ident_mat_k[None, :, :].expand(self.n_freqs, -1, -1)
-        zero_mat = torch.zeros(size=(self.n_freqs, n_harmonics, n_harmonics), 
+        zero_mat = torch.zeros(size=(self.n_freqs, n_harmonics_squared, n_harmonics_squared), 
                             dtype=self.tcomplex, device=self.device)
         
         # Create block matrices
@@ -1033,7 +1033,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 toeplitz_er = self.expand_dims(layer.kermat)
             
             # assuming permeability always non-dispersive
-            # Transform dimensions to (n_freqs, n_harmonics, n_harmonics)
+            # Transform dimensions to (n_freqs, n_harmonics_squared, n_harmonics_squared)
             toeplitz_ur = self.expand_dims(layer.kurmat)
             
             # Solve for all frequencies
@@ -1163,11 +1163,11 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         self.notify_observers("setting_up_matrices")
         matrices = self._setup_common_matrices(kx_0, ky_0, kz_ref_0, kz_trn_0)
         
-        n_harmonics = self.kdim[0] * self.kdim[1]
+        n_harmonics_squared = self.kdim[0] * self.kdim[1]
 
         # Initialize global scattering matrix
         smat_global = init_smatrix(shape=(self.n_freqs,
-                          2*n_harmonics, 2*n_harmonics), dtype=self.tcomplex, device=self.device)
+                          2*n_harmonics_squared, 2*n_harmonics_squared), dtype=self.tcomplex, device=self.device)
 
         smat_layer = {}
 
@@ -1335,7 +1335,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         propagating = result.get_propagating_orders(wavelength_idx=0)
         
         # Access scattering matrix components
-        s11 = result.structure_matrix.S11  # shape: (n_wavelengths, 2*n_harmonics, 2*n_harmonics)
+        s11 = result.structure_matrix.S11  # shape: (n_wavelengths, 2*n_harmonics_squared, 2*n_harmonics_squared)
         
         # Access k-vectors information
         kx = result.wave_vectors.kx
@@ -1929,7 +1929,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
     def expand_dims(self, mat: torch.Tensor) -> Optional[torch.Tensor]:
         """Function that expands the input matrix to a standard output dimension without layer information:
-            (n_freqs, n_harmonics, n_harmonics)
+            (n_freqs, n_harmonics_squared, n_harmonics_squared)
 
         Args:
             mat (torch.Tensor): input tensor matrxi
@@ -1941,7 +1941,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             # The input tensor with dimension (n_freqs)
             ret = mat[:, None, None]
         elif mat.ndim == 2:
-            # The input matrix with dimension (n_harmonics, n_harmonics)
+            # The input matrix with dimension (n_harmonics_squared, n_harmonics_squared)
             ret = mat.unsqueeze(0).repeat(self.n_freqs, 1, 1)
         else:
             raise RuntimeError("Not Listed in the Case")
@@ -2046,7 +2046,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         Returns:
             dict: Dictionary containing calculated fields and efficiencies
         """
-        n_harmonics = self.kdim[0] * self.kdim[1]
+        n_harmonics_squared = self.kdim[0] * self.kdim[1]
         
         # Calculate polarization vector
         norm_vec = torch.tensor([0.0, 0.0, 1.0], dtype=self.tcomplex, device=self.device)
@@ -2100,7 +2100,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         pol_vec = pol_vec / torch.norm(pol_vec, dim=1).unsqueeze(-1)
         
         # Calculate electric field source vector
-        delta = torch.zeros(size=(self.n_freqs, n_harmonics), dtype=self.tcomplex, device=self.device)
+        delta = torch.zeros(size=(self.n_freqs, n_harmonics_squared), dtype=self.tcomplex, device=self.device)
         delta[:, (self.kdim[1] // 2) * self.kdim[0] + (self.kdim[0] // 2)] = 1
         esrc = torch.cat((pol_vec[:, 0].unsqueeze(-1) * delta, pol_vec[:, 1].unsqueeze(-1) * delta), dim=1)
         
@@ -2114,8 +2114,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         cref = smat_global['S11'] @ csrc
         eref = mat_w_ref @ cref
         
-        ref_field_x = eref[:, 0:n_harmonics, :]
-        ref_field_y = eref[:, n_harmonics:2*n_harmonics, :]
+        ref_field_x = eref[:, 0:n_harmonics_squared, :]
+        ref_field_y = eref[:, n_harmonics_squared:2*n_harmonics_squared, :]
         
         # Use matrices from the common setup
         ref_field_z = - matrices['mat_kx_diag'] @ tsolve(to_diag_util(matrices['mat_kz_ref'], self.kdim), ref_field_x) \
@@ -2124,8 +2124,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         # Calculate transmitted fields
         ctrn = smat_global['S21'] @ csrc
         etrn = mat_w_trn @ ctrn
-        trn_field_x = etrn[:, 0:n_harmonics, :]
-        trn_field_y = etrn[:, n_harmonics:2*n_harmonics, :]
+        trn_field_x = etrn[:, 0:n_harmonics_squared, :]
+        trn_field_y = etrn[:, n_harmonics_squared:2*n_harmonics_squared, :]
         trn_field_z = - matrices['mat_kx_diag'] @ tsolve(to_diag_util(matrices['mat_kz_trn'], self.kdim), trn_field_x) \
                         - matrices['mat_ky_diag'] @ tsolve(to_diag_util(matrices['mat_kz_trn'], self.kdim), trn_field_y)
         
