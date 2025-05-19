@@ -825,9 +825,9 @@ class LayerManager:
                     Default is 'FFT'.
         
         Returns:
-            torch.Tensor: Toeplitz matrix with shape (n_harmonics, n_harmonics) or
-                       (batch, n_harmonics, n_harmonics), where 
-                       n_harmonics = nharmonic_1 * nharmonic_2.
+            torch.Tensor: Toeplitz matrix with shape (n_harmonic_product, n_harmonic_product) or
+                       (batch, n_harmonic_product, n_harmonic_product), where 
+                       n_harmonic_product = nharmonic_1 * nharmonic_2.
         
         Raises:
             ValueError: If input_matrix has unexpected dimensions.
@@ -847,10 +847,10 @@ class LayerManager:
         # Computes indices of spatial harmonics
         nharmonic_1 = int(nharmonic_1)
         nharmonic_2 = int(nharmonic_2)
-        n_harmonics = nharmonic_1 * nharmonic_2
+        n_harmonic_product = nharmonic_1 * nharmonic_2
 
-        rows = torch.arange(n_harmonics, dtype = torch.int64, device = input_matrix.device)
-        cols = torch.arange(n_harmonics, dtype = torch.int64, device = input_matrix.device)
+        rows = torch.arange(n_harmonic_product, dtype = torch.int64, device = input_matrix.device)
+        cols = torch.arange(n_harmonic_product, dtype = torch.int64, device = input_matrix.device)
 
         rows, cols = torch.meshgrid(rows, cols, indexing = "ij")
 

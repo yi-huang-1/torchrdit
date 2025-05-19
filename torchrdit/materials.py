@@ -236,7 +236,21 @@ class MaterialClass:
             # Non-dispersive material
             self._isdiedispersive = False
             self._loadeder = None
-            self._er = torch.tensor(permittivity, dtype=torch.complex64)
+            if not isinstance(permittivity, torch.Tensor):
+                try:
+                    if isinstance(permittivity, complex) and permittivity.imag < 0:
+                        permittivity = torch.tensor(permittivity, dtype=torch.complex64)
+                    else:
+                        permittivity = torch.tensor(np.conj(permittivity), dtype=torch.complex64)
+                except:
+                    raise ValueError(f"Invalid input permittivity [{permittivity}]")
+            else:
+                if torch.is_complex(permittivity) and permittivity.imag < 0:
+                    permittivity = torch.tensor(permittivity, dtype=torch.complex64)
+                else:
+                    permittivity = torch.tensor(np.conj(permittivity), dtype=torch.complex64)
+
+            self._er = permittivity
         else:
             # Dispersive material
             self._isdiedispersive = True

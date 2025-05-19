@@ -306,19 +306,19 @@ class RDITAlgorithm(SolverAlgorithm):
         Keywords:
             R-DIT, scattering matrix, eigendecomposition-free, layer calculation, non-homogeneous
         """
-        n_harmonics = kdim[0] * kdim[1]
+        kdim_0_tims_1 = kdim[0] * kdim[1]
 
         smat_layer = {}
 
         # Construct T matrix
         delta_h = k_0[:, None, None] * layer_thickness / 2.0
-        tmat_a_i = torch.eye(2*n_harmonics, 2*n_harmonics).unsqueeze(0).repeat(k_0.shape[0], 1, 1).to(p_mat_i.dtype).to(p_mat_i.device)
-        tmat_b_i = torch.zeros(size=(k_0.shape[0], 2*n_harmonics, 2*n_harmonics)).to(p_mat_i.dtype).to(p_mat_i.device)
-        tmat_c_i = torch.zeros(size=(k_0.shape[0], 2*n_harmonics, 2*n_harmonics)).to(p_mat_i.dtype).to(p_mat_i.device)
-        tmat_d_i = torch.eye(2*n_harmonics, 2*n_harmonics).unsqueeze(0).repeat(k_0.shape[0], 1, 1).to(p_mat_i.dtype).to(p_mat_i.device)
+        tmat_a_i = torch.eye(2*kdim_0_tims_1, 2*kdim_0_tims_1).unsqueeze(0).repeat(k_0.shape[0], 1, 1).to(p_mat_i.dtype).to(p_mat_i.device)
+        tmat_b_i = torch.zeros(size=(k_0.shape[0], 2*kdim_0_tims_1, 2*kdim_0_tims_1)).to(p_mat_i.dtype).to(p_mat_i.device)
+        tmat_c_i = torch.zeros(size=(k_0.shape[0], 2*kdim_0_tims_1, 2*kdim_0_tims_1)).to(p_mat_i.dtype).to(p_mat_i.device)
+        tmat_d_i = torch.eye(2*kdim_0_tims_1, 2*kdim_0_tims_1).unsqueeze(0).repeat(k_0.shape[0], 1, 1).to(p_mat_i.dtype).to(p_mat_i.device)
 
-        p_fcoef = torch.eye(2*n_harmonics, 2*n_harmonics).unsqueeze(0).repeat(k_0.shape[0], 1, 1).to(p_mat_i.dtype).to(p_mat_i.device)
-        q_fcoef = torch.eye(2*n_harmonics, 2*n_harmonics).unsqueeze(0).repeat(k_0.shape[0], 1, 1).to(p_mat_i.dtype).to(p_mat_i.device)
+        p_fcoef = torch.eye(2*kdim_0_tims_1, 2*kdim_0_tims_1).unsqueeze(0).repeat(k_0.shape[0], 1, 1).to(p_mat_i.dtype).to(p_mat_i.device)
+        q_fcoef = torch.eye(2*kdim_0_tims_1, 2*kdim_0_tims_1).unsqueeze(0).repeat(k_0.shape[0], 1, 1).to(p_mat_i.dtype).to(p_mat_i.device)
         
         for irdit_order in range(1, self._rdit_order + 1):
             if (irdit_order % 2) == 0:  # even orders

@@ -2,6 +2,7 @@ from typing import List, Dict, Union, Any, TYPE_CHECKING
 import torch
 import numpy as np
 from .constants import Algorithm, Precision
+from .materials import MaterialClass
 from .utils import create_material
 from .algorithm import SolverAlgorithm
 import os  # Needed for path joining in _create_materials
@@ -88,7 +89,13 @@ def _add_layers(solver: Union["RCWASolver", "RDITSolver"], layers_list: List[Dic
         layers, materials, thickness, solver configuration, layer stack
     """
     for layer in layers_list:
-        material_name = layer["material"]
+        if isinstance(layer["material"], str):
+            material_name = layer["material"]
+        elif isinstance(layer["material"], MaterialClass):
+            material_name = layer["material"].name
+        else:
+            raise ValueError(f"Invalid material type: {type(layer['material'])}")
+
         if isinstance(layer["thickness"], torch.Tensor):
             thickness = layer["thickness"]
         else:
@@ -555,6 +562,16 @@ class SolverBuilder:
         Keywords:
             lattice vectors, unit cell, periodicity, photonic crystal
         """
+        if not isinstance(t1, torch.Tensor):
+            try:
+                t1 = torch.tensor(t1)
+            except:
+                raise ValueError(f"Invalid input t1 [{t1}]")
+        if not isinstance(t2, torch.Tensor):
+            try:
+                t2 = torch.tensor(t2)
+            except:
+                raise ValueError(f"Invalid input t2 [{t2}]")
         self._t1 = t1
         self._t2 = t2
         return self

@@ -398,7 +398,13 @@ For patterned layers, you can use masks to define the geometry:
 
 ```python
 # Create a circular pattern
-circle_mask = device.get_circle_mask(center=[0, 0], radius=0.5)
+from torchrdit.shapes import ShapeGenerator
+
+# Create a shape generator
+shape_generator = ShapeGenerator.from_solver(device)
+
+# Generate a circle mask
+circle_mask = shape_generator.generate_circle_mask(center=[0, 0], radius=0.5)
 
 # Update a layer with the mask
 device.update_er_with_mask(mask=circle_mask, layer_index=0)

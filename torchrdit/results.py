@@ -6,7 +6,7 @@ and transmission coefficients, field components, scattering matrices, and wave
 vectors in a structured, easy-to-use format.
 
 Note:
-    Throughout this module, n_harmonics = kdim[0] * kdim[1], where kdim is the
+    Throughout this module, kdim_0_tims_1 = kdim[0] * kdim[1], where kdim is the
     k-space dimensions used in the simulation.
 
 Classes:
@@ -72,18 +72,18 @@ class ScatteringMatrix:
     characterize the reflection and transmission properties of an electromagnetic structure.
     
     Note:
-        n_harmonics = kdim[0] * kdim[1], where kdim is the k-space dimensions
+        kdim_0_tims_1 = kdim[0] * kdim[1], where kdim is the k-space dimensions
         used in the simulation.
     
     Attributes:
         S11 (torch.Tensor): Reflection coefficient matrix for waves incident from port 1.
-            Shape: (n_freqs, 2*n_harmonics, 2*n_harmonics)
+            Shape: (n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
         S12 (torch.Tensor): Transmission coefficient matrix from port 2 to port 1.
-            Shape: (n_freqs, 2*n_harmonics, 2*n_harmonics)
+            Shape: (n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
         S21 (torch.Tensor): Transmission coefficient matrix from port 1 to port 2.
-            Shape: (n_freqs, 2*n_harmonics, 2*n_harmonics)
+            Shape: (n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
         S22 (torch.Tensor): Reflection coefficient matrix for waves incident from port 2.
-            Shape: (n_freqs, 2*n_harmonics, 2*n_harmonics)
+            Shape: (n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
     
     Examples:
     ```python
@@ -98,10 +98,10 @@ class ScatteringMatrix:
         scattering matrix, S-parameters, S11, S12, S21, S22, reflection, transmission,
         electromagnetic, Fourier harmonics
     """
-    S11: torch.Tensor  # (n_freqs, 2*n_harmonics, 2*n_harmonics)
-    S12: torch.Tensor  # (n_freqs, 2*n_harmonics, 2*n_harmonics)
-    S21: torch.Tensor  # (n_freqs, 2*n_harmonics, 2*n_harmonics)
-    S22: torch.Tensor  # (n_freqs, 2*n_harmonics, 2*n_harmonics)
+    S11: torch.Tensor  # (n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
+    S12: torch.Tensor  # (n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
+    S21: torch.Tensor  # (n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
+    S22: torch.Tensor  # (n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
 
 @dataclass
 class FieldComponents:
@@ -183,7 +183,7 @@ class SolverResults:
     methods for analyzing diffraction orders and extracting specific field components.
     
     Note:
-        n_harmonics = kdim[0] * kdim[1], where kdim is the k-space dimensions
+        kdim_0_tims_1 = kdim[0] * kdim[1], where kdim is the k-space dimensions
         used in the simulation. This relationship appears in the ScatteringMatrix
         component's tensor shapes.
     
