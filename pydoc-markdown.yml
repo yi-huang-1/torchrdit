@@ -1,6 +1,6 @@
 loaders:
   - type: python
-    search_path: [./]
+    search_path: [./src]
 processors:
   - type: filter
     expression: not name.startswith('_') and default()
@@ -25,44 +25,44 @@ renderer:
 docs_directory: wiki
 modules:
   - name: torchrdit
-    source_path: ./
+    source_path: ./src
     output_file: API-Overview.md
   - name: torchrdit.solver
-    source_path: ./
+    source_path: ./src
     output_file: Solver.md
   - name: torchrdit.algorithm
-    source_path: ./
+    source_path: ./src
     output_file: Algorithm.md
   - name: torchrdit.builder
-    source_path: ./
+    source_path: ./src
     output_file: Builder.md
   - name: torchrdit.cell
-    source_path: ./
+    source_path: ./src
     output_file: Cell.md
   - name: torchrdit.materials
-    source_path: ./
+    source_path: ./src
     output_file: Materials.md
   - name: torchrdit.layers
-    source_path: ./
+    source_path: ./src
     output_file: Layers.md
   - name: torchrdit.results
-    source_path: ./
+    source_path: ./src
     output_file: Results-API.md
   - name: torchrdit.constants
-    source_path: ./
+    source_path: ./src
     output_file: Constants-API.md
   - name: torchrdit.material_proxy
-    source_path: ./
+    source_path: ./src
     output_file: MaterialProxy-API.md
   - name: torchrdit.observers
-    source_path: ./
+    source_path: ./src
     output_file: Observers-API.md
   - name: torchrdit.shapes
-    source_path: ./
+    source_path: ./src
     output_file: Shapes-API.md
   - name: torchrdit.utils
-    source_path: ./
+    source_path: ./src
     output_file: Utils.md
   - name: torchrdit.viz
-    source_path: ./
+    source_path: ./src
     output_file: Visualization.md

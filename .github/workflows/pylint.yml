@@ -22,7 +22,8 @@ jobs:
     - name: Install the project and dependencies
       run: |
         uv sync --locked --all-extras --dev
+        uv add pylint --dev
     
     - name: Analysing the code with pylint
       run: |
-        uv run pylint --rcfile=.pylintrc $(git ls-files 'torchrdit/*.py')
+        uv run pylint --rcfile=.pylintrc $(git ls-files 'src/torchrdit/*.py')

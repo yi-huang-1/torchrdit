@@ -443,6 +443,11 @@ def create_examples_page(docs_dir):
     examples_exists = examples_dir.exists()
     example_files = []
     
+    # If examples not found in root, try src directory structure
+    if not examples_exists:
+        examples_dir = Path("src/examples")
+        examples_exists = examples_dir.exists()
+    
     if examples_exists:
         # Find all Python example files
         example_files = sorted([f for f in examples_dir.glob("*.py") if f.is_file()])
