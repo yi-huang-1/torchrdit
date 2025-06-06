@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "torchrdit"
+dynamic = ["version"]
+description = "A PyTorch based package for designing and analyzing optical devices, utilzing the Rigorous Diffraction Interface Theory (R-DIT)."
+authors = [
+    {name = "Yi Huang", email = "yi_huang@student.uml.edu"}
+]
+readme = "README.md"
+license = {text = "GPL-3.0"}
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "torch>=2.5.1",
+    "numpy>=2.2.0",
+    "scipy>=1.15.3",
+    "scikit-image>=0.25.2",
+    "matplotlib>=3.10.3",
+    "tqdm>=4.67.1",
+    "pyyaml>=6.0.2",
+]
+
+
+[project.urls]
+Documentation = "https://github.com/yi-huang-1/torchrdit/wiki"
+Source = "https://github.com/yi-huang-1/torchrdit"
+Tracker = "https://github.com/yi-huang-1/torchrdit/issues"
+
+[tool.hatch.version]
+path = "src/torchrdit/__init__.py"
+
+[tool.uv]
+dev-dependencies = [
+    "build>=1.2.2.post1",
+    "pydoc-markdown>=4.8.2",
+]

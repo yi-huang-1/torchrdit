@@ -45,4 +45,4 @@ from . import results
 from . import observers
 from . import material_proxy
 
-__version__ = "0.1.18"
+__version__ = "0.1.19"

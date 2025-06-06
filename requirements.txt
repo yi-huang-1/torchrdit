@@ -1,7 +1,0 @@
-torch==2.5.1
-torchvision
-tensorboard
-matplotlib
-pytest
-pytest-xdist
-scikit-image

@@ -1,21 +1,30 @@
 name: Deploy to Wiki
+
 on:
   push:
     branches: [main]
+
 permissions:
   contents: write
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.10'
-      - name: Install dependencies
+          version: "0.7.11"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+          python-version: "3.10"
+      
+      - name: Install the project and dependencies
         run: |
-          pip install pydoc-markdown pyyaml
-          pip install -e .
+          uv sync --locked --all-extras --dev
+      
       - name: Generate documentation
         run: |
           mkdir -p wiki
@@ -25,9 +34,10 @@ jobs:
           python -c "import sys, os; print('Working directory:', os.getcwd())" || echo "getcwd failed"
           python -c "import os; print(os.listdir('.'))" || echo "listdir failed"
           # Try to import the module to verify it's available
-          python -c "import torchrdit; print('torchrdit version:', getattr(torchrdit, '__version__', 'unknown'))" || echo "Import torchrdit failed"
+          uv run python -c "import torchrdit; print('torchrdit version:', getattr(torchrdit, '__version__', 'unknown'))" || echo "Import torchrdit failed"
           # Run the documentation generator
-          python generate_docs.py
+          uv run python generate_docs.py
+      
       - name: Deploy to Wiki
         uses: Andrew-Chen-Wang/github-wiki-action@v4
         env:
