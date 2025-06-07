@@ -4,18 +4,19 @@ from .solver import tsolve
 from .utils import EigComplex, to_diag_util
 import math
 
+
 class SolverAlgorithm(ABC):
     """Abstract base class defining the interface for electromagnetic solver algorithms.
-    
+
     This class defines the common interface that all solver algorithm implementations
     must adhere to. It follows the Strategy pattern, allowing different algorithms
     (RCWA and R-DIT) to be used interchangeably with the same solver interface.
-    
+
     Note:
         Users should not instantiate or use these algorithm classes directly.
         Instead, use the SolverBuilder interface which provides a more user-friendly
         way to configure and create solvers with the appropriate algorithm.
-    
+
     Examples:
     ```python
     # Use SolverBuilder to configure and create a solver
@@ -31,55 +32,54 @@ class SolverAlgorithm(ABC):
     print(f"Solver uses: {solver_rdit.algorithm.name}")
     ```
 
-    
+
     Keywords:
         algorithm, solver, electromagnetic, strategy pattern, abstraction
     """
-    
+
     @abstractmethod
     def solve_nonhomo_layer(self, layer_index, p_mat, q_mat, w0_mat, v0_mat):
         """Solve equations for non-homogeneous layer.
-        
+
         This abstract method defines the interface for solving the electromagnetic
         field equations within a non-homogeneous layer. Different algorithm
         implementations (RCWA, R-DIT) will provide different approaches for
         this calculation.
-        
+
         Note:
             This method is called internally by the solver and should not be
             called directly by users.
-        
+
         Args:
             layer_index (int): Index of the layer to solve.
             p_mat (torch.Tensor): P matrix for the layer.
             q_mat (torch.Tensor): Q matrix for the layer.
             w0_mat (torch.Tensor): W0 matrix.
             v0_mat (torch.Tensor): V0 matrix.
-            
+
         Returns:
             dict: Results of the non-homogeneous layer calculation, typically a
             scattering matrix for the layer.
-        
+
         Keywords:
             layer solving, non-homogeneous, electromagnetic, scattering matrix
         """
         pass
-    
+
     @property
     @abstractmethod
     def name(self):
         """Return the name of the algorithm.
-        
+
         This property provides a human-readable identifier for the algorithm.
-        
+
         Returns:
             str: The name of the algorithm (e.g., 'RCWA', 'R-DIT')
-        
+
         Keywords:
             algorithm name, identifier
         """
         pass
-
 
 
 class RCWAAlgorithm(SolverAlgorithm):
@@ -119,36 +119,36 @@ class RCWAAlgorithm(SolverAlgorithm):
     Keywords:
         RCWA, electromagnetic, eigendecomposition, Fourier, Maxwell, scattering
     """
-    
+
     def __init__(self, solver):
         """Initialize the RCWA algorithm instance.
-        
+
         Args:
             solver: Reference to the parent solver that will use this algorithm.
         """
         self.solver = solver
         self._rdit_order = 2  # Default value
-    
+
     @property
     def name(self):
         """Return the name of the algorithm.
-        
+
         Returns:
             str: The name of the algorithm ('RCWA')
         """
         return "RCWA"
-    
+
     def solve_nonhomo_layer(self, layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, kdim, k_0, **kwargs):
         """RCWA implementation for solving non-homogeneous layer.
-        
+
         This method implements the traditional approach for calculating the scattering
         matrix of a non-homogeneous layer using eigenmode decomposition in the
         Rigorous Coupled Wave Analysis (RCWA) algorithm.
-        
+
         Note:
             This method is called internally by the solver and should not be
             called directly by users.
-        
+
         Args:
             layer_thickness (float): Thickness of the layer.
             p_mat_i (torch.Tensor): P matrix for the layer.
@@ -158,11 +158,11 @@ class RCWAAlgorithm(SolverAlgorithm):
             kdim (list): Dimensions in k-space [kheight, kwidth].
             k_0 (torch.Tensor): Wave number.
             **kwargs: Additional parameters.
-            
+
         Returns:
             dict: Dictionary containing the scattering matrix for the layer
                  with keys 'S11', 'S12', 'S21', 'S22'.
-        
+
         Keywords:
             RCWA, scattering matrix, eigenmode, layer calculation, non-homogeneous
         """
@@ -172,10 +172,8 @@ class RCWAAlgorithm(SolverAlgorithm):
 
         inv_dmat_lam_i = to_diag_util(1 / torch.sqrt(mat_lam_i), kdim)
 
-
         mat_v_i = q_mat_i @ mat_w_i @ inv_dmat_lam_i
-        mat_x_i = torch.linalg.matrix_exp(to_diag_util(- torch.sqrt(mat_lam_i) * k_0[:, None] \
-            * layer_thickness, kdim))
+        mat_x_i = torch.linalg.matrix_exp(to_diag_util(-torch.sqrt(mat_lam_i) * k_0[:, None] * layer_thickness, kdim))
 
         # Calculate Layer Scattering Matrix
         mat_a_i = tsolve(mat_w_i, mat_w0) + tsolve(mat_v_i, mat_v0)
@@ -184,14 +182,13 @@ class RCWAAlgorithm(SolverAlgorithm):
         mat_xb_i = mat_x_i @ mat_b_i
         mat_d_i = mat_a_i - mat_xb_i @ tsolve(mat_a_i, mat_x_i) @ mat_b_i
 
-        smat_layer['S11'] = tsolve(
-            mat_d_i, mat_xb_i @ tsolve(mat_a_i, mat_x_i) @ mat_a_i - mat_b_i)
-        smat_layer['S12'] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tsolve(mat_a_i, mat_b_i))
-        smat_layer['S21'] = smat_layer['S12']
-        smat_layer['S22'] = smat_layer['S11']
+        smat_layer["S11"] = tsolve(mat_d_i, mat_xb_i @ tsolve(mat_a_i, mat_x_i) @ mat_a_i - mat_b_i)
+        smat_layer["S12"] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tsolve(mat_a_i, mat_b_i))
+        smat_layer["S21"] = smat_layer["S12"]
+        smat_layer["S22"] = smat_layer["S11"]
 
         return smat_layer
-    
+
     def set_rdit_order(self, rdit_order):
         """Set R-DIT order for compatibility with RDITAlgorithm.
         
@@ -256,39 +253,39 @@ class RDITAlgorithm(SolverAlgorithm):
     Keywords:
         R-DIT, electromagnetic, eigendecomposition-free, optimization, speedup, scattering
     """
-    
+
     def __init__(self, solver):
         """Initialize the R-DIT algorithm instance.
-        
+
         Args:
             solver: Reference to the parent solver that will use this algorithm.
         """
         self.solver = solver
         self._rdit_order = 10  # Default value
-    
+
     @property
     def name(self):
         """Return the name of the algorithm.
-        
+
         Returns:
             str: The name of the algorithm ('R-DIT')
-        
+
         Keywords:
             algorithm name, R-DIT, identifier
         """
         return "R-DIT"
-    
+
     def solve_nonhomo_layer(self, layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, kdim, k_0, **kwargs):
         """R-DIT implementation for solving non-homogeneous layer.
-        
+
         This method implements the eigendecomposition-free approach for calculating
         the scattering matrix of a non-homogeneous layer using the Rigorous Diffraction
         Interface Theory algorithm.
-        
+
         Note:
             This method is called internally by the solver and should not be
             called directly by users.
-        
+
         Args:
             layer_thickness (float): Thickness of the layer.
             p_mat_i (torch.Tensor): P matrix for the layer.
@@ -298,11 +295,11 @@ class RDITAlgorithm(SolverAlgorithm):
             kdim (list): Dimensions in k-space [kheight, kwidth].
             k_0 (torch.Tensor): Wave number.
             **kwargs: Additional parameters.
-            
+
         Returns:
             dict: Dictionary containing the scattering matrix for the layer
                  with keys 'S11', 'S12', 'S21', 'S22'.
-        
+
         Keywords:
             R-DIT, scattering matrix, eigendecomposition-free, layer calculation, non-homogeneous
         """
@@ -312,14 +309,42 @@ class RDITAlgorithm(SolverAlgorithm):
 
         # Construct T matrix
         delta_h = k_0[:, None, None] * layer_thickness / 2.0
-        tmat_a_i = torch.eye(2*kdim_0_tims_1, 2*kdim_0_tims_1).unsqueeze(0).repeat(k_0.shape[0], 1, 1).to(p_mat_i.dtype).to(p_mat_i.device)
-        tmat_b_i = torch.zeros(size=(k_0.shape[0], 2*kdim_0_tims_1, 2*kdim_0_tims_1)).to(p_mat_i.dtype).to(p_mat_i.device)
-        tmat_c_i = torch.zeros(size=(k_0.shape[0], 2*kdim_0_tims_1, 2*kdim_0_tims_1)).to(p_mat_i.dtype).to(p_mat_i.device)
-        tmat_d_i = torch.eye(2*kdim_0_tims_1, 2*kdim_0_tims_1).unsqueeze(0).repeat(k_0.shape[0], 1, 1).to(p_mat_i.dtype).to(p_mat_i.device)
+        tmat_a_i = (
+            torch.eye(2 * kdim_0_tims_1, 2 * kdim_0_tims_1)
+            .unsqueeze(0)
+            .repeat(k_0.shape[0], 1, 1)
+            .to(p_mat_i.dtype)
+            .to(p_mat_i.device)
+        )
+        tmat_b_i = (
+            torch.zeros(size=(k_0.shape[0], 2 * kdim_0_tims_1, 2 * kdim_0_tims_1)).to(p_mat_i.dtype).to(p_mat_i.device)
+        )
+        tmat_c_i = (
+            torch.zeros(size=(k_0.shape[0], 2 * kdim_0_tims_1, 2 * kdim_0_tims_1)).to(p_mat_i.dtype).to(p_mat_i.device)
+        )
+        tmat_d_i = (
+            torch.eye(2 * kdim_0_tims_1, 2 * kdim_0_tims_1)
+            .unsqueeze(0)
+            .repeat(k_0.shape[0], 1, 1)
+            .to(p_mat_i.dtype)
+            .to(p_mat_i.device)
+        )
 
-        p_fcoef = torch.eye(2*kdim_0_tims_1, 2*kdim_0_tims_1).unsqueeze(0).repeat(k_0.shape[0], 1, 1).to(p_mat_i.dtype).to(p_mat_i.device)
-        q_fcoef = torch.eye(2*kdim_0_tims_1, 2*kdim_0_tims_1).unsqueeze(0).repeat(k_0.shape[0], 1, 1).to(p_mat_i.dtype).to(p_mat_i.device)
-        
+        p_fcoef = (
+            torch.eye(2 * kdim_0_tims_1, 2 * kdim_0_tims_1)
+            .unsqueeze(0)
+            .repeat(k_0.shape[0], 1, 1)
+            .to(p_mat_i.dtype)
+            .to(p_mat_i.device)
+        )
+        q_fcoef = (
+            torch.eye(2 * kdim_0_tims_1, 2 * kdim_0_tims_1)
+            .unsqueeze(0)
+            .repeat(k_0.shape[0], 1, 1)
+            .to(p_mat_i.dtype)
+            .to(p_mat_i.device)
+        )
+
         for irdit_order in range(1, self._rdit_order + 1):
             if (irdit_order % 2) == 0:  # even orders
                 p_fcoef = p_fcoef @ q_mat_i
@@ -349,12 +374,12 @@ class RDITAlgorithm(SolverAlgorithm):
         mat_yyi = mat_xx1 - mat_xx2
         mat_zzi = mat_xx1 + mat_xx2
 
-        smat_layer['S11'] = mat_yyi / 2.0
-        smat_layer['S12'] = mat_zzi / 2.0
-        smat_layer['S21'] = smat_layer['S12']
-        smat_layer['S22'] = smat_layer['S11']
+        smat_layer["S11"] = mat_yyi / 2.0
+        smat_layer["S12"] = mat_zzi / 2.0
+        smat_layer["S21"] = smat_layer["S12"]
+        smat_layer["S22"] = smat_layer["S11"]
         return smat_layer
-    
+
     def set_rdit_order(self, rdit_order):
         """Set the order of the R-DIT algorithm.
         
