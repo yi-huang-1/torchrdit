@@ -1,0 +1,15 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "TorchRDIT",
+  "description": "TorchRDIT is an advanced software package designed for the inverse design of meta-optics devices, utilizing an eigendecomposition-free implementation of Rigorous Diffraction Interface Theory (R-DIT)",
+  "folders": ["wiki"],
+  "excludeFolders": ["src", "materials", "examples"],
+  "excludeFiles": [],
+  "rules": [],
+  "previousVersions": [
+    {
+      "tag": "0.1.19",
+      "title": "version 0.1.19"
+    }
+  ]
+}

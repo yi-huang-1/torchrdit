@@ -1,0 +1,25 @@
+# TorchRDIT Docs
+
+- [Home](Home)
+- User Guide
+  - [Getting Started](Getting-Started)
+  - [Examples](Examples)
+    - [Basic Usage](Examples#demo-01-basic-usage)
+    - [Parametric Sweeps](Examples#demo-02-parametric-sweeps)
+    - [Dispersive Materials](Examples#demo-03-dispersive-materials)
+    - [Performance](Examples#demo-04-performance-benchmark)
+- API Reference
+  - [Overview](API-Overview)
+  - [Algorithm](Algorithm)
+  - [Builder](Builder)
+  - [Cell](Cell)
+  - [Constants](Constants)
+  - [Layers](Layers)
+  - [Materials](Materials)
+  - [MaterialProxy](MaterialProxy)
+  - [Observers](Observers)
+  - [Results](Results)
+  - [Shapes](Shapes)
+  - [Solver](Solver)
+  - [Utils](Utils)
+  - [Visualization](Visualization)
