@@ -1,4 +1,12 @@
-"""TorchRDIT: GPU-accelerated electromagnetic solver for meta-optics design.
+# Table of Contents
+
+* [torchrdit](#torchrdit)
+
+<a id="torchrdit"></a>
+
+# torchrdit
+
+TorchRDIT: GPU-accelerated electromagnetic solver for meta-optics design.
 
 TorchRDIT is an advanced software package designed for the inverse design of
 meta-optics devices, utilizing an eigendecomposition-free implementation of
@@ -30,6 +38,4 @@ For more information, see:
   Opt. Express 32, 13986-13997 (2024)
 - Huang et al., "Inverse Design of Photonic Structures Using Automatic Differentiable
   Rigorous Diffraction Interface Theory," CLEO (2023)
-"""
 
-__version__ = "0.1.20"

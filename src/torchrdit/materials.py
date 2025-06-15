@@ -246,7 +246,7 @@ class MaterialClass:
                     raise ValueError(f"Invalid input permittivity [{permittivity}]: {str(e)}")
             else:
                 if torch.is_complex(permittivity) and permittivity.imag < 0:
-                    permittivity = torch.tensor(permittivity, dtype=torch.complex64)
+                    permittivity = permittivity.detach().clone().to(dtype=torch.complex64)
                 else:
                     permittivity = torch.tensor(np.conj(permittivity), dtype=torch.complex64)
 

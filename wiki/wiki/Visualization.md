@@ -1,0 +1,275 @@
+# Table of Contents
+
+* [torchrdit.viz](#torchrdit.viz)
+  * [plot2d](#torchrdit.viz.plot2d)
+  * [plot\_layer](#torchrdit.viz.plot_layer)
+  * [display\_fitted\_permittivity](#torchrdit.viz.display_fitted_permittivity)
+
+<a id="torchrdit.viz"></a>
+
+# torchrdit.viz
+
+Visualization module for TorchRDIT electromagnetic simulations.
+
+This module provides functions for visualizing simulation results, material properties,
+and field distributions in TorchRDIT. It includes tools for:
+
+1. Plotting 2D field distributions (electric fields, magnetic fields)
+2. Visualizing material property distributions in layers
+3. Displaying dispersive material properties
+4. Analyzing fitted dispersive material models
+
+The visualization functions in this module work with matplotlib to create
+publication-quality figures for analyzing simulation results and understanding
+the behavior of electromagnetic fields in complex structures.
+
+Key functions:
+- plot2d: General-purpose function for plotting 2D data with customizable options
+- plot_layer: Visualize the permittivity distribution in a specific layer
+- display_fitted_permittivity: Plot fitted dispersive material properties in a simulation
+- display_dispersive_profile: Visualize raw dispersive material data
+
+All functions return matplotlib objects that can be further customized as needed.
+
+Keywords:
+    visualization, plotting, matplotlib, field distribution, permittivity,
+    material properties, dispersive materials, electromagnetic simulation
+
+<a id="torchrdit.viz.plot2d"></a>
+
+#### plot2d
+
+```python
+def plot2d(data: Any,
+           layout: Any,
+           func="abs",
+           outline=None,
+           fig_ax=None,
+           cbar=True,
+           cmap="magma",
+           outline_alpha=0.5,
+           title="",
+           labels=("x", "y"))
+```
+
+Create a 2D visualization of electromagnetic field data or material distributions.
+
+This function generates a 2D plot of field data or material properties (like
+permittivity) using matplotlib's pcolormesh. It handles both real and complex data,
+applying the specified function (abs, real, imag) for visualization. The function
+can also overlay an outline on the plot to highlight structural boundaries.
+
+**Arguments**:
+
+- `data` - 2D data to plot (torch.Tensor or numpy.ndarray). Can be complex-valued.
+  For field data, this is typically the electric or magnetic field.
+  For material data, this is typically the permittivity distribution.
+- `layout` - Tuple of mesh grid coordinates (X, Y) defining the spatial coordinates
+  for each point in the data. Should be obtained from sim.get_layout()
+  or similar function.
+- `func` - Function to apply to the data for visualization if the data is complex.
+  Options are 'abs' (magnitude), 'real' (real part), 'imag' (imaginary part),
+  'log10' (log scale), or other numpy/torch functions.
+  Default is 'abs'.
+- `outline` - Optional binary mask (0s and 1s) to overlay as an outline on the plot.
+  This is useful for highlighting boundaries between different materials.
+  Default is None (no outline).
+- `fig_ax` - Matplotlib figure and axis to use for plotting. If None, a new
+  figure and axis will be created.
+  Default is None.
+- `cbar` - Whether to include a colorbar with the plot.
+  Default is True.
+- `cmap` - Matplotlib colormap to use for the data visualization.
+  Default is 'magma'.
+- `outline_alpha` - Transparency of the outline overlay (0-1).
+  Default is 0.5.
+- `title` - Title for the plot.
+  Default is '' (no title).
+- `labels` - Tuple of (x-axis label, y-axis label).
+  Default is ('x', 'y').
+  
+
+**Returns**:
+
+- `matplotlib.axes.Axes` - The matplotlib axes object containing the plot,
+  allowing for further customization if needed.
+  
+
+**Examples**:
+
+```python
+from torchrdit.solver import create_solver
+from torchrdit.viz import plot2d
+import matplotlib.pyplot as plt
+
+# Create a solver
+solver = create_solver()
+# Plot the real part of the electric field distribution
+x_grid, y_grid = solver.get_layout()
+results = solver.solve(solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0))
+e_field = results['tx']  # Transmission field x-component
+
+fig, ax = plt.subplots(figsize=(8, 6))
+plot2d(data=e_field,
+        layout=(x_grid, y_grid),
+        func='real',
+        cmap='RdBu_r',
+        title='Transmission Field (X) Distribution',
+        labels=('x (μm)', 'y (μm)'))
+plt.show()
+```
+  
+  Keywords:
+  visualization, plotting, field distribution, color map, electromagnetic,
+  pcolormesh, complex data, contour, outline, colorbar, 2D plot
+
+<a id="torchrdit.viz.plot_layer"></a>
+
+#### plot\_layer
+
+```python
+def plot_layer(sim,
+               layer_index: int = 0,
+               frequency_index: int = 0,
+               fig_ax=None,
+               func="real",
+               cmap="BuGn",
+               labels=("x", "y"),
+               title="")
+```
+
+Visualize the permittivity distribution of a specific layer in the simulation.
+
+This function creates a 2D plot of the permittivity (ε) distribution within a
+specified layer of the simulation structure. For dispersive materials, the
+permittivity at a specific frequency is plotted.
+
+**Arguments**:
+
+- `sim` - A simulation object (typically a FourierBaseSolver instance) that
+  contains the layer structure to be visualized.
+- `layer_index` - Index of the layer to plot (0-based indexing).
+  Default is 0 (first layer).
+- `frequency_index` - Index of the frequency to use for dispersive materials.
+  Only relevant for frequency-dependent (dispersive) materials.
+  Default is 0 (first frequency).
+- `fig_ax` - Matplotlib figure and axis to use for plotting. If None, a new
+  figure and axis will be created. Default is None.
+- `func` - Function to apply to the permittivity data before plotting.
+  Options include 'real', 'imag', 'abs', 'log10', etc.
+  Default is 'real' (plot real part of permittivity).
+- `cmap` - Matplotlib colormap to use for the plot.
+  Default is 'BuGn'.
+- `labels` - Tuple of (x-axis label, y-axis label).
+  Default is ('x', 'y').
+- `title` - Title for the plot. If empty, a default title with layer information
+  will be used. Default is ''.
+  
+
+**Returns**:
+
+- `matplotlib.axes.Axes` - The matplotlib axes object containing the plot,
+  allowing for further customization if needed.
+  
+
+**Examples**:
+
+```python
+# Create a simulation with multiple layers
+solver = create_solver(algorithm=Algorithm.RDIT)
+solver.add_layer(material_name='silicon', thickness=torch.tensor(0.2))
+solver.add_layer(material_name='sio2', thickness=torch.tensor(0.3))
+
+# Plot the permittivity distribution of the second layer
+fig, ax = plt.subplots(figsize=(8, 6))
+plot_layer(solver, layer_index=1, fig_ax=ax,
+            title='SiO2 Layer', labels=('x (μm)', 'y (μm)'))
+plt.show()
+```
+  
+  Keywords:
+  permittivity, layer visualization, material distribution, RCWA, R-DIT,
+  electromagnetic simulation, layer structure, dispersive materials
+
+<a id="torchrdit.viz.display_fitted_permittivity"></a>
+
+#### display\_fitted\_permittivity
+
+```python
+def display_fitted_permittivity(sim, fig_ax=None)
+```
+
+Visualize fitted permittivity for dispersive materials in the simulation.
+
+This function plots the real and imaginary parts of the permittivity for
+dispersive materials in the simulation, showing both the original data points
+and the fitted curves used in the simulation. This is useful for verifying
+the quality of the polynomial fit to the material dispersion data.
+
+The plot includes:
+- Original data points for the real part (ε')
+- Fitted curve for the real part at simulation wavelengths
+- Original data points for the imaginary part (ε")
+- Fitted curve for the imaginary part at simulation wavelengths
+
+**Arguments**:
+
+- `sim` - A simulation object (typically a FourierBaseSolver instance) that
+  contains the dispersive materials to be visualized.
+- `fig_ax` - Matplotlib axis to use for plotting. If None, a new figure and
+  axis will be created. Default is None.
+  
+
+**Returns**:
+
+- `tuple` - A tuple containing (primary_axis, secondary_axis) where:
+  - primary_axis: The main matplotlib axis (for real part)
+  - secondary_axis: The secondary y-axis (for imaginary part)
+  
+
+**Notes**:
+
+  This function automatically detects all dispersive materials in the simulation
+  and plots their fitted permittivity data. If no dispersive materials are found,
+  it prints a message indicating this.
+  
+
+**Examples**:
+
+```python
+from torchrdit.solver import create_solver
+from torchrdit.constants import Algorithm
+from torchrdit.utils import create_material
+from torchrdit.viz import display_fitted_permittivity
+import torch
+import matplotlib.pyplot as plt
+
+# Create a simulation with a dispersive material (e.g., gold)
+solver = create_solver(
+    algorithm=Algorithm.RDIT,
+    lam0=[1.55],
+    lengthunit='um',
+    rdim=[512, 512],
+    kdim=[5, 5],
+    device='cpu'
+)
+gold = create_material(name='gold', dielectric_dispersion=True,
+                        user_dielectric_file='gold_data.txt')
+solver.add_materials([gold])
+solver.add_layer(material_name='gold', thickness=torch.tensor(0.1))
+
+# Visualize the fitted permittivity
+fig, ax = plt.subplots(2, 1, figsize=(10, 6))
+ax1, ax2 = display_fitted_permittivity(solver, fig_ax=ax)
+ax1.set_xlabel('Wavelength (μm)')
+ax1.set_ylabel('Real Part (ε')')
+ax2.set_ylabel('Imaginary Part (ε")')
+plt.title('Gold Permittivity vs Wavelength')
+plt.show()
+```
+  
+  Keywords:
+  dispersive material, permittivity, wavelength dependence, polynomial fitting,
+  material characterization, complex permittivity, optical properties,
+  Drude-Lorentz model, material dispersion
+

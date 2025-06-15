@@ -111,7 +111,11 @@ class ShapeGenerator:
 
         # Check if we're using non-Cartesian coordinates
         self.is_cartesian = torch.allclose(
-            torch.tensor([[self.lattice_t1[0], self.lattice_t2[0]], [self.lattice_t1[1], self.lattice_t2[1]]]),
+            torch.tensor(
+                [[self.lattice_t1[0], self.lattice_t2[0]], [self.lattice_t1[1], self.lattice_t2[1]]],
+                device=device,
+                dtype=self.tfloat,
+            ),
             torch.eye(2, device=device, dtype=self.tfloat),
         )
 
