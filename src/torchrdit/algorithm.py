@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import torch
-from .solver import tsolve
+from torch.linalg import solve as tsolve
 from .utils import EigComplex, to_diag_util
 import math
 
