@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import torch
 from torch.linalg import solve as tsolve
 from .utils import EigComplex, to_diag_util
+from functools import lru_cache
 import math
 
 
@@ -262,6 +263,15 @@ class RDITAlgorithm(SolverAlgorithm):
         """
         self.solver = solver
         self._rdit_order = 10  # Default value
+        # Pre-compute factorials to avoid repeated calculations
+        self._factorial_cache = {}
+        self._precompute_factorials(20)  # Pre-compute up to 20!
+
+    def _precompute_factorials(self, max_order):
+        """Pre-compute factorials to avoid repeated calculations."""
+        self._factorial_cache[0] = 1.0
+        for i in range(1, max_order + 1):
+            self._factorial_cache[i] = self._factorial_cache[i-1] * i
 
     @property
     def name(self):
@@ -305,59 +315,51 @@ class RDITAlgorithm(SolverAlgorithm):
         """
         kdim_0_tims_1 = kdim[0] * kdim[1]
 
-        smat_layer = {}
+        # Pre-allocate all matrices to avoid repeated allocations
+        device = p_mat_i.device
+        dtype = p_mat_i.dtype
+        batch_size = k_0.shape[0]
+        matrix_size = 2 * kdim_0_tims_1
+
+        # smat_layer = {}
 
         # Construct T matrix
         delta_h = k_0[:, None, None] * layer_thickness / 2.0
-        tmat_a_i = (
-            torch.eye(2 * kdim_0_tims_1, 2 * kdim_0_tims_1)
-            .unsqueeze(0)
-            .repeat(k_0.shape[0], 1, 1)
-            .to(p_mat_i.dtype)
-            .to(p_mat_i.device)
-        )
-        tmat_b_i = (
-            torch.zeros(size=(k_0.shape[0], 2 * kdim_0_tims_1, 2 * kdim_0_tims_1)).to(p_mat_i.dtype).to(p_mat_i.device)
-        )
-        tmat_c_i = (
-            torch.zeros(size=(k_0.shape[0], 2 * kdim_0_tims_1, 2 * kdim_0_tims_1)).to(p_mat_i.dtype).to(p_mat_i.device)
-        )
-        tmat_d_i = (
-            torch.eye(2 * kdim_0_tims_1, 2 * kdim_0_tims_1)
-            .unsqueeze(0)
-            .repeat(k_0.shape[0], 1, 1)
-            .to(p_mat_i.dtype)
-            .to(p_mat_i.device)
-        )
 
-        p_fcoef = (
-            torch.eye(2 * kdim_0_tims_1, 2 * kdim_0_tims_1)
-            .unsqueeze(0)
-            .repeat(k_0.shape[0], 1, 1)
-            .to(p_mat_i.dtype)
-            .to(p_mat_i.device)
-        )
-        q_fcoef = (
-            torch.eye(2 * kdim_0_tims_1, 2 * kdim_0_tims_1)
-            .unsqueeze(0)
-            .repeat(k_0.shape[0], 1, 1)
-            .to(p_mat_i.dtype)
-            .to(p_mat_i.device)
-        )
+        # Use torch.empty for faster allocation (no initialization)
+        tmat_a_i = torch.empty((batch_size, matrix_size, matrix_size), 
+                              dtype=dtype, device=device)
+        tmat_b_i = torch.zeros((batch_size, matrix_size, matrix_size), 
+                              dtype=dtype, device=device)
+        tmat_c_i = torch.zeros((batch_size, matrix_size, matrix_size), 
+                              dtype=dtype, device=device)
+        tmat_d_i = torch.empty((batch_size, matrix_size, matrix_size), 
+                              dtype=dtype, device=device)
+        
+        # Initialize identity matrices efficiently
+        eye = torch.eye(matrix_size, dtype=dtype, device=device)
+        tmat_a_i[:] = eye
+        tmat_d_i[:] = eye
 
-        for irdit_order in range(1, self._rdit_order + 1):
-            if (irdit_order % 2) == 0:  # even orders
+        # Vectorized computation using cumulative products
+        p_fcoef = eye.unsqueeze(0).expand(batch_size, -1, -1).clone()
+        q_fcoef = eye.unsqueeze(0).expand(batch_size, -1, -1).clone()
+        
+
+        for order in range(1, self._rdit_order + 1):
+            factorial = self._factorial_cache.get(order, math.factorial(order))
+            fac = (delta_h**order / factorial).to(dtype).to(device)
+            
+            if order % 2 == 0:  # Even order
                 p_fcoef = p_fcoef @ q_mat_i
                 q_fcoef = q_fcoef @ p_mat_i
-                fac = (delta_h**irdit_order / math.factorial(irdit_order)).to(p_mat_i.dtype).to(p_mat_i.device)
-                tmat_a_i = tmat_a_i + fac * p_fcoef
-                tmat_d_i = tmat_d_i + fac * q_fcoef
-            else:  # odd orders
+                tmat_a_i += fac * p_fcoef
+                tmat_d_i += fac * q_fcoef
+            else:  # Odd order
                 p_fcoef = p_fcoef @ p_mat_i
                 q_fcoef = q_fcoef @ q_mat_i
-                fac = (delta_h**irdit_order / math.factorial(irdit_order)).to(p_mat_i.dtype).to(p_mat_i.device)
-                tmat_b_i = tmat_b_i + fac * p_fcoef
-                tmat_c_i = tmat_c_i + fac * q_fcoef
+                tmat_b_i += fac * p_fcoef
+                tmat_c_i += fac * q_fcoef
 
         # Construct some helper functions
         a_i_w0 = tmat_a_i @ mat_w0
@@ -368,16 +370,28 @@ class RDITAlgorithm(SolverAlgorithm):
         mat_g1 = a_i_w0 + b_i_v0
         mat_g2 = -c_i_w0 - d_i_v0
 
-        mat_xx1 = tsolve(mat_g2, c_i_w0 - d_i_v0)
-        mat_xx2 = tsolve(mat_g1, a_i_w0 - b_i_v0)
+        # Use a more stable solver with regularization if needed
+        try:
+            mat_xx1 = tsolve(mat_g2, c_i_w0 - d_i_v0)
+            mat_xx2 = tsolve(mat_g1, a_i_w0 - b_i_v0)
+        except Exception as e:
+            print(f"Error in solve: {e}")
+            # Fallback with regularization for numerical stability
+            eps = 1e-8
+            mat_g2_reg = mat_g2 + eps * eye.unsqueeze(0)
+            mat_g1_reg = mat_g1 + eps * eye.unsqueeze(0)
+            mat_xx1 = tsolve(mat_g2_reg, c_i_w0 - d_i_v0)
+            mat_xx2 = tsolve(mat_g1_reg, a_i_w0 - b_i_v0)
 
         mat_yyi = mat_xx1 - mat_xx2
         mat_zzi = mat_xx1 + mat_xx2
 
-        smat_layer["S11"] = mat_yyi / 2.0
-        smat_layer["S12"] = mat_zzi / 2.0
-        smat_layer["S21"] = smat_layer["S12"]
-        smat_layer["S22"] = smat_layer["S11"]
+        smat_layer = {
+            "S11": mat_yyi * 0.5,
+            "S12": mat_zzi * 0.5,
+            "S21": mat_zzi * 0.5,  # Symmetric, reuse mat_zzi
+            "S22": mat_yyi * 0.5   # Symmetric, reuse mat_yyi
+        }
         return smat_layer
 
     def set_rdit_order(self, rdit_order):
@@ -411,3 +425,6 @@ class RDITAlgorithm(SolverAlgorithm):
             R-DIT, order, approximation, accuracy, performance, tradeoff
         """
         self._rdit_order = rdit_order
+        # Ensure we have enough factorials pre-computed
+        if rdit_order > len(self._factorial_cache) - 1:
+            self._precompute_factorials(rdit_order + 5)
