@@ -21,6 +21,8 @@ jobs:
           version: "0.7.11"
           enable-cache: true
           cache-dependency-glob: "uv.lock"
+      - name: debug
+        run: ls -la unittest/
       
       - name: Install the project
         run: uv sync --locked --all-extras

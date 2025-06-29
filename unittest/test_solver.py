@@ -593,7 +593,7 @@ class TestSolverDispersive:
         dev = (get_solver_builder()
             .with_algorithm(Algorithm.RDIT)
             .with_precision(Precision.DOUBLE)
-            .with_real_dimensions([512, 512])    # Reduced for faster testing
+            .with_real_dimensions([256, 256])    # Reduced for faster testing
             .with_k_dimensions([9, 9])         # Further reduced to avoid matrix size mismatch
             .with_wavelengths(np.array([1540 * self.nm]))  # Just one wavelength for testing
             .with_length_unit('um')
@@ -684,7 +684,7 @@ class TestSolverDispersive:
         dev = (get_solver_builder()
             .with_algorithm(Algorithm.RDIT)
             .with_precision(Precision.DOUBLE)
-            .with_real_dimensions([512, 512])    # Reduced for faster testing
+            .with_real_dimensions([256, 256])    # Reduced for faster testing
             .with_k_dimensions([9, 9])         # Further reduced to avoid matrix size mismatch
             .with_wavelengths(np.array([1540 * self.nm]))  # Just one wavelength for testing
             .with_length_unit('um')
