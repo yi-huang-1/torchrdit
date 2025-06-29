@@ -32,4 +32,4 @@ For more information, see:
   Rigorous Diffraction Interface Theory," CLEO (2023)
 """
 
-__version__ = "0.1.20"
+__version__ = "0.1.21"
