@@ -3,7 +3,7 @@
 ![PyPI - Version](https://img.shields.io/pypi/v/torchrdit)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/torchrdit)
 ![PyPI - License](https://img.shields.io/pypi/l/torchrdit)
-[![Upload Python Package](https://github.com/yi-huang-1/torchrdit/actions/workflows/python-publish.yml/badge.svg)](https://github.com/yi-huang-1/torchrdit/actions/workflows/python-publish.yml)
+[![CI](https://github.com/yi-huang-1/torchrdit/actions/workflows/ci.yml/badge.svg)](https://github.com/yi-huang-1/torchrdit/actions/workflows/ci.yml)
 
 `TorchRDIT` is an advanced software package designed for the inverse design of meta-optics devices, utilizing an eigendecomposition-free implementation of Rigorous Diffraction Interface Theory (R-DIT). It provides a GPU-accelerated and fully differentiable framework powered by PyTorch, enabling the efficient optimization of photonic structures.
 
