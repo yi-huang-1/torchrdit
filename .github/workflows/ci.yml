@@ -35,10 +35,10 @@ jobs:
           args: check
       
       - name: Install project
-        run: uv sync --locked --all-extras
+        run: uv sync --python ${{ matrix.python-version }} --locked --all-extras
       
       - name: Run tests
-        run: uv run pytest
+        run: uv run --python ${{ matrix.python-version }} pytest
   
   # Build artifacts
   build:
@@ -74,8 +74,6 @@ jobs:
       
       - name: Set up environment
         uses: ./.github/actions/setup-env
-        with:
-          python-version: 3.13
       
       - name: Install project with dev dependencies
         run: uv sync --locked --all-extras --dev
