@@ -1,6 +1,11 @@
 name: 'Setup Python Environment'
 description: 'Set up Python and uv for the project'
 
+inputs:
+  python-version:
+    description: 'Python version to use (optional, defaults to .python-version file)'
+    required: false
+
 runs:
   using: 'composite'
   steps:
@@ -11,7 +16,14 @@ runs:
         enable-cache: true
         cache-dependency-glob: "uv.lock"
     
-    - name: Set up Python
+    - name: Set up Python (from matrix)
+      if: ${{ inputs.python-version != '' }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+    
+    - name: Set up Python (from file)
+      if: ${{ inputs.python-version == '' }}
       uses: actions/setup-python@v5
       with:
         python-version-file: ".python-version"
