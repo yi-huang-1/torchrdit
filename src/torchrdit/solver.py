@@ -1101,99 +1101,39 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         return kz_0
 
     def _setup_common_matrices(self, kx_0, ky_0, kz_ref_0, kz_trn_0):
-        """Set up common matrices for both solving methods.
-
-        Args:
-            kx_0: kx_0
-            ky_0: ky_0
-            kz_ref_0: kz_ref_0
-            kz_trn_0: kz_trn_0
-        """
-        n_harmonics_squared = self.kdim[0] * self.kdim[1]
-
-        self.ident_mat_k = torch.eye(n_harmonics_squared, dtype=self.tcomplex, device=self.device)
-        self.ident_mat_k2 = torch.eye(2 * n_harmonics_squared, dtype=self.tcomplex, device=self.device)
-
-        # Transform to diagonal matrices
-        mat_kx = kx_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
-        mat_ky = ky_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
-        mat_kz_ref = kz_ref_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
-        mat_kz_trn = kz_trn_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
-
-        # Calculate derived matrices
-        mat_kx_ky = mat_kx * mat_ky
-        mat_ky_kx = mat_ky * mat_kx
-        mat_kx_kx = mat_kx * mat_kx
-        mat_ky_ky = mat_ky * mat_ky
-
-        mat_kx_diag = to_diag_util(mat_kx, self.kdim)
-        mat_ky_diag = to_diag_util(mat_ky, self.kdim)
-
-        mat_kz = torch.conj(torch.sqrt(1.0 - mat_kx_kx - mat_ky_ky))
-
-        ident_mat_kx_kx = 1.0 - mat_kx_kx
-        ident_mat_ky_ky = 1.0 - mat_ky_ky
-
-        # Set up identity matrices appropriately
-        ident_mat = self.ident_mat_k[None, :, :].expand(self.n_freqs, -1, -1)
-        zero_mat = torch.zeros(
-            size=(self.n_freqs, n_harmonics_squared, n_harmonics_squared), dtype=self.tcomplex, device=self.device
-        )
-
-        # Create block matrices
-        mat_w0 = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
-
-        # Add small epsilon to prevent division by zero when mat_kz is exactly zero
-        inv_mat_lam = 1 / (1j * mat_kz + 1e-12)
-
-        mat_v0 = blockmat2x2(
-            [
-                [
-                    to_diag_util(mat_kx_ky * inv_mat_lam, self.kdim),
-                    to_diag_util(ident_mat_kx_kx * inv_mat_lam, self.kdim),
-                ],
-                [
-                    to_diag_util(-ident_mat_ky_ky * inv_mat_lam, self.kdim),
-                    to_diag_util(-mat_kx_ky * inv_mat_lam, self.kdim),
-                ],
-            ]
-        )
-
-        # Return all matrices that will be needed
-        result = {
-            "mat_kx": mat_kx,
-            "mat_ky": mat_ky,
-            "mat_kz_ref": mat_kz_ref,
-            "mat_kz_trn": mat_kz_trn,
-            "mat_kx_ky": mat_kx_ky,
-            "mat_ky_kx": mat_ky_kx,
-            "mat_kx_kx": mat_kx_kx,
-            "mat_ky_ky": mat_ky_ky,
-            "mat_kx_diag": mat_kx_diag,
-            "mat_ky_diag": mat_ky_diag,
-            "mat_kz": mat_kz,
-            "mat_w0": mat_w0,
-            "mat_v0": mat_v0,
-            "ident_mat": ident_mat,
-            "zero_mat": zero_mat,
-        }
-
-        return result
-
-    def _setup_common_matrices_batched(self, kx_0, ky_0, kz_ref_0, kz_trn_0):
-        """Set up common matrices for batched sources.
+        """Set up common matrices for both single and batched sources.
+        
+        This unified function automatically handles both single source (3D tensors)
+        and batched sources (4D tensors) by detecting the input dimensions.
         
         Args:
-            kx_0, ky_0: k-vectors with shape (n_sources, n_freqs, kdim[0], kdim[1])
-            kz_ref_0, kz_trn_0: kz vectors with same shape
+            kx_0, ky_0: k-vectors with shape:
+                - Single source: (n_freqs, kdim[0], kdim[1])
+                - Batched sources: (n_sources, n_freqs, kdim[0], kdim[1])
+            kz_ref_0, kz_trn_0: kz vectors with same shape as kx_0, ky_0
             
         Returns:
-            Dictionary of matrices with source dimension added
+            Dictionary of matrices with dimensions matching the input:
+                - Single source: No source dimension
+                - Batched sources: With source dimension
         """
-        n_sources = kx_0.shape[0]
+        # Detect if input is batched (4D) or single (3D)
+        is_batched = kx_0.dim() == 4
+        
+        if not is_batched:
+            # Add source dimension for single source to unify processing
+            kx_0 = kx_0.unsqueeze(0)
+            ky_0 = ky_0.unsqueeze(0)
+            kz_ref_0 = kz_ref_0.unsqueeze(0)
+            kz_trn_0 = kz_trn_0.unsqueeze(0)
+            n_sources = 1
+        else:
+            n_sources = kx_0.shape[0]
+        
+        # Now all inputs have shape (n_sources, n_freqs, kdim[0], kdim[1])
         n_harmonics_squared = self.kdim[0] * self.kdim[1]
         
-        # Create identity matrices and expand for batched sources
+        # Create identity matrices
         ident_mat_k = torch.eye(n_harmonics_squared, dtype=self.tcomplex, device=self.device)
         ident_mat_k2 = torch.eye(2 * n_harmonics_squared, dtype=self.tcomplex, device=self.device)
         
@@ -1213,17 +1153,10 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         mat_kx_kx = mat_kx * mat_kx
         mat_ky_ky = mat_ky * mat_ky
         
-        # Create diagonal matrices - need to handle batched dimension
-        # to_diag_util expects (n_freqs, ...) so we need to reshape
-        # Process each source separately for now
-        mat_kx_diag_list = []
-        mat_ky_diag_list = []
-        for i in range(n_sources):
-            mat_kx_diag_list.append(to_diag_util(mat_kx[i], self.kdim))
-            mat_ky_diag_list.append(to_diag_util(mat_ky[i], self.kdim))
-        
-        mat_kx_diag = torch.stack(mat_kx_diag_list, dim=0)  # (n_sources, n_freqs, n_harmonics_squared, n_harmonics_squared)
-        mat_ky_diag = torch.stack(mat_ky_diag_list, dim=0)
+        # VECTORIZED: Direct call to to_diag_util with batched tensors
+        # to_diag_util supports batched inputs through broadcasting
+        mat_kx_diag = to_diag_util(mat_kx, self.kdim)
+        mat_ky_diag = to_diag_util(mat_ky, self.kdim)
         
         mat_kz = torch.conj(torch.sqrt(1.0 - mat_kx_kx - mat_ky_ky))
         
@@ -1245,26 +1178,22 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         # Add small epsilon to prevent division by zero when mat_kz is exactly zero
         inv_mat_lam = 1 / (1j * mat_kz + 1e-12)
         
-        # Process block matrices for each source
-        mat_v0_list = []
-        for i in range(n_sources):
-            mat_v0_i = blockmat2x2(
+        # VECTORIZED: Create block matrix using batched operations
+        # blockmat2x2 works with batched tensors through torch.cat broadcasting
+        mat_v0 = blockmat2x2(
+            [
                 [
-                    [
-                        to_diag_util(mat_kx_ky[i] * inv_mat_lam[i], self.kdim),
-                        to_diag_util(ident_mat_kx_kx[i] * inv_mat_lam[i], self.kdim),
-                    ],
-                    [
-                        to_diag_util(-ident_mat_ky_ky[i] * inv_mat_lam[i], self.kdim),
-                        to_diag_util(-mat_kx_ky[i] * inv_mat_lam[i], self.kdim),
-                    ],
-                ]
-            )
-            mat_v0_list.append(mat_v0_i)
+                    to_diag_util(mat_kx_ky * inv_mat_lam, self.kdim),
+                    to_diag_util(ident_mat_kx_kx * inv_mat_lam, self.kdim),
+                ],
+                [
+                    to_diag_util(-ident_mat_ky_ky * inv_mat_lam, self.kdim),
+                    to_diag_util(-mat_kx_ky * inv_mat_lam, self.kdim),
+                ],
+            ]
+        )
         
-        mat_v0 = torch.stack(mat_v0_list, dim=0)  # (n_sources, n_freqs, 2*n_harmonics_squared, 2*n_harmonics_squared)
-        
-        # Return all matrices that will be needed
+        # Prepare result dictionary
         result = {
             "mat_kx": mat_kx,
             "mat_ky": mat_ky,
@@ -1283,7 +1212,12 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             "zero_mat": zero_mat,
         }
         
+        # Remove source dimension if input was single source
+        if not is_batched:
+            result = {k: v.squeeze(0) for k, v in result.items()}
+        
         return result
+
 
     def _print_tensor_shape(self, name: str, tensor: torch.Tensor) -> None:
         """Print tensor shape if debug_batching is enabled.
@@ -1889,7 +1823,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         
         # Set up matrices for calculation with batched dimensions
         self.notify_observers("setting_up_matrices_batched")
-        matrices = self._setup_common_matrices_batched(kx_0, ky_0, kz_ref_0, kz_trn_0)
+        matrices = self._setup_common_matrices(kx_0, ky_0, kz_ref_0, kz_trn_0)
         
         n_harmonics_squared = self.kdim[0] * self.kdim[1]
         
