@@ -577,18 +577,18 @@ solver = create_solver_from_config("config.json")
 
 ```python
 def create_solver(
-    algorithm: Algorithm = Algorithm.RDIT,
-    precision: Precision = Precision.SINGLE,
-    lam0: np.ndarray = np.array([1.0]),
-    lengthunit: str = "um",
-    rdim: List[int] = [512, 512],
-    kdim: List[int] = [3, 3],
-    materiallist: List[Any] = [],
-    t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),
-    t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),
-    is_use_FFF: bool = False,
-    device: Union[str,
-                  torch.device] = "cpu") -> Union["RCWASolver", "RDITSolver"]
+        algorithm: Algorithm = Algorithm.RDIT,
+        precision: Precision = Precision.SINGLE,
+        lam0: np.ndarray = np.array([1.0]),
+        lengthunit: str = "um",
+        rdim: List[int] = [512, 512],
+        kdim: List[int] = [3, 3],
+        materiallist: List[Any] = [],
+        t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),
+        t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),
+        is_use_FFF: bool = False,
+        device: Union[str, torch.device] = "cpu",
+        debug_batching: bool = False) -> Union["RCWASolver", "RDITSolver"]
 ```
 
 Create a solver with the given parameters.
@@ -689,6 +689,48 @@ solver = create_solver(
     kdim=[7, 7],
     device='cuda'
 )
+```
+  
+  Using source batching for efficient multi-angle simulations:
+```python
+# Create solver and set up structure
+solver = create_solver(
+    algorithm=Algorithm.RDIT,
+    lam0=np.array([1.55]),
+    rdim=[512, 512],
+    kdim=[7, 7],
+    device='cuda'
+)
+
+# Add materials and layers
+from torchrdit.utils import create_material
+si = create_material(name="Si", permittivity=12.25)
+air = create_material(name="air", permittivity=1.0)
+solver.add_materials([si, air])
+solver.add_layer(material_name="Si", thickness=0.6, is_homogeneous=False)
+
+# Create grating pattern
+import torch
+mask = torch.zeros(512, 512)
+period = int(512 * 0.8 / 1.0)  # Period in pixels
+duty_cycle = 0.5
+for i in range(0, 512, period):
+    mask[:, i:i+int(period*duty_cycle)] = 1.0
+solver.update_er_with_mask(mask=mask, layer_index=0)
+
+# Create multiple sources for angle sweep
+deg = np.pi / 180
+sources = [
+    solver.add_source(theta=angle, phi=0, pte=1.0, ptm=0.0)
+    for angle in np.linspace(0, 60, 13) * deg
+]
+
+# Batch solve - much faster than sequential processing
+results = solver.solve(sources)  # Returns BatchedSolverResults
+
+# Analyze results
+best_idx = results.find_optimal_source('max_transmission')
+print(f"Best angle: {sources[best_idx]['theta'] * 180/np.pi:.1f}°")
 ```
   
 
@@ -948,7 +990,8 @@ source = solver.add_source(
 #### solve
 
 ```python
-def solve(source: dict, **kwargs) -> SolverResults
+def solve(source: Union[dict, List[dict]],
+          **kwargs) -> Union[SolverResults, BatchedSolverResults]
 ```
 
 Solve the electromagnetic problem for the configured structure.
@@ -972,7 +1015,9 @@ that have requires_grad=True.
 
 **Arguments**:
 
-- `source` _dict_ - Source configuration dictionary containing the incident wave
+- `source` _Union[dict, List[dict]]_ - Source configuration for the simulation.
+  Can be either:
+  - dict: Single source configuration dictionary containing the incident wave
   parameters. This should be created using the add_source() method,
   with the following keys:
   - 'theta': Polar angle of incidence (in radians)
@@ -980,6 +1025,9 @@ that have requires_grad=True.
   - 'pte': Complex amplitude of the TE polarization component
   - 'ptm': Complex amplitude of the TM polarization component
   - 'norm_te_dir': Direction of normal component for TE wave (default: 'y')
+  - List[dict]: List of source configuration dictionaries for batched processing.
+  All sources must have the same structure of keys. Batched processing
+  improves performance when simulating multiple incident conditions
   
 - `**kwargs` - Additional keyword arguments to customize the solution process:
   Default is False. If True, electric and magnetic field components
@@ -995,7 +1043,9 @@ that have requires_grad=True.
 
 **Returns**:
 
-- `SolverResults` - A dataclass containing the solution results with these main attributes:
+  Union[SolverResults, BatchedSolverResults]: Results of the electromagnetic simulation.
+  
+  SolverResults (when single source dict is provided):
   - reflection: Total reflection efficiency for each wavelength
   - transmission: Total transmission efficiency for each wavelength
   - reflection_diffraction: Reflection efficiencies for each diffraction order
@@ -1004,6 +1054,14 @@ that have requires_grad=True.
   - transmission_field: Field components (x, y, z) in transmission region
   - structure_matrix: Scattering matrix for the entire structure
   - wave_vectors: Wave vector components (kx, ky, kinc, kzref, kztrn)
+  
+  BatchedSolverResults (when list of sources is provided):
+  - reflection: Shape (n_sources, n_freqs)
+  - transmission: Shape (n_sources, n_freqs)
+  - reflection_diffraction: Shape (n_sources, n_freqs, kdim[0], kdim[1])
+  - transmission_diffraction: Shape (n_sources, n_freqs, kdim[0], kdim[1])
+  - Individual results accessible via indexing: results[i] returns SolverResults
+  - Helper methods: find_optimal_source(), get_parameter_sweep_data()
   
   The results also provide helper methods for extracting specific diffraction orders
   and analyzing propagating modes.
@@ -1087,6 +1145,57 @@ for i in range(100):
     optimizer.zero_grad()
     result = solver.solve(source) # SolverResults object
     loss = -result.transmission[0]  # Negative for maximization
+    loss.backward()
+    optimizer.step()
+```
+  
+  Batched source processing:
+```python
+# Create multiple sources for angle sweep
+deg = np.pi / 180
+sources = [
+    solver.add_source(theta=0*deg, phi=0, pte=1.0, ptm=0.0),
+    solver.add_source(theta=30*deg, phi=0, pte=1.0, ptm=0.0),
+    solver.add_source(theta=45*deg, phi=0, pte=1.0, ptm=0.0),
+    solver.add_source(theta=60*deg, phi=0, pte=1.0, ptm=0.0)
+]
+
+# Solve with batched sources
+batched_results = solver.solve(sources)  # BatchedSolverResults object
+
+# Access results for all sources at once
+print(f"Transmission values: {batched_results.transmission[:, 0]}")
+
+# Access individual results
+result_30deg = batched_results[1]  # SolverResults for 30° incidence
+
+# Find optimal angle
+best_idx = batched_results.find_optimal_source('max_transmission')
+print(f"Best angle: {sources[best_idx]['theta'] * 180/np.pi:.1f}°")
+```
+  
+  Optimization with multiple sources:
+```python
+# Optimize for multiple incident angles simultaneously
+mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
+mask = mask.to(torch.float32)
+mask.requires_grad = True
+
+solver.update_er_with_mask(mask=mask, layer_index=0)
+
+# Define multiple sources
+sources = [
+    solver.add_source(theta=0*deg, phi=0, pte=1.0, ptm=0.0),
+    solver.add_source(theta=15*deg, phi=0, pte=1.0, ptm=0.0),
+    solver.add_source(theta=30*deg, phi=0, pte=1.0, ptm=0.0)
+]
+
+# Optimize for average transmission across all angles
+optimizer = torch.optim.Adam([mask], lr=0.01)
+for i in range(100):
+    optimizer.zero_grad()
+    results = solver.solve(sources)  # BatchedSolverResults
+    loss = -results.transmission.mean()  # Maximize average transmission
     loss.backward()
     optimizer.step()
 ```

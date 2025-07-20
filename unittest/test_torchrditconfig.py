@@ -5,6 +5,7 @@ import json
 
 from torchrdit.solver import create_solver_from_config
 from torchrdit.builder import flip_config
+from torchrdit.constants import Algorithm, Precision
 
 class TestTorchrditConfig:
     # units
@@ -78,7 +79,16 @@ class TestTorchrditConfig:
         }
 
         solver = create_solver_from_config(config_dict)
-        assert solver is not None, "Solver should be created successfully"
+        # Verify solver was created with correct configuration
+        # Algorithm is an instance, not a type
+        assert solver.algorithm.__class__.__name__ == 'RCWAAlgorithm'
+        assert len(solver.lam0) == 4  # 4 wavelengths
+        assert solver.rdim == [512, 512]
+        assert solver.kdim == [9, 9]
+        # Verify materials were added
+        assert 'SiO' in solver._matlib
+        assert 'SiN' in solver._matlib
+        assert 'FusedSilica' in solver._matlib
 
     def test_create_solver_from_json(self, tmp_path):
         """Test solver creation using a JSON file-based configuration."""
@@ -129,7 +139,16 @@ class TestTorchrditConfig:
             json.dump(config_json, json_file, indent=4)
 
         solver = create_solver_from_config(str(config_path))
-        assert solver is not None, "Solver should be created successfully from JSON"
+        # Verify solver was created with correct configuration from JSON
+        # Algorithm is an instance, not a type
+        assert solver.algorithm.__class__.__name__ == 'RCWAAlgorithm'
+        assert len(solver.lam0) == 4  # 4 wavelengths
+        assert solver.rdim == [512, 512]
+        assert solver.kdim == [9, 9]
+        # Verify materials were added
+        assert 'SiO' in solver._matlib
+        assert 'SiN' in solver._matlib
+        assert 'FusedSilica' in solver._matlib
 
     def test_flip_config_both_materials(self):
         config = {

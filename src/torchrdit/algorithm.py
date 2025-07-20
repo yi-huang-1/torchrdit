@@ -270,7 +270,7 @@ class RDITAlgorithm(SolverAlgorithm):
         """Pre-compute factorials to avoid repeated calculations."""
         self._factorial_cache[0] = 1.0
         for i in range(1, max_order + 1):
-            self._factorial_cache[i] = self._factorial_cache[i-1] * i
+            self._factorial_cache[i] = self._factorial_cache[i - 1] * i
 
     @property
     def name(self):
@@ -326,15 +326,11 @@ class RDITAlgorithm(SolverAlgorithm):
         delta_h = k_0[:, None, None] * layer_thickness / 2.0
 
         # Use torch.empty for faster allocation (no initialization)
-        tmat_a_i = torch.empty((batch_size, matrix_size, matrix_size), 
-                              dtype=dtype, device=device)
-        tmat_b_i = torch.zeros((batch_size, matrix_size, matrix_size), 
-                              dtype=dtype, device=device)
-        tmat_c_i = torch.zeros((batch_size, matrix_size, matrix_size), 
-                              dtype=dtype, device=device)
-        tmat_d_i = torch.empty((batch_size, matrix_size, matrix_size), 
-                              dtype=dtype, device=device)
-        
+        tmat_a_i = torch.empty((batch_size, matrix_size, matrix_size), dtype=dtype, device=device)
+        tmat_b_i = torch.zeros((batch_size, matrix_size, matrix_size), dtype=dtype, device=device)
+        tmat_c_i = torch.zeros((batch_size, matrix_size, matrix_size), dtype=dtype, device=device)
+        tmat_d_i = torch.empty((batch_size, matrix_size, matrix_size), dtype=dtype, device=device)
+
         # Initialize identity matrices efficiently
         eye = torch.eye(matrix_size, dtype=dtype, device=device)
         tmat_a_i[:] = eye
@@ -343,12 +339,11 @@ class RDITAlgorithm(SolverAlgorithm):
         # Vectorized computation using cumulative products
         p_fcoef = eye.unsqueeze(0).expand(batch_size, -1, -1).clone()
         q_fcoef = eye.unsqueeze(0).expand(batch_size, -1, -1).clone()
-        
 
         for order in range(1, self._rdit_order + 1):
             factorial = self._factorial_cache.get(order, math.factorial(order))
             fac = (delta_h**order / factorial).to(dtype).to(device)
-            
+
             if order % 2 == 0:  # Even order
                 p_fcoef = p_fcoef @ q_mat_i
                 q_fcoef = q_fcoef @ p_mat_i
@@ -389,7 +384,7 @@ class RDITAlgorithm(SolverAlgorithm):
             "S11": mat_yyi * 0.5,
             "S12": mat_zzi * 0.5,
             "S21": mat_zzi * 0.5,  # Symmetric, reuse mat_zzi
-            "S22": mat_yyi * 0.5   # Symmetric, reuse mat_yyi
+            "S22": mat_yyi * 0.5,  # Symmetric, reuse mat_yyi
         }
         return smat_layer
 

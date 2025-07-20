@@ -124,4 +124,6 @@ def test_gen_toeplitz_matrix(layer_manager):
     layer_manager.add_layer('homogeneous', torch.tensor(1.0), 'SiO2', True, False)
     layer_manager.layers[0].ermat = torch.ones((10, 10))
     layer_manager.gen_toeplitz_matrix(0, 3, 3, 'er', 'FFT')
-    assert layer_manager.layers[0].kermat is not None
+    # Check that kermat is a tensor with expected shape
+    assert isinstance(layer_manager.layers[0].kermat, torch.Tensor)
+    assert layer_manager.layers[0].kermat.shape == (9, 9)  # 3*3 = 9
