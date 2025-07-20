@@ -1004,56 +1004,38 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         return source_dict
 
     def _initialize_k_vectors(self):
-        """Calculate k-vectors common to both solving methods."""
-        # Calculate wave vector expansion
-        # kx_0, ky_0: (n_freqs, kdim[0], kdim[1])
-        kx_0 = (
-            self.kinc[:, 0, None, None]
-            - (
-                self.mesh_fp[None, :, :] * self.reci_t1[0, None, None]
-                + self.mesh_fq[None, :, :] * self.reci_t2[0, None, None]
-            )
-            / self.k_0[:, None, None]
-        )
-        kx_0 = kx_0.to(dtype=self.tcomplex)
-
-        ky_0 = (
-            self.kinc[:, 1, None, None]
-            - (
-                self.mesh_fp[None, :, :] * self.reci_t1[1, None, None]
-                + self.mesh_fq[None, :, :] * self.reci_t2[1, None, None]
-            )
-            / self.k_0[:, None, None]
-        )
-        ky_0 = ky_0.to(dtype=self.tcomplex)
-
-        # Add relaxation for numerical stability
-        epsilon = 1e-6
-        kx_0, ky_0 = self._apply_numerical_relaxation(kx_0, ky_0, epsilon)
-
-        # Calculate kz for reflection and transmission regions
-        kz_ref_0 = self._calculate_kz_region(self.ur1, self.er1, kx_0, ky_0, self.layer_manager.is_ref_dispersive)
-        kz_trn_0 = self._calculate_kz_region(self.ur2, self.er2, kx_0, ky_0, self.layer_manager.is_trn_dispersive)
-
-        return kx_0, ky_0, kz_ref_0, kz_trn_0
-
-    def _initialize_k_vectors_batched(self):
-        """Calculate k-vectors for batched sources.
+        """Unified k-vector initialization for single and batched sources.
         
-        Returns k-vectors with an additional source dimension.
+        This function automatically handles both single source and batched source
+        inputs by detecting the dimensions of self.kinc and processing accordingly.
+        
+        For single sources: kinc.shape = (n_freqs, 3)
+        For batched sources: kinc.shape = (n_sources, n_freqs, 3)
         
         Returns:
-            Tuple of tensors with shapes:
-            - kx_0, ky_0: (n_sources, n_freqs, kdim[0], kdim[1])
-            - kz_ref_0, kz_trn_0: (n_sources, n_freqs, kdim[0], kdim[1])
+            Tuple of tensors:
+            - Single source: shapes (n_freqs, kdim[0], kdim[1])
+            - Batched sources: shapes (n_sources, n_freqs, kdim[0], kdim[1])
         """
-        # Note: n_sources = self.kinc.shape[0] - stored for potential future use
+        # Detect input type by checking kinc dimensions
+        is_single_source = self.kinc.dim() == 2  # (n_freqs, 3)
         
-        # Calculate wave vector expansion
-        # self.kinc has shape (n_sources, n_freqs, 3)
-        # kx_0, ky_0: (n_sources, n_freqs, kdim[0], kdim[1])
+        # Debug output
+        if self.debug_batching:
+            print(f"[DEBUG] _initialize_k_vectors: is_single_source={is_single_source}, kinc.shape={self.kinc.shape}")
+        
+        # Add dummy batch dimension for single source to unify processing
+        if is_single_source:
+            kinc = self.kinc.unsqueeze(0)  # (1, n_freqs, 3)
+        else:
+            kinc = self.kinc  # (n_sources, n_freqs, 3)
+        
+        # Core tensorized k-vector calculation
+        # Calculate wave vector expansion using broadcasting
+        # kinc shape: (n_sources, n_freqs, 3)
+        # Output shapes: (n_sources, n_freqs, kdim[0], kdim[1])
         kx_0 = (
-            self.kinc[:, :, 0, None, None]  # (n_sources, n_freqs, 1, 1)
+            kinc[:, :, 0, None, None]  # (n_sources, n_freqs, 1, 1)
             - (
                 self.mesh_fp[None, None, :, :] * self.reci_t1[0, None, None, None]
                 + self.mesh_fq[None, None, :, :] * self.reci_t2[0, None, None, None]
@@ -1063,7 +1045,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         kx_0 = kx_0.to(dtype=self.tcomplex)
 
         ky_0 = (
-            self.kinc[:, :, 1, None, None]  # (n_sources, n_freqs, 1, 1)
+            kinc[:, :, 1, None, None]  # (n_sources, n_freqs, 1, 1)
             - (
                 self.mesh_fp[None, None, :, :] * self.reci_t1[1, None, None, None]
                 + self.mesh_fq[None, None, :, :] * self.reci_t2[1, None, None, None]
@@ -1072,39 +1054,40 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         )
         ky_0 = ky_0.to(dtype=self.tcomplex)
 
-        # Add relaxation for numerical stability
+        # Apply numerical relaxation for stability
         epsilon = 1e-6
-        kx_0, ky_0 = self._apply_numerical_relaxation_batched(kx_0, ky_0, epsilon)
+        kx_0, ky_0 = self._apply_numerical_relaxation(kx_0, ky_0, epsilon)
 
         # Calculate kz for reflection and transmission regions
-        kz_ref_0 = self._calculate_kz_region_batched(self.ur1, self.er1, kx_0, ky_0, self.layer_manager.is_ref_dispersive)
-        kz_trn_0 = self._calculate_kz_region_batched(self.ur2, self.er2, kx_0, ky_0, self.layer_manager.is_trn_dispersive)
+        kz_ref_0 = self._calculate_kz_region(self.ur1, self.er1, kx_0, ky_0, self.layer_manager.is_ref_dispersive)
+        kz_trn_0 = self._calculate_kz_region(self.ur2, self.er2, kx_0, ky_0, self.layer_manager.is_trn_dispersive)
+
+        # Remove dummy batch dimension for single source
+        if is_single_source:
+            kx_0 = kx_0.squeeze(0)  # (n_freqs, kdim[0], kdim[1])
+            ky_0 = ky_0.squeeze(0)
+            kz_ref_0 = kz_ref_0.squeeze(0)
+            kz_trn_0 = kz_trn_0.squeeze(0)
 
         return kx_0, ky_0, kz_ref_0, kz_trn_0
 
+
     def _apply_numerical_relaxation(self, kx_0, ky_0, epsilon):
-        """Apply small offset to zero values for numerical stability."""
-        zero_indices = torch.nonzero(kx_0 == 0.0, as_tuple=True)
-        if len(zero_indices[0]) > 0:
-            kx_0[zero_indices] = kx_0[zero_indices] + epsilon
-
-        zero_indices = torch.nonzero(ky_0 == 0.0, as_tuple=True)
-        if len(zero_indices[0]) > 0:
-            ky_0[zero_indices] = ky_0[zero_indices] + epsilon
-
-        return kx_0, ky_0
-
-    def _apply_numerical_relaxation_batched(self, kx_0, ky_0, epsilon):
-        """Apply small offset to zero values for numerical stability (batched version).
+        """Unified numerical relaxation for both single and batched inputs.
+        
+        Apply small offset to zero values for numerical stability.
+        Handles both tensor shapes:
+        - Single source: (n_freqs, kdim[0], kdim[1])
+        - Batched sources: (n_sources, n_freqs, kdim[0], kdim[1])
         
         Args:
-            kx_0, ky_0: Tensors with shape (n_sources, n_freqs, kdim[0], kdim[1])
-            epsilon: Small offset value
+            kx_0, ky_0: k-vector tensors (any dimensionality)
+            epsilon: Small offset value for zero replacement
             
         Returns:
             Modified kx_0, ky_0 with epsilon added to zero values
         """
-        # Find zero indices
+        # This function works for any tensor shape due to tensor broadcasting
         zero_indices = torch.nonzero(kx_0 == 0.0, as_tuple=True)
         if len(zero_indices[0]) > 0:
             kx_0[zero_indices] = kx_0[zero_indices] + epsilon
@@ -1115,37 +1098,43 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         return kx_0, ky_0
 
-    def _calculate_kz_region(self, ur, er, kx_0, ky_0, is_dispersive):
-        """Calculate kz for a region (reflection or transmission)."""
-        if not is_dispersive:
-            kz_0 = torch.conj(torch.sqrt(torch.conj(ur) * torch.conj(er) - kx_0 * kx_0 - ky_0 * ky_0 + 0 * 1j))
-        else:
-            kz_0 = torch.conj(
-                torch.sqrt((torch.conj(ur) * torch.conj(er))[:, None, None] - kx_0 * kx_0 - ky_0 * ky_0 + 0 * 1j)
-            )
-        return kz_0
 
-    def _calculate_kz_region_batched(self, ur, er, kx_0, ky_0, is_dispersive):
-        """Calculate kz for a region (reflection or transmission) with batched sources.
+    def _calculate_kz_region(self, ur, er, kx_0, ky_0, is_dispersive):
+        """Unified kz calculation for both single and batched inputs.
+        
+        Calculate kz for a region (reflection or transmission) automatically
+        handling both single source and batched source inputs.
         
         Args:
             ur, er: Material properties (scalars or tensors)
-            kx_0, ky_0: k-vectors with shape (n_sources, n_freqs, kdim[0], kdim[1])
+            kx_0, ky_0: k-vectors with shapes:
+                - Single source: (n_freqs, kdim[0], kdim[1])
+                - Batched sources: (n_sources, n_freqs, kdim[0], kdim[1])
             is_dispersive: Whether the material is dispersive
             
         Returns:
-            kz_0 with shape (n_sources, n_freqs, kdim[0], kdim[1])
+            kz_0 with same shape as input kx_0, ky_0
         """
+        # Detect if inputs are batched (4D) or single (3D)
+        is_batched = kx_0.dim() == 4
+        
         if not is_dispersive:
             # Non-dispersive: ur, er are scalars
             kz_0 = torch.conj(torch.sqrt(torch.conj(ur) * torch.conj(er) - kx_0 * kx_0 - ky_0 * ky_0 + 0 * 1j))
         else:
             # Dispersive: ur, er have shape (n_freqs,)
-            # Need to broadcast to (1, n_freqs, 1, 1) for proper shape alignment
+            if is_batched:
+                # Batched case: broadcast to (1, n_freqs, 1, 1)
+                ur_er_product = (torch.conj(ur) * torch.conj(er))[None, :, None, None]
+            else:
+                # Single case: broadcast to (n_freqs, 1, 1)
+                ur_er_product = (torch.conj(ur) * torch.conj(er))[:, None, None]
+            
             kz_0 = torch.conj(
-                torch.sqrt((torch.conj(ur) * torch.conj(er))[None, :, None, None] - kx_0 * kx_0 - ky_0 * ky_0 + 0 * 1j)
+                torch.sqrt(ur_er_product - kx_0 * kx_0 - ky_0 * ky_0 + 0 * 1j)
             )
         return kz_0
+
 
     def _setup_common_matrices(self, kx_0, ky_0, kz_ref_0, kz_trn_0):
         """Set up common matrices for both single and batched sources.
@@ -1865,7 +1854,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         
         # Initialize k-vectors for all sources
         self.notify_observers("initializing_k_vectors_batched")
-        kx_0, ky_0, kz_ref_0, kz_trn_0 = self._initialize_k_vectors_batched()
+        kx_0, ky_0, kz_ref_0, kz_trn_0 = self._initialize_k_vectors()
         
         # Set up matrices for calculation with batched dimensions
         self.notify_observers("setting_up_matrices_batched")

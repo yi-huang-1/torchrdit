@@ -10,7 +10,6 @@ import numpy as np
 import pytest
 from torchrdit.solver import create_solver
 from torchrdit.constants import Algorithm
-from torchrdit.materials import MaterialClass
 from torchrdit.utils import create_material
 
 
@@ -114,7 +113,7 @@ class TestTensorizedBatching:
         
         # Process batched using unified _pre_solve
         solver._pre_solve(sources)
-        kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b = solver._initialize_k_vectors_batched()
+        kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b = solver._initialize_k_vectors()
         matrices_batched = solver._setup_common_matrices(
             kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b
         )
@@ -151,7 +150,7 @@ class TestTensorizedBatching:
         
         # Process batched using unified _pre_solve
         solver._pre_solve(sources)
-        kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b = solver._initialize_k_vectors_batched()
+        kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b = solver._initialize_k_vectors()
         matrices_batched = solver._setup_common_matrices(
             kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b
         )
@@ -180,7 +179,7 @@ class TestTensorizedBatching:
             sources.append(source)
         
         solver._pre_solve(sources)
-        kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors_batched()
+        kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
         
         # Create a dummy parameter that requires grad and modify kx_0
         dummy_param = torch.tensor([1.0, 1.0, 1.0], requires_grad=True, dtype=torch.cfloat)
@@ -219,7 +218,7 @@ class TestTensorizedBatching:
         
         # Process batched
         solver._pre_solve(sources)
-        kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b = solver._initialize_k_vectors_batched()
+        kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b = solver._initialize_k_vectors()
         
         # Check input shapes
         assert kx_0_b.shape[0] == n_sources
@@ -331,7 +330,7 @@ class TestTensorizedBatching:
         
         # Process batched
         solver._pre_solve(sources)
-        kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b = solver._initialize_k_vectors_batched()
+        kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b = solver._initialize_k_vectors()
         
         # Create mock unified function
         def _setup_common_matrices_unified(self, kx_0, ky_0, kz_ref_0, kz_trn_0):
