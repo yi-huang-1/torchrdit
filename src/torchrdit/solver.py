@@ -1912,9 +1912,9 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             }
             smat_global_list[i] = self._connect_external_regions(smat_global_list[i], matrices_i)
         
-        # Calculate polarization for all sources
+        # Calculate polarization for all sources using unified method
         self.notify_observers("calculating_polarization_batched")
-        _polarization_data = self._calculate_polarization_batched(sources)
+        _polarization_data = self._calculate_polarization(sources)
         
         # Calculate fields and efficiencies for each source
         self.notify_observers("calculating_fields_batched")
@@ -2778,83 +2778,93 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         return smat_global
 
-    def _calculate_polarization_batched(self, sources):
-        """Calculate polarization vectors for batched sources.
+
+
+    def _calculate_polarization(self, sources=None):
+        """Unified polarization calculation for both single and batched sources.
+        
+        This method automatically detects whether it's dealing with a single source
+        or multiple sources and handles both cases using tensorized operations.
         
         Args:
-            sources: List of source dictionaries
-            
+            sources: Optional list of source dictionaries for batched processing.
+                    If None, uses self.src for single source processing.
+                    
         Returns:
             Dictionary containing:
-            - ate: TE polarization vectors (n_sources, n_freqs, 3)
-            - atm: TM polarization vectors (n_sources, n_freqs, 3)
-            - pol_vec: Combined polarization vectors (n_sources, n_freqs, 3)
-            - esrc: Electric field source vectors (n_sources, n_freqs, 2*n_harmonics_squared)
+            - ate: TE polarization vectors 
+            - atm: TM polarization vectors
+            - pol_vec: Combined polarization vectors
+            - esrc: Electric field source vectors
+            
+            Shapes:
+            - Single source: (n_freqs, 3) for vectors, (n_freqs, 2*n_harmonics_squared) for esrc
+            - Batched sources: (n_sources, n_freqs, 3) for vectors, (n_sources, n_freqs, 2*n_harmonics_squared) for esrc
         """
-        n_sources = len(sources)
+        # Detect input type and normalize
+        if sources is None:
+            # Single source mode - use self.src
+            is_single = True
+            sources_list = [self.src]
+        elif isinstance(sources, dict):
+            # Single source passed as dict
+            is_single = True  
+            sources_list = [sources]
+        else:
+            # Batched sources
+            is_single = False
+            sources_list = sources
+            
+        n_sources = len(sources_list)
         n_harmonics_squared = self.kdim[0] * self.kdim[1]
         
-        # Stack source parameters
-        theta_batch = torch.stack([
-            torch.tensor(src["theta"], dtype=self.tfloat, device=self.device) 
-            for src in sources
-        ])  # Shape: (n_sources,)
+        # Use tensorized parameter collection
+        theta_batch = torch.tensor([src["theta"] for src in sources_list], dtype=self.tfloat, device=self.device)
+        pte_batch = torch.tensor([src["pte"] for src in sources_list], dtype=self.tcomplex, device=self.device)
+        ptm_batch = torch.tensor([src["ptm"] for src in sources_list], dtype=self.tcomplex, device=self.device)
         
-        pte_batch = torch.stack([
-            torch.tensor(src["pte"], dtype=self.tfloat, device=self.device)
-            for src in sources
-        ])  # Shape: (n_sources,)
-        
-        ptm_batch = torch.stack([
-            torch.tensor(src["ptm"], dtype=self.tfloat, device=self.device)
-            for src in sources
-        ])  # Shape: (n_sources,)
-        
-        # Initialize ate and atm tensors
-        # Shape: (n_sources, n_freqs, 3)
+        # Initialize polarization tensors
         ate_batch = torch.zeros(n_sources, self.n_freqs, 3, dtype=self.tcomplex, device=self.device)
         atm_batch = torch.zeros(n_sources, self.n_freqs, 3, dtype=self.tcomplex, device=self.device)
         
-        # Create mask for normal incidence
-        # Shape: (n_sources,)
+        # Vectorized normal incidence detection
         normal_mask = torch.abs(theta_batch) < 1e-3
         
         # Handle normal incidence cases
-        # For normal incidence, ate = [0, 1, 0] for all frequencies
-        ate_batch[normal_mask, :, 1] = 1.0
+        ate_batch[normal_mask, :, 1] = 1.0  # Default: [0, 1, 0] for y-direction
         
         # Handle oblique incidence cases
         oblique_mask = ~normal_mask
         if oblique_mask.any():
-            # Calculate cross product for oblique incidence
-            # norm_vec = [0, 0, 1]
+            # Get kinc for oblique sources
+            if is_single:
+                # Single source: kinc shape (n_freqs, 3) -> add source dimension
+                kinc_oblique = self.kinc[None, :, :].expand(1, -1, -1)[oblique_mask]
+            else:
+                # Batched sources: kinc shape (n_sources, n_freqs, 3)
+                kinc_oblique = self.kinc[oblique_mask]
+            
+            # Vectorized cross product calculation
             norm_vec = torch.tensor([0.0, 0.0, 1.0], dtype=self.tcomplex, device=self.device)
             norm_vec_expanded = norm_vec[None, None, :].expand(oblique_mask.sum(), self.n_freqs, -1)
             
-            # kinc has shape (n_sources, n_freqs, 3)
-            # Select only oblique sources
-            kinc_oblique = self.kinc[oblique_mask]  # (n_oblique, n_freqs, 3)
-            
-            # Cross product: ate = kinc × norm_vec
             ate_oblique = torch.cross(kinc_oblique, norm_vec_expanded, dim=2)
-            
-            # Normalize
             ate_oblique_norm = torch.norm(ate_oblique, dim=2, keepdim=True)
-            ate_oblique = ate_oblique / (ate_oblique_norm + 1e-10)  # Add small epsilon to avoid division by zero
+            ate_oblique = ate_oblique / (ate_oblique_norm + 1e-10)
             
-            # Assign back to ate_batch
             ate_batch[oblique_mask] = ate_oblique
         
-        # Calculate atm for all sources
-        # atm = ate × kinc
-        atm_batch = torch.cross(ate_batch, self.kinc, dim=2)
-        
-        # Normalize atm
+        # Calculate atm for all sources using vectorized operations
+        if is_single:
+            kinc_for_atm = self.kinc[None, :, :].expand(n_sources, -1, -1)
+        else:
+            kinc_for_atm = self.kinc
+            
+        atm_batch = torch.cross(ate_batch, kinc_for_atm, dim=2)
         atm_norm = torch.norm(atm_batch, dim=2, keepdim=True)
         atm_batch = atm_batch / (atm_norm + 1e-10)
         
-        # Create polarization vector
-        # Shape: (n_sources, 1, 1) * (n_sources, n_freqs, 3) -> (n_sources, n_freqs, 3)
+        # Create polarization vectors using broadcasting
         pte_vec = pte_batch[:, None, None] * ate_batch
         ptm_vec = ptm_batch[:, None, None] * atm_batch
         
@@ -2862,16 +2872,21 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         pol_vec_norm = torch.norm(pol_vec, dim=2, keepdim=True)
         pol_vec = pol_vec / (pol_vec_norm + 1e-10)
         
-        # Calculate electric field source vector for each source
-        # Shape: (n_sources, n_freqs, n_harmonics_squared)
+        # Create electric field source vectors
         delta = torch.zeros(size=(n_sources, self.n_freqs, n_harmonics_squared), dtype=self.tcomplex, device=self.device)
         delta[:, :, n_harmonics_squared // 2] = 1.0
         
-        # Shape: (n_sources, n_freqs, 2*n_harmonics_squared)
         esrc = torch.zeros(size=(n_sources, self.n_freqs, 2 * n_harmonics_squared), dtype=self.tcomplex, device=self.device)
         esrc[:, :, :n_harmonics_squared] = pol_vec[:, :, 0, None] * delta
         esrc[:, :, n_harmonics_squared:] = pol_vec[:, :, 1, None] * delta
         
+        # Remove source dimension for single source case
+        if is_single:
+            ate_batch = ate_batch.squeeze(0)
+            atm_batch = atm_batch.squeeze(0)
+            pol_vec = pol_vec.squeeze(0)
+            esrc = esrc.squeeze(0)
+            
         return {
             'ate': ate_batch,
             'atm': atm_batch,
@@ -2892,65 +2907,9 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         """
         n_harmonics_squared = self.kdim[0] * self.kdim[1]
 
-        # Calculate polarization vector
-        norm_vec = torch.tensor([0.0, 0.0, 1.0], dtype=self.tcomplex, device=self.device)
-
-        if isinstance(self.src["theta"], Union[float, int]):
-            ate = torch.empty_like(norm_vec)
-            if np.abs(self.src["theta"]) < 1e-3:
-                if "norm_te_dir" not in self.src:
-                    ate = torch.tensor([0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(
-                        self.n_freqs, 1
-                    )
-                else:
-                    if self.src["norm_te_dir"] == "y":
-                        ate = torch.tensor([0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(
-                            self.n_freqs, 1
-                        )
-                    elif self.src["norm_te_dir"] == "x":
-                        ate = torch.tensor([1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)[None, :].repeat(
-                            self.n_freqs, 1
-                        )
-            else:
-                ate = torch.cross(self.kinc, norm_vec[None, :].repeat(self.n_freqs, 1), dim=1)
-                ate = ate / torch.norm(ate, dim=1).unsqueeze(-1)
-        else:
-            ate = torch.zeros((self.n_freqs, 3), dtype=self.tcomplex, device=self.device)
-            theta_mask = np.abs(self.src["theta"]) < 1e-3
-            for i in range(self.n_freqs):
-                if theta_mask[i]:
-                    if "norm_te_dir" not in self.src:
-                        ate[i, :] = torch.tensor([0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)
-                    else:
-                        if self.src["norm_te_dir"] == "y":
-                            ate[i, :] = torch.tensor([0.0, 1.0, 0.0], dtype=self.tcomplex, device=self.device)
-                        elif self.src["norm_te_dir"] == "x":
-                            ate[i, :] = torch.tensor([1.0, 0.0, 0.0], dtype=self.tcomplex, device=self.device)
-                else:
-                    ate[i, :] = torch.cross(self.kinc[i, :], norm_vec, dim=0)
-                    ate[i, :] = ate[i, :] / torch.norm(ate[i, :])
-
-        atm = torch.cross(ate, self.kinc, dim=1)
-        atm = atm / torch.norm(atm)
-
-        # Create polarization vector
-        if isinstance(self.src["pte"], Union[float, int]):
-            pte_vec = self.src["pte"] * ate
-        else:
-            pte_vec = torch.tensor(self.src["pte"], dtype=self.tcomplex, device=self.device)[:, None] * ate
-
-        if isinstance(self.src["ptm"], Union[float, int]):
-            ptm_vec = self.src["ptm"] * atm
-        else:
-            ptm_vec = torch.tensor(self.src["ptm"], dtype=self.tcomplex, device=self.device)[:, None] * atm
-
-        pol_vec = pte_vec + ptm_vec
-        pol_vec = pol_vec / torch.norm(pol_vec, dim=1).unsqueeze(-1)
-
-        # Calculate electric field source vector
-        delta = torch.zeros(size=(self.n_freqs, n_harmonics_squared), dtype=self.tcomplex, device=self.device)
-        delta[:, (self.kdim[1] // 2) * self.kdim[0] + (self.kdim[0] // 2)] = 1
-        esrc = torch.cat((pol_vec[:, 0].unsqueeze(-1) * delta, pol_vec[:, 1].unsqueeze(-1) * delta), dim=1)
+        # Calculate polarization vectors using the unified method
+        polarization_data = self._calculate_polarization()
+        esrc = polarization_data['esrc']
 
         # Calculate source vectors
         mat_w_ref = self.ident_mat_k2[None, :, :].expand(self.n_freqs, -1, -1)
