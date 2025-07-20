@@ -33,6 +33,14 @@ Welcome to the `TorchRDIT` documentation. `TorchRDIT` is an advanced software pa
 - [Utils](Utils) - Utility functions
 - [Visualization](Visualization) - Tools for visualizing results
 
+## New in v0.1.22: Source Batching
+
+TorchRDIT now supports efficient batched processing of multiple sources:
+- Process multiple incident angles simultaneously
+- 3-6x performance improvement for parameter sweeps
+- Full gradient support for multi-condition optimization
+- See the [Source Batching](SourceBatching) page for details
+
 ## Examples
 
 TorchRDIT comes with several example files in the `examples/` directory

@@ -99,7 +99,9 @@ def test_initialization_with_different_parameters():
 
 
 def test_property_methods(cell_3d):
-    assert cell_3d.layers is not None
+    # Test that layers property returns a list
+    assert isinstance(cell_3d.layers, list)
+    assert len(cell_3d.layers) == 0  # No layers added yet
 
 
 def test_material_management(cell_3d):

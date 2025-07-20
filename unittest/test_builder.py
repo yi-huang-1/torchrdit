@@ -1,6 +1,6 @@
 import unittest
-import torch
 import numpy as np
+from pathlib import Path
 
 from torchrdit.constants import Algorithm, Precision
 from torchrdit.utils import create_material
@@ -271,7 +271,7 @@ class TestBuilderDocExamples(unittest.TestCase):
         }
         
         # Pass the unittest directory as base_path since that's where our test files are
-        materials = _create_materials(materials_spec, "./unittest")
+        materials = _create_materials(materials_spec, Path(__file__).parent)
         
         # Verify the materials were created correctly
         self.assertEqual(len(materials), 3)

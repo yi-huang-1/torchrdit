@@ -24,6 +24,35 @@ Key modules:
 - builder: Builder pattern implementation for solver creation
 - shapes: Shape generation for photonic structures
 - observers: Observer pattern implementation for progress tracking
+- batched_results: Results containers for source batching
+
+New in v0.1.22: Source Batching
+--------------------------------
+TorchRDIT now supports efficient batched processing of multiple sources:
+
+```python
+from torchrdit.solver import create_solver
+from torchrdit.constants import Algorithm
+import numpy as np
+
+# Create solver
+solver = create_solver(algorithm=Algorithm.RDIT, rdim=[512, 512], kdim=[7, 7])
+
+# Create multiple sources for angle sweep
+deg = np.pi / 180
+sources = [
+    solver.add_source(theta=angle, phi=0, pte=1.0, ptm=0.0)
+    for angle in np.linspace(0, 60, 13) * deg
+]
+
+# Batch solve - returns BatchedSolverResults
+results = solver.solve(sources)
+
+# Access results
+print(f"Transmission for all angles: {results.transmission[:, 0]}")
+best_idx = results.find_optimal_source('max_transmission')
+print(f"Best angle: {sources[best_idx]['theta'] * 180/np.pi:.1f}°")
+```
 
 For more information, see:
 - Huang et al., "Eigendecomposition-free inverse design of meta-optics devices,"
@@ -32,4 +61,9 @@ For more information, see:
   Rigorous Diffraction Interface Theory," CLEO (2023)
 """
 
-__version__ = "0.1.21"
+__version__ = "0.1.22"
+
+# Import core functionality
+from .batched_results import BatchedSolverResults, BatchedFieldComponents
+
+__all__ = ["BatchedSolverResults", "BatchedFieldComponents"]
