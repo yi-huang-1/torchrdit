@@ -112,8 +112,8 @@ class TestTensorizedBatching:
             matrices = solver._setup_common_matrices(kx_0, ky_0, kz_ref_0, kz_trn_0)
             sequential_results.append(matrices)
         
-        # Process batched
-        solver._pre_solve_batched(sources)
+        # Process batched using unified _pre_solve
+        solver._pre_solve(sources)
         kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b = solver._initialize_k_vectors_batched()
         matrices_batched = solver._setup_common_matrices(
             kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b
@@ -149,8 +149,8 @@ class TestTensorizedBatching:
         
         sources = [source_normal, source_grazing]
         
-        # Process batched
-        solver._pre_solve_batched(sources)
+        # Process batched using unified _pre_solve
+        solver._pre_solve(sources)
         kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b = solver._initialize_k_vectors_batched()
         matrices_batched = solver._setup_common_matrices(
             kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b
@@ -179,7 +179,7 @@ class TestTensorizedBatching:
             source = solver.add_source(theta=angle*np.pi/180, phi=0, pte=1.0, ptm=0.0)
             sources.append(source)
         
-        solver._pre_solve_batched(sources)
+        solver._pre_solve(sources)
         kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors_batched()
         
         # Create a dummy parameter that requires grad and modify kx_0
@@ -218,7 +218,7 @@ class TestTensorizedBatching:
             sources.append(source)
         
         # Process batched
-        solver._pre_solve_batched(sources)
+        solver._pre_solve(sources)
         kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b = solver._initialize_k_vectors_batched()
         
         # Check input shapes
@@ -330,7 +330,7 @@ class TestTensorizedBatching:
             sources.append(source)
         
         # Process batched
-        solver._pre_solve_batched(sources)
+        solver._pre_solve(sources)
         kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b = solver._initialize_k_vectors_batched()
         
         # Create mock unified function

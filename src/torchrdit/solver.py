@@ -822,6 +822,53 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             raise TypeError("Algorithm must be an instance of SolverAlgorithm")
         self._algorithm = algorithm
 
+    def _setup_reciprocal_space(self):
+        """Set up reciprocal lattice vectors and k-space mesh.
+        
+        This method is idempotent - it only calculates these values once
+        and subsequent calls return immediately. This avoids redundant
+        calculations when processing multiple sources.
+        
+        Sets up:
+        - self.reci_t1, self.reci_t2: Reciprocal lattice vectors
+        - self.mesh_fp, self.mesh_fq: k-space mesh grids
+        - self.tlam0: Wavelengths as tensor
+        - self.k_0: Wave vector magnitudes
+        """
+        # Check if already initialized
+        if hasattr(self, '_reciprocal_space_initialized') and self._reciprocal_space_initialized:
+            return
+        
+        # Calculate reciprocal lattice vectors
+        d_v = self.lattice_t1[0] * self.lattice_t2[1] - self.lattice_t2[0] * self.lattice_t1[1]
+        
+        self.reci_t1 = (
+            2
+            * torch.pi
+            * torch.cat(((+self.lattice_t2[1] / d_v).unsqueeze(0), (-self.lattice_t2[0] / d_v).unsqueeze(0)), dim=0)
+        )
+        self.reci_t2 = (
+            2
+            * torch.pi
+            * torch.cat(((-self.lattice_t1[1] / d_v).unsqueeze(0), (+self.lattice_t1[0] / d_v).unsqueeze(0)), dim=0)
+        )
+        
+        # Calculate wave vector expansion
+        self.tlam0 = torch.tensor(self.lam0, dtype=self.tfloat, device=self.device)
+        self.k_0 = 2 * torch.pi / self.tlam0  # k0 with dimensions: n_freqs
+        
+        # Set up k-space mesh
+        f_p = torch.arange(
+            start=-np.floor(self.kdim[0] / 2), end=np.floor(self.kdim[0] / 2) + 1, dtype=self.tint, device=self.device
+        )
+        f_q = torch.arange(
+            start=-np.floor(self.kdim[1] / 2), end=np.floor(self.kdim[1] / 2) + 1, dtype=self.tint, device=self.device
+        )
+        [self.mesh_fq, self.mesh_fp] = torch.meshgrid(f_q, f_p, indexing="xy")
+        
+        # Mark as initialized
+        self._reciprocal_space_initialized = True
+
     def _solve_nonhomo_layer(self, layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, kdim, k_0, **kwargs):
         """Delegate to the algorithm strategy."""
         if self._algorithm is None:
@@ -1758,7 +1805,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         if isinstance(source, dict):
             # Single source - existing behavior
             self.src = source
-            self._pre_solve()
+            self._pre_solve()  # Now uses unified version
             return self._solve_structure(**kwargs)
         else:
             # Batched sources - new behavior
@@ -1783,9 +1830,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             if not isinstance(src, dict) or "theta" not in src:
                 raise ValueError("Invalid source format: each source must be a dict with 'theta', 'phi', 'pte', 'ptm'")
         
-        # Use new tensor-level batched approach
-        # Pre-solve all sources at once
-        self._pre_solve_batched(sources)
+        # Use unified pre-solve
+        self._pre_solve(sources)  # Now handles batched sources
         
         # Solve with batched tensors
         result = self._solve_structure_batched(sources, **kwargs)
@@ -2016,168 +2062,93 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             wave_vectors=None,  # TODO: Handle batched wave vectors
         )
 
-    def _pre_solve(self) -> None:
-        """_pre_solve.
-
-        Check parameters before solving.
-
+    def _pre_solve(self, source=None) -> None:
+        """Unified pre-solve handling both single and batched sources.
+        
+        This method sets up the incident wave vector (kinc) and reciprocal lattice
+        for either a single source or a batch of sources using tensorized operations.
+        
         Args:
-
+            source: Optional source configuration. Can be:
+                - None: Use self.src (single source)
+                - dict: Single source configuration 
+                - List[dict]: List of source configurations for batched processing
+                
         Returns:
-            None:
+            None: Updates self.kinc with the computed incident wave vectors
         """
-        # Calculate refrective index of external medium
-        refractive_1 = torch.sqrt(self.ur1 * self.er1)
-        # refractive_2 = torch.sqrt(self.ur2 * self.er2)
-
-        # kinc: dimensions (n_freqs, 3)
-
-        if isinstance(self.src["theta"], Union[float, int]):
-            theta_src = torch.tensor([self.src["theta"]], dtype=self.tfloat, device=self.device)[None].repeat(
-                self.n_freqs, 1
-            )
-        else:
-            theta_src = torch.tensor(self.src["theta"], dtype=self.tfloat, device=self.device)[:, None]
-
-        if isinstance(self.src["phi"], Union[float, int]):
-            phi_src = torch.tensor([self.src["phi"]], dtype=self.tfloat, device=self.device)[None].repeat(
-                self.n_freqs, 1
-            )
-        else:
-            phi_src = torch.tensor(self.src["phi"], dtype=self.tfloat, device=self.device)[:, None]
-
-        self.kinc = refractive_1[None] * torch.cat(
-            (
-                torch.sin(theta_src) * torch.cos(phi_src),
-                torch.sin(theta_src) * torch.sin(phi_src),
-                torch.cos(theta_src),
-            ),
-            dim=1,
-        )
-        assert self.kinc.shape == (self.n_freqs, 3)
-
-        # Calculate reciprocal lattice vectors
-        d_v = self.lattice_t1[0] * self.lattice_t2[1] - self.lattice_t2[0] * self.lattice_t1[1]
-
-        self.reci_t1 = (
-            2
-            * torch.pi
-            * torch.cat(((+self.lattice_t2[1] / d_v).unsqueeze(0), (-self.lattice_t2[0] / d_v).unsqueeze(0)), dim=0)
-        )
-        self.reci_t2 = (
-            2
-            * torch.pi
-            * torch.cat(((-self.lattice_t1[1] / d_v).unsqueeze(0), (+self.lattice_t1[0] / d_v).unsqueeze(0)), dim=0)
-        )
-
-        # Calculate wave vector expansion
-        self.tlam0 = torch.tensor(self.lam0, dtype=self.tfloat, device=self.device)
-        self.k_0 = 2 * torch.pi / self.tlam0  # k0 with dimensions: n_freqs
-
-        f_p = torch.arange(
-            start=-np.floor(self.kdim[0] / 2), end=np.floor(self.kdim[0] / 2) + 1, dtype=self.tint, device=self.device
-        )
-        f_q = torch.arange(
-            start=-np.floor(self.kdim[1] / 2), end=np.floor(self.kdim[1] / 2) + 1, dtype=self.tint, device=self.device
-        )
-        [self.mesh_fq, self.mesh_fp] = torch.meshgrid(f_q, f_p, indexing="xy")
-
-        # check if options are set correctly
-        for n_layer in range(self.layer_manager.nlayer):
-            if self.layer_manager.layers[n_layer].is_homogeneous is False:
-                if self.layer_manager.layers[n_layer].ermat is None:
-                    # if not homogenous material, must be with a pattern.
-                    # if no pattern assigned before solving, the material will be set as homogeneous
-                    self.layer_manager.replace_layer_to_homogeneous(layer_index=n_layer)
-
-                    print(f"Warning: Layer {n_layer} has no pattern assigned, and was changed to homogeneous")
-
-    def _pre_solve_batched(self, sources: List[dict]) -> None:
-        """Compute kinc for all sources simultaneously in a vectorized manner.
+        # Set up reciprocal space (idempotent)
+        self._setup_reciprocal_space()
         
-        This method processes multiple incident sources in parallel, preparing
-        the wave vectors for batched computation throughout the solver pipeline.
+        # Handle source input
+        if source is None:
+            source = self.src
+            
+        # Detect input type and normalize to list
+        is_single = isinstance(source, dict)
+        sources = [source] if is_single else source
+        n_sources = len(sources)
         
-        Args:
-            sources: List of source dictionaries, each containing:
-                - theta: Incident angle from normal (radians)
-                - phi: Azimuthal angle (radians)
-                - pte: TE polarization amplitude
-                - ptm: TM polarization amplitude
-        """
-        # Note: n_sources = len(sources) - used for validation
-        
-        # Stack source parameters
-        theta_batch = torch.stack([
-            torch.tensor(src["theta"], dtype=self.tfloat, device=self.device) 
-            for src in sources
-        ])  # Shape: (n_sources,)
-        
-        phi_batch = torch.stack([
-            torch.tensor(src["phi"], dtype=self.tfloat, device=self.device)
-            for src in sources
-        ])  # Shape: (n_sources,)
+        # Debug output
+        if self.debug_batching:
+            print(f"[DEBUG] _pre_solve: is_single={is_single}, n_sources={n_sources}")
         
         # Calculate refractive index of external medium
-        ur1 = self.ur1
-        er1 = self.er1
-        
-        # Ensure we have tensors
-        if not isinstance(ur1, torch.Tensor):
-            ur1 = torch.tensor(ur1, dtype=self.tcomplex, device=self.device)
-        if not isinstance(er1, torch.Tensor):
-            er1 = torch.tensor(er1, dtype=self.tcomplex, device=self.device)
-        
-        # Calculate refractive index
-        refractive_1 = torch.sqrt(ur1 * er1)
-        
-        # Handle scalar case (non-dispersive material)
-        if refractive_1.dim() == 0:
-            # Expand to frequency dimension
+        refractive_1 = torch.sqrt(self.ur1 * self.er1)
+        if refractive_1.dim() == 0:  # non-dispersive
             refractive_1 = refractive_1.unsqueeze(0).expand(self.n_freqs)
         
-        # Expand dimensions for broadcasting
-        # theta: (n_sources,) -> (n_sources, 1) -> (n_sources, n_freqs)
-        theta_expanded = theta_batch[:, None].expand(-1, self.n_freqs)
-        phi_expanded = phi_batch[:, None].expand(-1, self.n_freqs)
+        # Tensorize source parameters efficiently
+        if is_single:
+            # Handle scalar or array theta/phi for single source
+            theta = torch.as_tensor(sources[0]['theta'], device=self.device, dtype=self.tfloat)
+            phi = torch.as_tensor(sources[0]['phi'], device=self.device, dtype=self.tfloat)
+            
+            # Ensure proper shape for broadcasting with frequencies
+            if theta.dim() == 0:  # scalar
+                theta = theta.unsqueeze(0).expand(self.n_freqs)
+                phi = phi.unsqueeze(0).expand(self.n_freqs)
+            # else: already shape (n_freqs,) for array input
+            
+        else:
+            # Batch processing - direct tensor construction
+            theta = torch.tensor([s['theta'] for s in sources], 
+                               device=self.device, dtype=self.tfloat)
+            phi = torch.tensor([s['phi'] for s in sources],
+                             device=self.device, dtype=self.tfloat)
+            
+            # Add frequency dimension for broadcasting
+            # Shape: (n_sources,) -> (n_sources, n_freqs)
+            theta = theta.unsqueeze(1).expand(-1, self.n_freqs)
+            phi = phi.unsqueeze(1).expand(-1, self.n_freqs)
         
-        # Compute kinc components
-        # Shape: (n_sources, n_freqs)
-        kinc_x = torch.sin(theta_expanded) * torch.cos(phi_expanded)
-        kinc_y = torch.sin(theta_expanded) * torch.sin(phi_expanded)
-        kinc_z = torch.cos(theta_expanded)
+        # Unified kinc calculation using broadcasting
+        # For single: theta/phi shape (n_freqs,), refractive_1 shape (n_freqs,)
+        # For batched: theta/phi shape (n_sources, n_freqs), refractive_1 shape (n_freqs,)
+        kinc_x = refractive_1 * torch.sin(theta) * torch.cos(phi)
+        kinc_y = refractive_1 * torch.sin(theta) * torch.sin(phi)
+        kinc_z = refractive_1 * torch.cos(theta)
         
-        # Stack and multiply by refractive index
-        # kinc shape: (n_sources, n_freqs, 3)
-        self.kinc = refractive_1[None, :, None] * torch.stack([kinc_x, kinc_y, kinc_z], dim=2)
+        # Stack components
+        if is_single:
+            self.kinc = torch.stack([kinc_x, kinc_y, kinc_z], dim=1)  # (n_freqs, 3)
+        else:
+            self.kinc = torch.stack([kinc_x, kinc_y, kinc_z], dim=2)  # (n_sources, n_freqs, 3)
         
-        # Calculate reciprocal lattice vectors (same for all sources)
-        d_v = self.lattice_t1[0] * self.lattice_t2[1] - self.lattice_t2[0] * self.lattice_t1[1]
+        # Debug output
+        if self.debug_batching:
+            print(f"[DEBUG] kinc shape: {self.kinc.shape}")
+            print(f"[DEBUG] kinc dtype: {self.kinc.dtype}, device: {self.kinc.device}")
         
-        self.reci_t1 = (
-            2
-            * torch.pi
-            * torch.cat(((+self.lattice_t2[1] / d_v).unsqueeze(0), (-self.lattice_t2[0] / d_v).unsqueeze(0)), dim=0)
-        )
-        self.reci_t2 = (
-            2
-            * torch.pi
-            * torch.cat(((-self.lattice_t1[1] / d_v).unsqueeze(0), (+self.lattice_t1[0] / d_v).unsqueeze(0)), dim=0)
-        )
+        # Validate shape
+        if is_single:
+            assert self.kinc.shape == (self.n_freqs, 3), \
+                f"Expected kinc shape ({self.n_freqs}, 3), got {self.kinc.shape}"
+        else:
+            assert self.kinc.shape == (n_sources, self.n_freqs, 3), \
+                f"Expected kinc shape ({n_sources}, {self.n_freqs}, 3), got {self.kinc.shape}"
         
-        # Calculate wave vector expansion
-        self.tlam0 = torch.tensor(self.lam0, dtype=self.tfloat, device=self.device)
-        self.k_0 = 2 * torch.pi / self.tlam0  # k0 with dimensions: n_freqs
-        
-        f_p = torch.arange(
-            start=-np.floor(self.kdim[0] / 2), end=np.floor(self.kdim[0] / 2) + 1, dtype=self.tint, device=self.device
-        )
-        f_q = torch.arange(
-            start=-np.floor(self.kdim[1] / 2), end=np.floor(self.kdim[1] / 2) + 1, dtype=self.tint, device=self.device
-        )
-        [self.mesh_fq, self.mesh_fp] = torch.meshgrid(f_q, f_p, indexing="xy")
-        
-        # Check if options are set correctly (same as _pre_solve)
+        # Check if options are set correctly (only needed once, not per source)
         for n_layer in range(self.layer_manager.nlayer):
             if self.layer_manager.layers[n_layer].is_homogeneous is False:
                 if self.layer_manager.layers[n_layer].ermat is None:
