@@ -1304,204 +1304,50 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 if diff > tolerance:
                     print(f"[WARNING] {name} source {i} differs by more than {tolerance}")
 
+
     def _process_layer(self, n_layer, matrices):
-        """Process a single layer and return its scattering matrix.
-
-        This method handles both homogeneous and non-homogeneous layers.
-
+        """Unified layer processing for both single and batched sources.
+        
+        This method handles both homogeneous and non-homogeneous layers,
+        automatically detecting whether input is single source or batched.
+        
         Args:
             n_layer: Layer index to process
             matrices: Dictionary of matrices from setup_common_matrices
-
+                     Can be either single source (3D) or batched (4D)
+        
         Returns:
             dict: Scattering matrix for the layer
+                  Shape matches input (3D for single, 4D for batched)
         """
-        layer = self.layer_manager.layers[n_layer]
-        smat_layer = {}
-
-        # Handle non-homogeneous layers
-        if not layer.is_homogeneous:
-            # Extract needed matrices
-            mat_kx_diag = matrices["mat_kx_diag"]
-            mat_ky_diag = matrices["mat_ky_diag"]
-
-            if layer.is_dispersive:
-                toeplitz_er = layer.kermat
-            else:
-                toeplitz_er = self.expand_dims(layer.kermat)
-
-            # assuming permeability always non-dispersive
-            # Transform dimensions to (n_freqs, n_harmonics_squared, n_harmonics_squared)
-            toeplitz_ur = self.expand_dims(layer.kurmat)
-
-            # Solve for all frequencies
-            solve_ter_mky = tsolve(toeplitz_er, mat_ky_diag)
-            solve_ter_mkx = tsolve(toeplitz_er, mat_kx_diag)
-            solve_tur_mky = tsolve(toeplitz_ur, mat_ky_diag)
-            solve_tur_mkx = tsolve(toeplitz_ur, mat_kx_diag)
-
-            # Create P matrix
-            p_mat_i = blockmat2x2(
-                [
-                    [mat_kx_diag @ solve_ter_mky, toeplitz_ur - mat_kx_diag @ solve_ter_mkx],
-                    [mat_ky_diag @ solve_ter_mky - toeplitz_ur, -mat_ky_diag @ solve_ter_mkx],
-                ]
-            )
-
-            # Handle Fast Fourier Factorization (FFF)
-            if self.is_use_FFF:
-                delta_toeplitz_er = toeplitz_er - tinv(self.reciprocal_toeplitz_er)
-                q_mat_i = blockmat2x2(
-                    [
-                        [
-                            mat_kx_diag @ solve_tur_mky - delta_toeplitz_er @ self.n_xy,
-                            toeplitz_er - mat_kx_diag @ solve_tur_mkx - delta_toeplitz_er @ self.n_yy,
-                        ],
-                        [
-                            mat_ky_diag @ solve_tur_mky - toeplitz_er + delta_toeplitz_er @ self.n_xx,
-                            delta_toeplitz_er @ self.n_xy - mat_ky_diag @ solve_tur_mkx,
-                        ],
-                    ]
-                )
-            else:
-                q_mat_i = blockmat2x2(
-                    [
-                        [mat_kx_diag @ solve_tur_mky, toeplitz_er - mat_kx_diag @ solve_tur_mkx],
-                        [mat_ky_diag @ solve_tur_mky - toeplitz_er, -mat_ky_diag @ solve_tur_mkx],
-                    ]
-                )
-
-            # Call the appropriate algorithm method
-            smat_layer = self._solve_nonhomo_layer(
-                layer_thickness=self.layer_manager.layers[n_layer].thickness.to(self.device).to(self.tcomplex),
-                p_mat_i=p_mat_i,
-                q_mat_i=q_mat_i,
-                mat_w0=matrices["mat_w0"],
-                mat_v0=matrices["mat_v0"],
-                kdim=self.kdim,
-                k_0=self.k_0,
-            )
-
-        # Handle homogeneous layers
+        # Detect if input is batched based on dimension
+        is_single_source = matrices["mat_kx_diag"].dim() == 3
+        
+        # Entry adapter: normalize to batched format
+        if is_single_source:
+            # Add batch dimension to all matrices
+            matrices_batched = {}
+            for key, value in matrices.items():
+                matrices_batched[key] = value.unsqueeze(0)
         else:
-            if layer.is_dispersive:
-                # Get material properties for all frequencies
-                toeplitz_er = self._matlib[layer.material_name].er.detach().to(self.tcomplex).to(self.device)
-                toeplitz_ur = self._matlib[layer.material_name].ur.detach().to(self.tcomplex).to(self.device)
-
-                # Calculate common values
-                toep_ur_er = toeplitz_ur * toeplitz_er
-                conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er)
-
-                # Calculate kz for the layer
-                mat_kz_i = torch.conj(
-                    torch.sqrt(conj_toep_ur_er[:, None] - matrices["mat_kx"] ** 2 - matrices["mat_ky"] ** 2) + 0 * 1j
-                ).to(self.tcomplex)
-
-                # Calculate v matrix
-                # Add small epsilon to prevent division by zero when mat_kz_i is exactly zero
-                inv_dmat_lam_i = 1 / (1j * mat_kz_i + 1e-12)
-                mat_v_i = (
-                    1
-                    / toeplitz_ur
-                    * blockmat2x2(
-                        [
-                            [
-                                to_diag_util(matrices["mat_kx_ky"] * inv_dmat_lam_i, self.kdim),
-                                to_diag_util((toep_ur_er[:, None] - matrices["mat_kx_kx"]) * inv_dmat_lam_i, self.kdim),
-                            ],
-                            [
-                                to_diag_util((matrices["mat_ky_ky"] - toep_ur_er[:, None]) * inv_dmat_lam_i, self.kdim),
-                                -to_diag_util(matrices["mat_ky_kx"] * inv_dmat_lam_i, self.kdim),
-                            ],
-                        ]
-                    )
-                )
-            else:
-                # Get non-dispersive material properties
-                toeplitz_er = self._matlib[layer.material_name].er.detach().clone().to(self.device)
-                toeplitz_ur = self._matlib[layer.material_name].ur.detach().clone().to(self.device)
-
-                # Calculate common values
-                toep_ur_er = toeplitz_ur * toeplitz_er
-                conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er)
-
-                mat_kz_i = torch.conj(
-                    torch.sqrt(conj_toep_ur_er - matrices["mat_kx"] ** 2 - matrices["mat_ky"] ** 2) + 0 * 1j
-                ).to(self.tcomplex)
-
-                # Add small epsilon to prevent division by zero when mat_kz_i is exactly zero  
-                inv_dmat_lam_i = 1 / (1j * mat_kz_i + 1e-12)
-                mat_v_i = (
-                    1
-                    / toeplitz_ur
-                    * blockmat2x2(
-                        [
-                            [
-                                to_diag_util(matrices["mat_kx_ky"] * inv_dmat_lam_i, self.kdim),
-                                to_diag_util((toep_ur_er - matrices["mat_kx_kx"]) * inv_dmat_lam_i, self.kdim),
-                            ],
-                            [
-                                to_diag_util((matrices["mat_ky_ky"] - toep_ur_er) * inv_dmat_lam_i, self.kdim),
-                                -to_diag_util(matrices["mat_ky_kx"] * inv_dmat_lam_i, self.kdim),
-                            ],
-                        ]
-                    )
-                )
-
-            # Calculate the layer matrix
-            mat_x_i = (
-                -1j
-                * mat_kz_i
-                * self.k_0[:, None]
-                * self.layer_manager.layers[n_layer].thickness.to(self.device).to(self.tcomplex)
-            )
-            mat_x_i_diag = torch.concat([mat_x_i, mat_x_i], dim=1)
-            mat_x_i = to_diag_util(torch.exp(mat_x_i_diag), self.kdim)
-
-            # Calculate Layer Scattering Matrix
-            atwi = matrices["mat_w0"]
-            atvi = tsolve(mat_v_i, matrices["mat_v0"])
-            mat_a_i = atwi + atvi
-            mat_b_i = atwi - atvi
-
-            solve_ai_xi = tsolve(mat_a_i, mat_x_i)
-
-            mat_xi_bi = mat_x_i @ mat_b_i
-
-            mat_d_i = mat_a_i - mat_xi_bi @ solve_ai_xi @ mat_b_i
-
-            smat_layer["S11"] = tsolve(mat_d_i, mat_xi_bi @ solve_ai_xi @ mat_a_i - mat_b_i)
-            smat_layer["S12"] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tsolve(mat_a_i, mat_b_i))
-            smat_layer["S21"] = smat_layer["S12"]
-            smat_layer["S22"] = smat_layer["S11"]
-
-        return smat_layer
-
-    def _process_layer_batched(self, n_layer, matrices):
-        """Process a single layer for multiple sources (batched) and return its scattering matrix.
-
-        This method handles both homogeneous and non-homogeneous layers with batched inputs.
-        All input matrices should have shape (n_sources, n_freqs, ...)
-
-        Args:
-            n_layer: Layer index to process
-            matrices: Dictionary of batched matrices from setup_common_matrices
-
-        Returns:
-            dict: Batched scattering matrix for the layer with shape (n_sources, n_freqs, ...)
-        """
+            matrices_batched = matrices
+        
+        # Get batch size
+        n_sources = matrices_batched["mat_kx_diag"].shape[0]
+        
+        # Debug logging
+        if hasattr(self, 'debug_tensorization') and self.debug_tensorization:
+            print(f"[DEBUG] _process_layer: layer {n_layer}, is_single={is_single_source}, n_sources={n_sources}")
+            print(f"[DEBUG] mat_kx_diag shape: {matrices_batched['mat_kx_diag'].shape}")
+        
         layer = self.layer_manager.layers[n_layer]
         smat_layer = {}
-
+        
         # Handle non-homogeneous layers
         if not layer.is_homogeneous:
             # Extract needed matrices - now 4D: (n_sources, n_freqs, n_harmonics, n_harmonics)
-            mat_kx_diag = matrices["mat_kx_diag"]
-            mat_ky_diag = matrices["mat_ky_diag"]
-
-            # Get the batch size from input matrices
-            n_sources = mat_kx_diag.shape[0] if mat_kx_diag.dim() == 4 else 1
+            mat_kx_diag = matrices_batched["mat_kx_diag"]
+            mat_ky_diag = matrices_batched["mat_ky_diag"]
             
             if layer.is_dispersive:
                 toeplitz_er = layer.kermat
@@ -1512,18 +1358,18 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 toeplitz_er = self.expand_dims(layer.kermat)
                 if toeplitz_er.dim() == 3 and n_sources > 1:
                     toeplitz_er = toeplitz_er.unsqueeze(0).expand(n_sources, -1, -1, -1)
-
+            
             # assuming permeability always non-dispersive
             toeplitz_ur = self.expand_dims(layer.kurmat)
             if toeplitz_ur.dim() == 3 and n_sources > 1:
                 toeplitz_ur = toeplitz_ur.unsqueeze(0).expand(n_sources, -1, -1, -1)
-
+            
             # Solve for all frequencies and sources (tsolve already supports 4D)
             solve_ter_mky = tsolve(toeplitz_er, mat_ky_diag)
             solve_ter_mkx = tsolve(toeplitz_er, mat_kx_diag)
             solve_tur_mky = tsolve(toeplitz_ur, mat_ky_diag)
             solve_tur_mkx = tsolve(toeplitz_ur, mat_kx_diag)
-
+            
             # Create P matrix (blockmat2x2 already supports 4D)
             p_mat_i = blockmat2x2(
                 [
@@ -1531,7 +1377,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                     [mat_ky_diag @ solve_ter_mky - toeplitz_ur, -mat_ky_diag @ solve_ter_mkx],
                 ]
             )
-
+            
             # Handle Fast Fourier Factorization (FFF)
             if self.is_use_FFF:
                 # Need to handle reciprocal_toeplitz_er for batched case
@@ -1569,11 +1415,12 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                         [mat_ky_diag @ solve_tur_mky - toeplitz_er, -mat_ky_diag @ solve_tur_mkx],
                     ]
                 )
-
-            # Call the appropriate algorithm method (needs to support batched inputs)
+            
+            # Get layer thickness
             layer_thickness = self.layer_manager.layers[n_layer].thickness.to(self.device).to(self.tcomplex)
             
-            # For now, process each source separately until _solve_nonhomo_layer supports batching
+            # TODO: Vectorize _solve_nonhomo_layer in future task
+            # For now, process each source separately for non-homogeneous layers
             if n_sources > 1:
                 # Process each source and stack results
                 s11_list, s12_list, s21_list, s22_list = [], [], [], []
@@ -1583,8 +1430,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                         layer_thickness=layer_thickness,
                         p_mat_i=p_mat_i[i],
                         q_mat_i=q_mat_i[i],
-                        mat_w0=matrices["mat_w0"][i] if matrices["mat_w0"].dim() == 4 else matrices["mat_w0"],
-                        mat_v0=matrices["mat_v0"][i] if matrices["mat_v0"].dim() == 4 else matrices["mat_v0"],
+                        mat_w0=matrices_batched["mat_w0"][i],
+                        mat_v0=matrices_batched["mat_v0"][i],
                         kdim=self.kdim,
                         k_0=self.k_0,
                     )
@@ -1601,51 +1448,66 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 # Single source case
                 smat_layer = self._solve_nonhomo_layer(
                     layer_thickness=layer_thickness,
-                    p_mat_i=p_mat_i.squeeze(0) if p_mat_i.dim() == 4 else p_mat_i,
-                    q_mat_i=q_mat_i.squeeze(0) if q_mat_i.dim() == 4 else q_mat_i,
-                    mat_w0=matrices["mat_w0"].squeeze(0) if matrices["mat_w0"].dim() == 4 else matrices["mat_w0"],
-                    mat_v0=matrices["mat_v0"].squeeze(0) if matrices["mat_v0"].dim() == 4 else matrices["mat_v0"],
+                    p_mat_i=p_mat_i[0],
+                    q_mat_i=q_mat_i[0],
+                    mat_w0=matrices_batched["mat_w0"][0],
+                    mat_v0=matrices_batched["mat_v0"][0],
                     kdim=self.kdim,
                     k_0=self.k_0,
                 )
-
+                # Add batch dimension for consistency
+                for key in smat_layer:
+                    smat_layer[key] = smat_layer[key].unsqueeze(0)
+        
         # Handle homogeneous layers
         else:
-            # Get batch size
-            n_sources = matrices["mat_kx"].shape[0] if matrices["mat_kx"].dim() == 3 else 1
-            
             # Debug print for tensor shapes
-            if self.debug_tensorization:
+            if hasattr(self, 'debug_tensorization') and self.debug_tensorization:
                 print(f"[DEBUG] Processing homogeneous layer {n_layer}")
-                print(f"[DEBUG] n_sources: {n_sources}")
-                print(f"[DEBUG] mat_kx shape: {matrices['mat_kx'].shape}")
-                print(f"[DEBUG] mat_w0 shape: {matrices['mat_w0'].shape}")
-                print(f"[DEBUG] mat_v0 shape: {matrices['mat_v0'].shape}")
+                print(f"[DEBUG] mat_kx shape: {matrices_batched['mat_kx'].shape}")
             
             if layer.is_dispersive:
                 # Get material properties for all frequencies
                 toeplitz_er = self._matlib[layer.material_name].er.detach().to(self.tcomplex).to(self.device)
                 toeplitz_ur = self._matlib[layer.material_name].ur.detach().to(self.tcomplex).to(self.device)
                 
+                # Debug logging
+                if hasattr(self, 'debug_tensorization') and self.debug_tensorization:
+                    print(f"[DEBUG] Dispersive layer - toeplitz_er shape: {toeplitz_er.shape}, dim: {toeplitz_er.dim()}")
+                    print(f"[DEBUG] Dispersive layer - toeplitz_ur shape: {toeplitz_ur.shape}, dim: {toeplitz_ur.dim()}")
+                
+                # Handle scalar case (single wavelength)
+                if toeplitz_er.dim() == 0:
+                    toeplitz_er = toeplitz_er.unsqueeze(0)  # Make it 1D
+                    toeplitz_ur = toeplitz_ur.unsqueeze(0)  # Make it 1D
+                
                 # Expand for batched processing if needed
                 if n_sources > 1:
                     toeplitz_er = toeplitz_er.unsqueeze(0).expand(n_sources, -1)
                     toeplitz_ur = toeplitz_ur.unsqueeze(0).expand(n_sources, -1)
-
+                
                 # Calculate common values
                 toep_ur_er = toeplitz_ur * toeplitz_er
                 conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er)
-
+                
                 # Calculate kz for the layer
                 if n_sources > 1:
                     mat_kz_i = torch.conj(
-                        torch.sqrt(conj_toep_ur_er[:, :, None] - matrices["mat_kx"] ** 2 - matrices["mat_ky"] ** 2) + 0 * 1j
+                        torch.sqrt(conj_toep_ur_er[:, :, None] - matrices_batched["mat_kx"] ** 2 - matrices_batched["mat_ky"] ** 2) + 0 * 1j
                     ).to(self.tcomplex)
                 else:
-                    mat_kz_i = torch.conj(
-                        torch.sqrt(conj_toep_ur_er[:, None] - matrices["mat_kx"] ** 2 - matrices["mat_ky"] ** 2) + 0 * 1j
-                    ).to(self.tcomplex)
-
+                    # Handle scalar or 1D case
+                    if conj_toep_ur_er.dim() == 0:
+                        # Scalar case - no indexing needed
+                        mat_kz_i = torch.conj(
+                            torch.sqrt(conj_toep_ur_er - matrices_batched["mat_kx"] ** 2 - matrices_batched["mat_ky"] ** 2) + 0 * 1j
+                        ).to(self.tcomplex)
+                    else:
+                        # 1D case
+                        mat_kz_i = torch.conj(
+                            torch.sqrt(conj_toep_ur_er[:, None] - matrices_batched["mat_kx"] ** 2 - matrices_batched["mat_ky"] ** 2) + 0 * 1j
+                        ).to(self.tcomplex)
+                
                 # Calculate v matrix - use correct formula!
                 inv_dmat_lam_i = 1 / (1j * mat_kz_i + 1e-12)
                 
@@ -1656,99 +1518,92 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                         * blockmat2x2(
                             [
                                 [
-                                    to_diag_util(matrices["mat_kx_ky"] * inv_dmat_lam_i, self.kdim),
-                                    to_diag_util((toep_ur_er[:, :, None] - matrices["mat_kx_kx"]) * inv_dmat_lam_i, self.kdim),
+                                    to_diag_util(matrices_batched["mat_kx_ky"] * inv_dmat_lam_i, self.kdim),
+                                    to_diag_util((toep_ur_er[:, :, None] - matrices_batched["mat_kx_kx"]) * inv_dmat_lam_i, self.kdim),
                                 ],
                                 [
-                                    to_diag_util((matrices["mat_ky_ky"] - toep_ur_er[:, :, None]) * inv_dmat_lam_i, self.kdim),
-                                    -to_diag_util(matrices["mat_ky_kx"] * inv_dmat_lam_i, self.kdim),
+                                    to_diag_util((matrices_batched["mat_ky_ky"] - toep_ur_er[:, :, None]) * inv_dmat_lam_i, self.kdim),
+                                    -to_diag_util(matrices_batched["mat_ky_kx"] * inv_dmat_lam_i, self.kdim),
                                 ],
                             ]
                         )
                     )
                 else:
-                    mat_v_i = (
-                        1
-                        / toeplitz_ur[:, None]
-                        * blockmat2x2(
-                            [
+                    # Handle scalar or 1D case for single source
+                    if toeplitz_ur.dim() == 0:
+                        # Scalar case - no indexing needed
+                        mat_v_i = (
+                            1
+                            / toeplitz_ur
+                            * blockmat2x2(
                                 [
-                                    to_diag_util(matrices["mat_kx_ky"] * inv_dmat_lam_i, self.kdim),
-                                    to_diag_util((toep_ur_er[:, None] - matrices["mat_kx_kx"]) * inv_dmat_lam_i, self.kdim),
-                                ],
-                                [
-                                    to_diag_util((matrices["mat_ky_ky"] - toep_ur_er[:, None]) * inv_dmat_lam_i, self.kdim),
-                                    -to_diag_util(matrices["mat_ky_kx"] * inv_dmat_lam_i, self.kdim),
-                                ],
-                            ]
+                                    [
+                                        to_diag_util(matrices_batched["mat_kx_ky"] * inv_dmat_lam_i, self.kdim),
+                                        to_diag_util((toep_ur_er - matrices_batched["mat_kx_kx"]) * inv_dmat_lam_i, self.kdim),
+                                    ],
+                                    [
+                                        to_diag_util((matrices_batched["mat_ky_ky"] - toep_ur_er) * inv_dmat_lam_i, self.kdim),
+                                        -to_diag_util(matrices_batched["mat_ky_kx"] * inv_dmat_lam_i, self.kdim),
+                                    ],
+                                ]
+                            )
                         )
-                    )
-
-            else:  # Non-dispersive homogeneous
-                # Get material properties
-                toeplitz_er = self._matlib[layer.material_name].er.detach().to(self.tcomplex).to(self.device)
-                toeplitz_ur = self._matlib[layer.material_name].ur.detach().to(self.tcomplex).to(self.device)
+                    else:
+                        # 1D case
+                        mat_v_i = (
+                            1
+                            / toeplitz_ur[:, None]
+                            * blockmat2x2(
+                                [
+                                    [
+                                        to_diag_util(matrices_batched["mat_kx_ky"] * inv_dmat_lam_i, self.kdim),
+                                        to_diag_util((toep_ur_er[:, None] - matrices_batched["mat_kx_kx"]) * inv_dmat_lam_i, self.kdim),
+                                    ],
+                                    [
+                                        to_diag_util((matrices_batched["mat_ky_ky"] - toep_ur_er[:, None]) * inv_dmat_lam_i, self.kdim),
+                                        -to_diag_util(matrices_batched["mat_ky_kx"] * inv_dmat_lam_i, self.kdim),
+                                    ],
+                                ]
+                            )
+                        )
+            else:
+                # Get non-dispersive material properties
+                toeplitz_er = self._matlib[layer.material_name].er.detach().clone().to(self.device)
+                toeplitz_ur = self._matlib[layer.material_name].ur.detach().clone().to(self.device)
                 
-                if self.debug_tensorization:
-                    print(f"[DEBUG] Material: {layer.material_name}")
-                    print(f"[DEBUG] toeplitz_er: {toeplitz_er}")
-                    print(f"[DEBUG] toeplitz_ur: {toeplitz_ur}")
-
-                # Expand scalars for batched processing if needed
-                if n_sources > 1:
-                    # For scalar material properties, expand to match batch size
-                    toeplitz_er_expanded = toeplitz_er
-                    toeplitz_ur_expanded = toeplitz_ur
-                    conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er)
-                else:
-                    toeplitz_er_expanded = toeplitz_er
-                    toeplitz_ur_expanded = toeplitz_ur
-                    conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er)
-
-                # Calculate kz for the layer
+                # Calculate common values
+                toep_ur_er = toeplitz_ur * toeplitz_er
+                conj_toep_ur_er = torch.conj(toeplitz_ur) * torch.conj(toeplitz_er)
+                
                 mat_kz_i = torch.conj(
-                    torch.sqrt(conj_toep_ur_er - matrices["mat_kx"] ** 2 - matrices["mat_ky"] ** 2) + 0 * 1j
+                    torch.sqrt(conj_toep_ur_er - matrices_batched["mat_kx"] ** 2 - matrices_batched["mat_ky"] ** 2) + 0 * 1j
                 ).to(self.tcomplex)
-
-                # Calculate v matrix
+                
+                # Add small epsilon to prevent division by zero when mat_kz_i is exactly zero  
                 inv_dmat_lam_i = 1 / (1j * mat_kz_i + 1e-12)
-                
-                # Debug tensor shapes before blockmat2x2
-                if self.debug_tensorization:
-                    print(f"[DEBUG] mat_kz_i shape: {mat_kz_i.shape}")
-                    print(f"[DEBUG] inv_dmat_lam_i shape: {inv_dmat_lam_i.shape}")
-                    print(f"[DEBUG] toeplitz_ur_expanded: {toeplitz_ur_expanded}")
-                    kz_term = mat_kz_i * inv_dmat_lam_i * toeplitz_ur_expanded
-                    kxy_term = -matrices["mat_kx"] * matrices["mat_ky"] * inv_dmat_lam_i
-                    print(f"[DEBUG] kz_term shape: {kz_term.shape}")
-                    print(f"[DEBUG] kxy_term shape: {kxy_term.shape}")
-                
-                # Create diagonal matrices for blockmat2x2 - use correct formula!
                 mat_v_i = (
                     1
-                    / toeplitz_ur_expanded
+                    / toeplitz_ur
                     * blockmat2x2(
                         [
                             [
-                                to_diag_util(matrices["mat_kx_ky"] * inv_dmat_lam_i, self.kdim),
-                                to_diag_util((toeplitz_er_expanded - matrices["mat_kx_kx"]) * inv_dmat_lam_i, self.kdim),
+                                to_diag_util(matrices_batched["mat_kx_ky"] * inv_dmat_lam_i, self.kdim),
+                                to_diag_util((toep_ur_er - matrices_batched["mat_kx_kx"]) * inv_dmat_lam_i, self.kdim),
                             ],
                             [
-                                to_diag_util((matrices["mat_ky_ky"] - toeplitz_er_expanded) * inv_dmat_lam_i, self.kdim),
-                                -to_diag_util(matrices["mat_ky_kx"] * inv_dmat_lam_i, self.kdim),
+                                to_diag_util((matrices_batched["mat_ky_ky"] - toep_ur_er) * inv_dmat_lam_i, self.kdim),
+                                -to_diag_util(matrices_batched["mat_ky_kx"] * inv_dmat_lam_i, self.kdim),
                             ],
                         ]
                     )
                 )
-                
-                if self.debug_tensorization:
-                    print(f"[DEBUG] mat_v_i shape after blockmat2x2: {mat_v_i.shape}")
-
-            # Calculate propagation matrix
-            if n_sources == 1:
-                k_0_expanded = self.k_0[:, None]
+            
+            # Calculate the layer matrix
+            if n_sources > 1:
+                # Batched k_0 expansion
+                k_0_expanded = self.k_0.unsqueeze(0).unsqueeze(2)  # (1, n_freqs, 1)
             else:
-                k_0_expanded = self.k_0[None, :, None].expand(n_sources, -1, -1)
+                k_0_expanded = self.k_0[:, None]  # (n_freqs, 1)
             
             mat_x_i = (
                 -1j
@@ -1756,25 +1611,46 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 * k_0_expanded
                 * self.layer_manager.layers[n_layer].thickness.to(self.device).to(self.tcomplex)
             )
-            mat_x_i_diag = torch.concat([mat_x_i, mat_x_i], dim=-1)
+            
+            # Create diagonal matrix - concatenate along last dimension
+            # We need shape (..., 2*kdim_product) for to_diag_util
+            if n_sources > 1:
+                mat_x_i_diag = torch.concat([mat_x_i, mat_x_i], dim=-1)  # Concatenate along last dimension
+            else:
+                mat_x_i_diag = torch.concat([mat_x_i, mat_x_i], dim=-1)  # Concatenate along last dimension
+                
+            # Debug shapes before to_diag_util
+            if hasattr(self, 'debug_tensorization') and self.debug_tensorization:
+                print(f"[DEBUG] mat_x_i shape: {mat_x_i.shape}")
+                print(f"[DEBUG] mat_x_i_diag shape: {mat_x_i_diag.shape}")
+                print(f"[DEBUG] kdim: {self.kdim}")
+                
             mat_x_i = to_diag_util(torch.exp(mat_x_i_diag), self.kdim)
-
+            
             # Calculate Layer Scattering Matrix
-            atwi = matrices["mat_w0"]
-            atvi = tsolve(mat_v_i, matrices["mat_v0"])
+            atwi = matrices_batched["mat_w0"]
+            atvi = tsolve(mat_v_i, matrices_batched["mat_v0"])
             mat_a_i = atwi + atvi
             mat_b_i = atwi - atvi
-
+            
             solve_ai_xi = tsolve(mat_a_i, mat_x_i)
+            
             mat_xi_bi = mat_x_i @ mat_b_i
+            
             mat_d_i = mat_a_i - mat_xi_bi @ solve_ai_xi @ mat_b_i
-
+            
             smat_layer["S11"] = tsolve(mat_d_i, mat_xi_bi @ solve_ai_xi @ mat_a_i - mat_b_i)
             smat_layer["S12"] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tsolve(mat_a_i, mat_b_i))
             smat_layer["S21"] = smat_layer["S12"]
             smat_layer["S22"] = smat_layer["S11"]
-
+        
+        # Exit adapter: remove batch dimension if input was single source
+        if is_single_source:
+            for key in smat_layer:
+                smat_layer[key] = smat_layer[key].squeeze(0)
+        
         return smat_layer
+
 
     def _solve_structure(self, sources=None, **kwargs):
         """Solve the electromagnetic problem for single or batched sources.
@@ -1869,9 +1745,9 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 },
             )
 
-            # Process layer using appropriate method
+            # Process layer using unified method
             if is_batched:
-                smat_layer = self._process_layer_batched(n_layer, matrices)
+                smat_layer = self._process_layer(n_layer, matrices)
             else:
                 smat_layer = self._process_layer(n_layer, matrices_single)
 

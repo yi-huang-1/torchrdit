@@ -286,6 +286,9 @@ class TestBatchedMemoryEfficiency:
         solver.update_ref_material("test")
         solver.update_trn_material("test")
         
+        # Add at least one layer to avoid degenerate S-matrix
+        solver.add_layer(material_name="test", thickness=0.1)
+        
         return solver
 
     def test_memory_scaling(self):
