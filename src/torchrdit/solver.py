@@ -2180,44 +2180,52 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             transmission, efficiency, automatic differentiation, gradient,
             inverse design, field computation, optimization, differentiable simulation
         """
-        # Check if source is a list (batched) or dict (single)
+        # Unified input handling for both single and batched sources
         if isinstance(source, dict):
-            # Single source - existing behavior
+            # Single source path
             self.src = source
-            self._pre_solve()  # Now uses unified version
-            return self._solve_structure(**kwargs)  # Now uses unified implementation
+            self._pre_solve()
+            return self._solve_structure(**kwargs)
+        elif isinstance(source, list):
+            # Batched sources path - move validation logic from _solve_batched
+            if not source:
+                raise ValueError("At least one source required")
+            
+            # Validate source format
+            for src in source:
+                if not isinstance(src, dict) or "theta" not in src:
+                    raise ValueError("Invalid source format: each source must be a dict with 'theta', 'phi', 'pte', 'ptm'")
+            
+            # Process with unified methods
+            self._pre_solve(source)
+            return self._solve_structure(source, **kwargs)
         else:
-            # Batched sources - use unified method
-            return self._solve_batched(source, **kwargs)
+            # Handle invalid input types to preserve exact current error behavior
+            # This replicates the behavior from the original _solve_batched method
+            
+            # For torch.Tensor with multiple elements, this will raise RuntimeError
+            if hasattr(source, '__len__') and hasattr(source, 'dim'):  # Check if it's a tensor-like
+                # This will trigger: "Boolean value of Tensor with more than one value is ambiguous"
+                if not source:
+                    raise ValueError("At least one source required")
+            
+            # For None, empty collections
+            if not source:
+                raise ValueError("At least one source required")
+                
+            # For non-iterable types (int, etc.), this will raise TypeError
+            try:
+                # Try to iterate - will fail for int, float, etc.
+                for src in source:
+                    if not isinstance(src, dict) or "theta" not in src:
+                        raise ValueError("Invalid source format: each source must be a dict with 'theta', 'phi', 'pte', 'ptm'")
+            except TypeError as e:
+                # Re-raise with original error message to preserve behavior
+                raise e
+            
+            # If we got here, it's an iterable with invalid contents
+            raise ValueError("Invalid source format: each source must be a dict with 'theta', 'phi', 'pte', 'ptm'")
 
-    def _solve_batched(self, sources: List[dict], **kwargs) -> BatchedSolverResults:
-        """Process multiple sources and return batched results.
-
-        Args:
-            sources: List of source dictionaries
-            **kwargs: Additional solver options
-
-        Returns:
-            BatchedSolverResults containing results for all sources
-        """
-        # Validate input
-        if not sources:
-            raise ValueError("At least one source required")
-
-        # Validate source format
-        for src in sources:
-            if not isinstance(src, dict) or "theta" not in src:
-                raise ValueError("Invalid source format: each source must be a dict with 'theta', 'phi', 'pte', 'ptm'")
-        
-        # Use unified pre-solve
-        self._pre_solve(sources)  # Now handles batched sources
-        
-        # Solve with unified method
-        result = self._solve_structure(sources, **kwargs)  # Now uses unified implementation
-        
-        return result
-
-    # REMOVED: _solve_structure_batched - now using unified _solve_structure method
 
     def _pre_solve(self, source=None) -> None:
         """Unified pre-solve handling both single and batched sources.
