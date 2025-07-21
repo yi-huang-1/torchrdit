@@ -26,8 +26,8 @@ Key modules:
 - observers: Observer pattern implementation for progress tracking
 - batched_results: Results containers for source batching
 
-New in v0.1.22: Source Batching
---------------------------------
+New in v0.1.23: Fully Tensorized Source Batching
+------------------------------------------------
 TorchRDIT now supports efficient batched processing of multiple sources:
 
 ```python
@@ -61,7 +61,7 @@ For more information, see:
   Rigorous Diffraction Interface Theory," CLEO (2023)
 """
 
-__version__ = "0.1.22"
+__version__ = "0.1.23"
 
 # Import core functionality
 from .batched_results import BatchedSolverResults, BatchedFieldComponents
