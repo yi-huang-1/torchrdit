@@ -529,22 +529,23 @@ class MaterialDataProxy:
             return not all(char.isdigit() or char in ".- " for char in first_line)
 
     def extract_permittivity(self, data, wavelengths, fit_order=10):
-        """Extract permittivity values at specific wavelengths using polynomial fitting.
+        """Extract permittivity values at specific wavelengths using interpolation.
 
         This method interpolates/extrapolates permittivity values for specified
-        wavelengths from a set of material data. It uses polynomial fitting to
-        generate smooth curves for both real and imaginary parts of the permittivity.
+        wavelengths from a set of material data. It uses Akima1DInterpolator for
+        smooth, stable interpolation that handles sharp features well without
+        oscillations. For sparse data (< 5 points), it falls back to linear
+        interpolation.
 
         Args:
             data (numpy.ndarray): Material data from load_data with shape (N, 3).
             wavelengths (numpy.ndarray): Target wavelengths to extract permittivity for.
-            fit_order (int, optional): Polynomial fit order. Higher values provide
-                       more accurate fits for complex curves but may lead to
-                       overfitting. Default is 10.
+            fit_order (int, optional): Preserved for backward compatibility. When using
+                       Akima interpolation, this parameter is ignored. Default is 10.
 
         Returns:
-            tuple: (real_permittivity, imaginary_permittivity) at requested wavelengths.
-                 Each is a numpy.ndarray with the same shape as the input wavelengths.
+            tuple: (real_permittivity_func, imaginary_permittivity_func) - callable
+                 interpolation functions. Call with wavelength array to get values.
 
         Examples:
         ```python
@@ -565,7 +566,7 @@ class MaterialDataProxy:
         ```
 
         Keywords:
-            permittivity extraction, interpolation, polynomial fitting,
+            permittivity extraction, interpolation, Akima spline,
             material properties, dispersion, wavelength-dependent properties
         """
         import warnings
@@ -575,16 +576,42 @@ class MaterialDataProxy:
         eps_real = data[:, 1]
         eps_imag = data[:, 2]
 
-        # Fit polynomials to the data
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", Warning)
-            np.seterr(all="ignore")
+        # Check if we have enough points for Akima interpolation
+        if len(wl_data) < 5:
+            # Fall back to linear interpolation for sparse data
+            def interp_real(x):
+                return np.interp(x, wl_data, eps_real)
+            def interp_imag(x):
+                return np.interp(x, wl_data, eps_imag)
+            return interp_real, interp_imag
 
-            coef_real = np.polyfit(wl_data, eps_real, fit_order)
-            coef_imag = np.polyfit(wl_data, eps_imag, fit_order)
+        # Use Akima1DInterpolator for smooth interpolation
+        try:
+            from scipy.interpolate import Akima1DInterpolator
+            
+            # Create Akima interpolators
+            akima_real = Akima1DInterpolator(wl_data, eps_real)
+            akima_imag = Akima1DInterpolator(wl_data, eps_imag)
+            
+            return akima_real, akima_imag
+            
+        except ImportError:
+            # Fall back to polynomial fitting if scipy is not available
+            warnings.warn(
+                "scipy.interpolate.Akima1DInterpolator not available. "
+                "Falling back to polynomial fitting. "
+                "Install scipy for better interpolation quality.",
+                UserWarning
+            )
+            
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", Warning)
+                np.seterr(all="ignore")
 
-        poly_real = np.poly1d(coef_real)
-        poly_imag = np.poly1d(coef_imag)
+                coef_real = np.polyfit(wl_data, eps_real, fit_order)
+                coef_imag = np.polyfit(wl_data, eps_imag, fit_order)
 
-        # Evaluate at target wavelengths
-        return poly_real, poly_imag
+            poly_real = np.poly1d(coef_real)
+            poly_imag = np.poly1d(coef_imag)
+
+            return poly_real, poly_imag
