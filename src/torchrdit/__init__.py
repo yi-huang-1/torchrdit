@@ -72,6 +72,18 @@ mask_to_gds(mask, shape_gen, "DEVICE", "output.gds")
 reconstructed = gds_to_mask("output.json", shape_gen)
 ```
 
+New in v0.1.25: gdstk Migration
+--------------------------------
+TorchRDIT now uses gdstk instead of gdspy for improved platform compatibility:
+
+- Better build support across different platforms
+- Modern C++ backend for improved performance
+- Full backward compatibility maintained
+- No API changes for end users
+
+Note: gdstk may require system dependencies (zlib and qhull).
+See README for installation details.
+
 For more information, see:
 - Huang et al., "Eigendecomposition-free inverse design of meta-optics devices,"
   Opt. Express 32, 13986-13997 (2024)
@@ -79,7 +91,7 @@ For more information, see:
   Rigorous Diffraction Interface Theory," CLEO (2023)
 """
 
-__version__ = "0.1.24"
+__version__ = "0.1.25"
 
 # Import core functionality
 from .batched_results import BatchedSolverResults, BatchedFieldComponents
