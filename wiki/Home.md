@@ -33,6 +33,15 @@ Welcome to the `TorchRDIT` documentation. `TorchRDIT` is an advanced software pa
 - [Utils](Utils) - Utility functions
 - [Visualization](Visualization) - Tools for visualizing results
 
+## New in v0.1.24: GDS Export/Import
+
+TorchRDIT now includes industry-standard GDS file format support:
+- Export photonic masks to GDS files for fabrication
+- Import masks from GDS vertex data
+- Support for complex topologies with holes
+- Batch processing for multiple designs
+- See the [GDS](GDS) page for details
+
 ## New in v0.1.22: Source Batching
 
 TorchRDIT now supports efficient batched processing of multiple sources:

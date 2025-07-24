@@ -465,6 +465,15 @@ wheels = [
 ]
 
 [[package]]
+name = "gdspy"
+version = "1.6.13"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7a/c5/01a4b160bc9ac9b0f8621dd6f90e964596e60a369ff2d076ebb4ce52c402/gdspy-1.6.13.zip", hash = "sha256:38c61a7267f90767d90b8fcdda96c7a629df26e06f7153084c773f3d6363f4f0", size = 157902, upload-time = "2023-04-26T12:21:35.91Z" }
+
+[[package]]
 name = "identify"
 version = "2.6.12"
 source = { registry = "https://pypi.org/simple" }
@@ -1586,6 +1595,7 @@ wheels = [
 name = "torchrdit"
 source = { editable = "." }
 dependencies = [
+    { name = "gdspy" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pyyaml" },
@@ -1607,6 +1617,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "gdspy", specifier = ">=1.6.13" },
     { name = "matplotlib", specifier = ">=3.10.3" },
     { name = "numpy", specifier = ">=2.2.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },

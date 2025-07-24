@@ -198,6 +198,9 @@ Please check that the module exists and is properly installed.
     # Create a Source Batching page
     create_source_batching_page(docs_dir)
     
+    # Create a GDS page
+    create_gds_page(docs_dir)
+    
     # Create a README file for the wiki directory
     create_readme(docs_dir)
 
@@ -240,6 +243,15 @@ Welcome to the `TorchRDIT` documentation. `TorchRDIT` is an advanced software pa
 - [Solver Module](Solver) - Core solver functionality
 - [Utils](Utils) - Utility functions
 - [Visualization](Visualization) - Tools for visualizing results
+
+## New in v0.1.24: GDS Export/Import
+
+TorchRDIT now includes industry-standard GDS file format support:
+- Export photonic masks to GDS files for fabrication
+- Import masks from GDS vertex data
+- Support for complex topologies with holes
+- Batch processing for multiple designs
+- See the [GDS](GDS) page for details
 
 ## New in v0.1.22: Source Batching
 
@@ -285,6 +297,7 @@ def create_sidebar(docs_dir):
   - [Solver](Solver)
   - [Utils](Utils)
   - [Visualization](Visualization)
+  - [GDS](GDS)
 """)
         print("  -> Created _Sidebar.md")
 
@@ -1307,6 +1320,174 @@ For complete examples, see:
     print("  -> Created SourceBatching.md")
 
 
+def create_gds_page(docs_dir):
+    """Create a GDS page for the wiki."""
+    # First check if the auto-generated API file exists
+    api_file = docs_dir / "GDS-API.md"
+    
+    # Create the custom intro content
+    intro_content = """# GDS Module
+
+## Overview
+The `torchrdit.gds` module provides functionality to export photonic structure masks to GDS (GDSII) files and import masks from GDS JSON vertex data. It enables interoperability with standard photonics design tools and fabrication workflows.
+
+## Key Features
+- Export binary masks to GDS format with JSON vertex data
+- Import masks from GDS JSON files  
+- Support for complex topologies including holes and disconnected regions
+- Batch processing for multiple masks
+- Both Cartesian and non-Cartesian lattice systems
+- Smart coordinate extrapolation for boundary handling
+- High fidelity reconstruction (IoU > 0.9)
+
+## Main Functions
+
+### mask_to_gds
+```python
+mask_to_gds(mask, layout, cell_name, file_path, smooth=0.01, padding=20, 
+            connectivity=1, morph_separate=False)
+```
+
+Exports binary mask(s) to GDS file(s) with JSON vertices. Handles complex shapes including holes and disconnected regions.
+
+**Parameters:**
+- `mask`: Binary mask tensor/array or list for batch export
+- `layout`: Tuple of (X, Y) coordinate meshgrid matrices
+- `cell_name`: Name for the GDS cell
+- `file_path`: Output file path (should end with .gds)
+- `smooth`: Smoothing parameter for boundary splines (default: 0.01)
+- `padding`: Padding pixels for boundary shapes (default: 20)
+- `connectivity`: 1 for 4-connectivity, 2 for 8-connectivity (default: 1)
+- `morph_separate`: Apply morphological opening to separate components
+
+### gds_to_mask
+```python
+gds_to_mask(json_path, shape_generator, soft_edge=0.0)
+```
+
+Import mask from GDS JSON vertices. Reconstructs a binary mask from polygon vertices.
+
+**Parameters:**
+- `json_path`: Path to JSON file containing vertex data
+- `shape_generator`: ShapeGenerator instance for coordinate system
+- `soft_edge`: Soft edge parameter for polygon generation (default: 0.0)
+
+### load_gds_vertices
+```python
+load_gds_vertices(json_path)
+```
+
+Load polygon vertices from JSON file created during GDS export.
+
+## Usage Examples
+
+### Basic Export
+```python
+from torchrdit.shapes import ShapeGenerator
+from torchrdit.gds import mask_to_gds
+
+# Create shape generator and mask
+shape_gen = ShapeGenerator(X, Y, rdim)
+mask = shape_gen.generate_circle_mask(center=(0, 0), radius=0.5)
+
+# Export to GDS
+mask_to_gds(mask, shape_gen.get_layout(), "CIRCLE", "output.gds")
+```
+
+### Complex Shapes with Holes
+```python
+# For shapes with holes, use higher smoothing
+mask_to_gds(ring_mask, shape_gen.get_layout(), "RING", "ring.gds", smooth=0.1)
+```
+
+### Batch Processing
+```python
+# Export multiple masks
+masks = [mask1, mask2, mask3]
+paths = mask_to_gds(masks, shape_gen.get_layout(), "BATCH", "batch.gds")
+# Creates: batch_0.gds, batch_1.gds, batch_2.gds
+```
+
+### Import and Reconstruction
+```python
+from torchrdit.gds import gds_to_mask
+
+# Import mask from GDS JSON
+reconstructed = gds_to_mask("output.json", shape_gen)
+
+# Use soft edge for smoother boundaries
+smooth_mask = gds_to_mask("output.json", shape_gen, soft_edge=0.001)
+```
+
+## Parameter Guidelines
+
+### Smoothing Parameter
+- Simple shapes (circles, rectangles): `smooth=0.001-0.005`
+- Complex shapes with holes: `smooth=0.1` or higher
+- Sharp corners needed: `smooth=0` (no smoothing)
+
+### Padding
+- Shapes fully within bounds: `padding=0`
+- Shapes near/crossing boundaries: `padding=20-40`
+
+### Connectivity
+- `connectivity=1`: 4-connectivity (better separation)
+- `connectivity=2`: 8-connectivity (preserves thin connections)
+
+## Implementation Details
+
+The GDS export process:
+1. Converts mask to binary (threshold at 0.5)
+2. Applies padding if specified
+3. Identifies connected components and holes
+4. Extracts contours using skimage
+5. Smooths boundaries using spline interpolation
+6. Exports to GDS with gdspy
+7. Saves vertices to JSON for reconstruction
+
+The coordinate extrapolation handles both:
+- **Cartesian grids**: Linear extrapolation based on grid spacing
+- **Non-Cartesian grids**: Parametric transformation using lattice vectors
+
+## API Reference
+
+Below is the complete API reference for the gds module, automatically generated from the source code.
+
+"""
+    
+    # Create the GDS.md file
+    with open(docs_dir / "GDS.md", "w") as f:
+        f.write(intro_content)
+        
+        # If the auto-generated API file exists, append its content (skipping the header)
+        if api_file.exists():
+            with open(api_file, "r") as api_f:
+                api_content = api_f.read()
+                
+                # Find the first heading and skip everything before it
+                import re
+                match = re.search(r'^#', api_content, re.MULTILINE)
+                if match:
+                    api_content = api_content[match.start():]
+                
+                f.write(api_content)
+        else:
+            # If API file doesn't exist, include a warning
+            f.write("""
+**Note: Automatic API documentation could not be generated. 
+Please ensure that the module is properly installed and importable.**
+""")
+    
+    print("  -> Created GDS.md")
+    
+    # Try to remove the temporary API file to keep things clean
+    if api_file.exists():
+        try:
+            api_file.unlink()
+        except:
+            pass
+
+
 def create_readme(docs_dir):
     """Create a README file for the wiki directory explaining how it's generated."""
     with open(docs_dir / "README.md", "w") as f:
@@ -1338,6 +1519,7 @@ The documentation is generated automatically using pydoc-markdown. To update it:
 - **Solver.md**: Documentation for the solver module
 - **Utils.md**: Documentation for utility functions
 - **Visualization.md**: Documentation for visualization tools
+- **GDS.md**: Documentation for GDS export/import functionality
 - **Getting-Started.md**: Guide for getting started with TorchRDIT
 - **Examples.md**: Code examples showing how to use TorchRDIT
 - **_Sidebar.md**: Navigation sidebar for the wiki

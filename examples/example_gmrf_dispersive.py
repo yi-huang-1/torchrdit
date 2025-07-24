@@ -142,7 +142,7 @@ print("Example 1: Getting zero-order field components")
 tx, ty, tz = result.get_zero_order_transmission()
 rx, ry, rz = result.get_zero_order_reflection()
 
-print(f"Zero-order transmission field amplitudes (first wavelength):")
+print("Zero-order transmission field amplitudes (first wavelength):")
 tx_amplitude = torch.abs(tx[0])
 ty_amplitude = torch.abs(ty[0])
 tz_amplitude = torch.abs(tz[0])
@@ -202,12 +202,12 @@ print("\nExample 6: Structure scattering matrix analysis")
 s11 = result.structure_matrix.S11
 s12 = result.structure_matrix.S12
 print(f"S11 shape: {s11.shape} - Shows matrix for each wavelength ({len(torchrdit_sim.lam0)} wavelengths)")
-print(f"S-matrix values vary with wavelength due to material dispersion")
+print("S-matrix values vary with wavelength due to material dispersion")
 
 # Example 7: Effect of wavelength on wave vectors
 print("\nExample 7: Wave vector analysis with dispersive materials")
-print(f"Wave vectors are affected by wavelength-dependent material properties:")
-print(f"kzref for different wavelengths:")
+print("Wave vectors are affected by wavelength-dependent material properties:")
+print("kzref for different wavelengths:")
 for i in range(len(torchrdit_sim.lam0)):
     wavelength = torchrdit_sim.lam0[i] * 1e3  # in nm
     # Get the central value (zero-order)

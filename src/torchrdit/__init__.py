@@ -25,6 +25,7 @@ Key modules:
 - shapes: Shape generation for photonic structures
 - observers: Observer pattern implementation for progress tracking
 - batched_results: Results containers for source batching
+- gds: GDS file format support for mask import/export
 
 New in v0.1.23: Fully Tensorized Source Batching
 ------------------------------------------------
@@ -54,6 +55,23 @@ best_idx = results.find_optimal_source('max_transmission')
 print(f"Best angle: {sources[best_idx]['theta'] * 180/np.pi:.1f}°")
 ```
 
+New in v0.1.24: GDS Integration
+--------------------------------
+TorchRDIT now supports GDS file format for mask import/export:
+
+```python
+from torchrdit import mask_to_gds, gds_to_mask
+from torchrdit.shapes import ShapeGenerator
+
+# Create shapes and export to GDS
+shape_gen = ShapeGenerator(X, Y, rdim)
+mask = shape_gen.generate_circle_mask(radius=0.5)
+mask_to_gds(mask, shape_gen, "DEVICE", "output.gds")
+
+# Import from GDS
+reconstructed = gds_to_mask("output.json", shape_gen)
+```
+
 For more information, see:
 - Huang et al., "Eigendecomposition-free inverse design of meta-optics devices,"
   Opt. Express 32, 13986-13997 (2024)
@@ -61,9 +79,10 @@ For more information, see:
   Rigorous Diffraction Interface Theory," CLEO (2023)
 """
 
-__version__ = "0.1.23"
+__version__ = "0.1.24"
 
 # Import core functionality
 from .batched_results import BatchedSolverResults, BatchedFieldComponents
+from .gds import mask_to_gds, gds_to_mask, load_gds_vertices
 
-__all__ = ["BatchedSolverResults", "BatchedFieldComponents"]
+__all__ = ["BatchedSolverResults", "BatchedFieldComponents", "mask_to_gds", "gds_to_mask", "load_gds_vertices"]

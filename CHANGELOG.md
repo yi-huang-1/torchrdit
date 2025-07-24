@@ -7,16 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.24] - 2025-01-24
+
 ### Added
 
+- **GDS Export/Import Functionality**: Industry-standard GDSII format support for fabrication workflows
+  - `mask_to_gds()`: Export binary masks to GDS files with JSON vertex data
+  - `gds_to_mask()`: Import masks from GDS JSON files  
+  - `load_gds_vertices()`: Load polygon vertices from JSON files
+  - Support for complex topologies including holes and disconnected regions
+  - Batch processing for multiple masks
+  - Smart coordinate extrapolation for shapes extending beyond boundaries
+  - Both Cartesian and non-Cartesian lattice system support
+  - High-fidelity reconstruction (IoU > 0.9)
+  - Modern pathlib support for all file operations
 - Material API optimizations with Akima1DInterpolator for improved interpolation stability
 - LRU caching for dispersive material queries with configurable cache size
 - Comprehensive test suite for material interpolation
+- GDS export example demonstrating complex topologies
 
 ### Changed
 
 - Material property interpolation now uses Akima splines by default with scipy fallback
 - Improved memory efficiency for repeated material property queries
+- Added scikit-image dependency for GDS contour extraction
 
 ## [0.1.23] - 2025-01-21
 

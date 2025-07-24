@@ -18,7 +18,6 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import time
-from pathlib import Path
 
 from torchrdit.solver import create_solver
 from torchrdit.constants import Algorithm
@@ -236,13 +235,13 @@ def example_polarization_sweep():
         S0 = abs(Ex)**2 + abs(Ey)**2
         S1 = abs(Ex)**2 - abs(Ey)**2
         S2 = 2 * Ex * Ey  # For real polarizations
-        S3 = 0  # For real polarizations, imaginary part is 0
+        # S3 = 0  # For real polarizations, imaginary part is 0
         
         # Normalize
         if S0 > 0:
             s1 = S1 / S0
             s2 = S2 / S0
-            s3 = S3 / S0
+            # s3 = S3 / S0
             
             # Plot on unit circle (equatorial projection)
             color = plt.cm.viridis(trans)
@@ -497,7 +496,7 @@ def example_wavelength_and_angle_sweep():
     best_wl_idx = np.argmax(transmission[best_idx, :])
     best_wl = wavelengths[best_wl_idx]
     
-    print(f"\nOptimal operating point:")
+    print("\nOptimal operating point:")
     print(f"  Angle: {best_angle:.1f}°")
     print(f"  Wavelength: {best_wl:.3f} μm")
     print(f"  Transmission: {transmission[best_idx, best_wl_idx]:.4f}")

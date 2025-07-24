@@ -159,13 +159,13 @@ except ValueError as e:
 # Example 2: Get zero-order field components
 print("\nExample 2: Getting zero-order field components")
 tx, ty, tz = data.get_zero_order_transmission()
-print(f"Zero-order transmission field components (first wavelength):")
+print("Zero-order transmission field components (first wavelength):")
 print(f"  x-component: {tx[0].item():.6f}")
 print(f"  y-component: {ty[0].item():.6f}")
 print(f"  z-component: {tz[0].item():.6f}")
 
 rx, ry, rz = data.get_zero_order_reflection()
-print(f"Zero-order reflection field components (first wavelength):")
+print("Zero-order reflection field components (first wavelength):")
 print(f"  x-component: {rx[0].item():.6f}")
 print(f"  y-component: {ry[0].item():.6f}")
 print(f"  z-component: {rz[0].item():.6f}")
@@ -273,7 +273,7 @@ try:
     tx_1_0_phase = torch.angle(tx_1_0) * rad_to_deg
     ty_1_0_phase = torch.angle(ty_1_0) * rad_to_deg
     
-    print(f"Phase of (1,0) order transmission field (first wavelength):")
+    print("Phase of (1,0) order transmission field (first wavelength):")
     print(f"  x-component: {tx_1_0_phase[0].item():.2f}°")
     print(f"  y-component: {ty_1_0_phase[0].item():.2f}°")
 except ValueError as e:
