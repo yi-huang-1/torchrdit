@@ -582,25 +582,26 @@ print(f"Wavelength range: {silicon_data[:, 0].min():.2f} - "
 def extract_permittivity(data, wavelengths, fit_order=10)
 ```
 
-Extract permittivity values at specific wavelengths using polynomial fitting.
+Extract permittivity values at specific wavelengths using interpolation.
 
 This method interpolates/extrapolates permittivity values for specified
-wavelengths from a set of material data. It uses polynomial fitting to
-generate smooth curves for both real and imaginary parts of the permittivity.
+wavelengths from a set of material data. It uses Akima1DInterpolator for
+smooth, stable interpolation that handles sharp features well without
+oscillations. For sparse data (< 5 points), it falls back to linear
+interpolation.
 
 **Arguments**:
 
 - `data` _numpy.ndarray_ - Material data from load_data with shape (N, 3).
 - `wavelengths` _numpy.ndarray_ - Target wavelengths to extract permittivity for.
-- `fit_order` _int, optional_ - Polynomial fit order. Higher values provide
-  more accurate fits for complex curves but may lead to
-  overfitting. Default is 10.
+- `fit_order` _int, optional_ - Preserved for backward compatibility. When using
+  Akima interpolation, this parameter is ignored. Default is 10.
   
 
 **Returns**:
 
-- `tuple` - (real_permittivity, imaginary_permittivity) at requested wavelengths.
-  Each is a numpy.ndarray with the same shape as the input wavelengths.
+- `tuple` - (real_permittivity_func, imaginary_permittivity_func) - callable
+  interpolation functions. Call with wavelength array to get values.
   
 
 **Examples**:
@@ -623,6 +624,6 @@ for wl, er, ei in zip(operating_wl, eps_real(operating_wl), eps_imag(operating_w
 ```
   
   Keywords:
-  permittivity extraction, interpolation, polynomial fitting,
+  permittivity extraction, interpolation, Akima spline,
   material properties, dispersion, wavelength-dependent properties
 

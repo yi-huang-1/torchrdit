@@ -33,9 +33,10 @@ Key modules:
 - shapes: Shape generation for photonic structures
 - observers: Observer pattern implementation for progress tracking
 - batched_results: Results containers for source batching
+- gds: GDS file format support for mask import/export
 
-New in v0.1.22: Source Batching
---------------------------------
+New in v0.1.23: Fully Tensorized Source Batching
+------------------------------------------------
 TorchRDIT now supports efficient batched processing of multiple sources:
 
 ```python
@@ -60,6 +61,23 @@ results = solver.solve(sources)
 print(f"Transmission for all angles: {results.transmission[:, 0]}")
 best_idx = results.find_optimal_source('max_transmission')
 print(f"Best angle: {sources[best_idx]['theta'] * 180/np.pi:.1f}°")
+```
+
+New in v0.1.24: GDS Integration
+--------------------------------
+TorchRDIT now supports GDS file format for mask import/export:
+
+```python
+from torchrdit import mask_to_gds, gds_to_mask
+from torchrdit.shapes import ShapeGenerator
+
+# Create shapes and export to GDS
+shape_gen = ShapeGenerator(X, Y, rdim)
+mask = shape_gen.generate_circle_mask(radius=0.5)
+mask_to_gds(mask, shape_gen, "DEVICE", "output.gds")
+
+# Import from GDS
+reconstructed = gds_to_mask("output.json", shape_gen)
 ```
 
 For more information, see:

@@ -588,7 +588,9 @@ def create_solver(
         t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),
         is_use_FFF: bool = False,
         device: Union[str, torch.device] = "cpu",
-        debug_batching: bool = False) -> Union["RCWASolver", "RDITSolver"]
+        debug_batching: bool = False,
+        debug_tensorization: bool = False,
+        debug_unification: bool = False) -> Union["RCWASolver", "RDITSolver"]
 ```
 
 Create a solver with the given parameters.

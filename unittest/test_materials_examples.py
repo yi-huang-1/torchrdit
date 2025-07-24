@@ -65,13 +65,13 @@ class TestMaterialsDocExamples(unittest.TestCase):
             dielectric_dispersion=True,
             user_dielectric_file=self.sio2_file,
             data_format="wl-eps",
-            data_unit="um"
+            data_unit="nm"  # Data file has wavelengths in nm
         )
         
         self.assertEqual(silica.name, "silica")
         self.assertTrue(silica.isdispersive_er)
         self.assertEqual(silica.data_format, "wl-eps")
-        self.assertEqual(silica.data_unit, "um")
+        self.assertEqual(silica.data_unit, "nm")
         
         # Create dispersive material from data file with wavelength-permittivity data
         # with "freq-nk" format instead of "wl-eps"
@@ -166,14 +166,14 @@ class TestMaterialsDocExamples(unittest.TestCase):
             dielectric_dispersion=True,
             user_dielectric_file=self.sio2_file,
             data_format="wl-eps",
-            data_unit="um"
+            data_unit="nm"  # Data file has wavelengths in nm
         )
         
         # Check properties
         self.assertEqual(silica.name, "silica")
         self.assertTrue(silica.isdispersive_er)
         self.assertEqual(silica.data_format, "wl-eps")
-        self.assertEqual(silica.data_unit, "um")
+        self.assertEqual(silica.data_unit, "nm")
         
         # No permittivity has been loaded yet
         self.assertIsNone(silica.er)
@@ -202,7 +202,7 @@ class TestMaterialsDocExamples(unittest.TestCase):
             dielectric_dispersion=True,
             user_dielectric_file=self.sio2_file,
             data_format="wl-eps",
-            data_unit="um"
+            data_unit="nm"  # Data file has wavelengths in nm
         )
         
         # Get permittivity at specific wavelengths within the valid range
@@ -259,23 +259,23 @@ class TestMaterialsDocExamples(unittest.TestCase):
         # This is what we observe in the implementation
         self.assertAlmostEqual(gold.er.real.item(), -12.22, places=2)
         
-        # The from_nk_data implementation in this case returns 0.0 for the imaginary part
-        # Verify this behavior
-        self.assertEqual(gold.er.imag.item(), 0.0)
+        # After bug fix, from_nk_data now correctly passes imaginary part
+        # For n=0.18, k=3.5: imag = -(2*n*k) = -(2*0.18*3.5) = -1.26 (conj applied)
+        self.assertAlmostEqual(gold.er.imag.item(), -1.26, places=2)
         
         # Create material from data file
         silica = MaterialClass.from_data_file(
             name="silica",
             file_path=self.sio2_file,
             data_format="wl-eps",
-            data_unit="um"
+            data_unit="nm"  # Data file has wavelengths in nm
         )
         
         # Check properties
         self.assertEqual(silica.name, "silica")
         self.assertTrue(silica.isdispersive_er)
         self.assertEqual(silica.data_format, "wl-eps")
-        self.assertEqual(silica.data_unit, "um")
+        self.assertEqual(silica.data_unit, "nm")
     
     def test_cache_methods(self):
         """Test MaterialClass cache methods."""
@@ -285,7 +285,7 @@ class TestMaterialsDocExamples(unittest.TestCase):
             dielectric_dispersion=True,
             user_dielectric_file=self.sio2_file,
             data_format="wl-eps",
-            data_unit="um"
+            data_unit="nm"  # Data file has wavelengths in nm
         )
         
         # Try to load permittivity at specific wavelengths within the valid range

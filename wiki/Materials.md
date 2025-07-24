@@ -16,6 +16,7 @@
     * [from\_nk\_data](#torchrdit.materials.MaterialClass.from_nk_data)
     * [from\_data\_file](#torchrdit.materials.MaterialClass.from_data_file)
     * [clear\_cache](#torchrdit.materials.MaterialClass.clear_cache)
+    * [cache\_info](#torchrdit.materials.MaterialClass.cache_info)
     * [\_\_str\_\_](#torchrdit.materials.MaterialClass.__str__)
     * [\_\_repr\_\_](#torchrdit.materials.MaterialClass.__repr__)
 
@@ -373,6 +374,9 @@ def load_dispersive_er(lam0: np.ndarray, lengthunit: str = "um") -> None
 
 Load the dispersive profile and fit with the wavelengths to be simulated.
 
+This method now uses LRU caching to avoid redundant calculations for
+the same wavelength and unit combinations.
+
 **Arguments**:
 
 - `lam0` - Wavelengths to simulate
@@ -455,6 +459,16 @@ def clear_cache() -> None
 ```
 
 Clear the permittivity cache to free memory.
+
+<a id="torchrdit.materials.MaterialClass.cache_info"></a>
+
+#### cache\_info
+
+```python
+def cache_info()
+```
+
+Get cache statistics.
 
 <a id="torchrdit.materials.MaterialClass.__str__"></a>
 

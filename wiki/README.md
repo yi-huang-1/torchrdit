@@ -26,6 +26,7 @@ The documentation is generated automatically using pydoc-markdown. To update it:
 - **Solver.md**: Documentation for the solver module
 - **Utils.md**: Documentation for utility functions
 - **Visualization.md**: Documentation for visualization tools
+- **GDS.md**: Documentation for GDS export/import functionality
 - **Getting-Started.md**: Guide for getting started with TorchRDIT
 - **Examples.md**: Code examples showing how to use TorchRDIT
 - **_Sidebar.md**: Navigation sidebar for the wiki

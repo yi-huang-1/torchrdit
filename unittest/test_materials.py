@@ -184,16 +184,18 @@ def test_factory_methods(tmp_path):
 
 def test_caching_mechanism(dispersive_material):
     """Test that the caching mechanism works correctly."""
-    # Cache should start empty
-    assert len(dispersive_material._perm_cache) == 0
+    # Get cache info (should start empty or small)
+    cache_info = dispersive_material.cache_info()
+    initial_size = cache_info.currsize if cache_info else 0
     
     # First load should compute and cache
     lam0 = np.array([2.0, 3.0])
     dispersive_material.load_dispersive_er(lam0=lam0, lengthunit='um')
     initial_er = dispersive_material.er.clone()
     
-    # Cache should now have an entry
-    assert len(dispersive_material._perm_cache) == 1
+    # Cache should now have one more entry
+    cache_info = dispersive_material.cache_info()
+    assert cache_info.currsize == initial_size + 1
     
     # Second load with same parameters should use cache
     dispersive_material.load_dispersive_er(lam0=lam0, lengthunit='um')
@@ -204,11 +206,13 @@ def test_caching_mechanism(dispersive_material):
     lam0_new = np.array([4.0, 5.0])
     dispersive_material.load_dispersive_er(lam0=lam0_new, lengthunit='um')
     # Cache should now have 2 entries
-    assert len(dispersive_material._perm_cache) == 2
+    cache_info = dispersive_material.cache_info()
+    assert cache_info.currsize == initial_size + 2
     
     # Clear cache
     dispersive_material.clear_cache()
-    assert len(dispersive_material._perm_cache) == 0
+    cache_info = dispersive_material.cache_info()
+    assert cache_info.currsize == 0
 
 def test_string_representations():
     """Test the string representation methods."""

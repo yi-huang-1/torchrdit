@@ -582,3 +582,30 @@ class ShapeGenerator:
             return mask1 * (1 - mask2)
         else:
             raise ValueError("Invalid operation. Choose from 'union', 'intersection', 'difference', or 'subtract'.")
+    
+    def get_layout(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return the coordinate layout (XO, YO) for GDS export.
+        
+        Returns the x and y coordinate grids that define the spatial layout
+        of the masks. This is used by GDS export functions to map mask pixels
+        to physical coordinates.
+        
+        Returns:
+            Tuple of (X, Y) coordinate tensors, where:
+            - X: x-coordinates of each point in the grid
+            - Y: y-coordinates of each point in the grid
+            
+        Examples:
+        ```python
+        # Get layout for GDS export
+        X, Y = shape_gen.get_layout()
+        
+        # Use with GDS export
+        from torchrdit.gds import mask_to_gds
+        mask_to_gds(mask, shape_gen, "DEVICE", "output.gds")
+        ```
+        
+        Keywords:
+            layout, coordinates, GDS, export, grid
+        """
+        return (self.XO, self.YO)

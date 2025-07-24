@@ -28,6 +28,19 @@ With its focus on computational efficiency and flexibility, TorchRDIT lays the f
 
 The EM algorithms used in this package are **Rigorous Diffraction Interface Theory (R-DIT)** and **Rigorous Coupled Wave Analysis (RCWA)** . The solver is developed on an automatic differentiable framework (PyTorch) and is fully differentiable for more advanced applications.
 
+### Key Capabilities
+
+- **Eigendecomposition-free R-DIT**: Up to 16.2× speedup over traditional RCWA
+- **Full differentiability**: Seamless integration with gradient-based optimization
+- **GPU acceleration**: CUDA and MPS backend support
+- **GDS Export/Import**: Industry-standard format for fabrication workflows
+  - Export photonic masks to GDS format
+  - Import masks from GDS vertex data
+  - Support for complex geometries with holes
+  - Batch processing for multiple designs
+- **Material handling**: Dispersive materials with automatic fitting
+- **Flexible geometry**: Arbitrary unit cells and lattice systems
+
 ---
 
 ## Installation
@@ -67,6 +80,25 @@ TorchRDIT includes several example files to demonstrate its capabilities:
 ### Design Optimization Examples
 
 - **example_gmrf_variable_optimize.py**: Demonstration of parameter optimization using automatic differentiation
+
+### GDS Export/Import Examples
+
+- **example_gds_export.py**: Comprehensive GDS functionality demonstration
+
+### Quick GDS Example
+
+```python
+from torchrdit.shapes import ShapeGenerator
+from torchrdit.gds import mask_to_gds, gds_to_mask
+
+# Create shape and export to GDS
+shape_gen = ShapeGenerator(X, Y, rdim)
+mask = shape_gen.generate_circle_mask(center=(0, 0), radius=0.5)
+mask_to_gds(mask, shape_gen.get_layout(), "DEVICE", "output.gds")
+
+# Import from GDS
+reconstructed = gds_to_mask("output.json", shape_gen)
+```
 
 For more detailed documentation, please visit our [Wiki](https://github.com/yi-huang-1/torchrdit/wiki).
 

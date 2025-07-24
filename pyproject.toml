@@ -33,6 +33,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "pyyaml>=6.0.2",
     "ruff>=0.12.2",
+    "gdspy>=1.6.13",
 ]
 
 
@@ -48,6 +49,7 @@ path = "src/torchrdit/__init__.py"
 dev-dependencies = [
     "build>=1.2.2.post1",
     "pre-commit>=4.2.0",
+    "psutil>=7.0.0",
     "pydoc-markdown>=4.8.2",
     "pytest>=8.4.0",
     "pytest-cov>=6.2.1",

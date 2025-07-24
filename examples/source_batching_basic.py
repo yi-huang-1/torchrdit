@@ -52,7 +52,7 @@ def example_single_vs_batched():
     source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
     result = solver.solve(source)
     
-    print(f"Single source result:")
+    print("Single source result:")
     print(f"  Transmission: {result.transmission[0].item():.4f}")
     print(f"  Reflection: {result.reflection[0].item():.4f}")
     print(f"  Result type: {type(result).__name__}")
@@ -70,11 +70,11 @@ def example_single_vs_batched():
     # Batch solve
     results = solver.solve(sources)
     
-    print(f"Batched results:")
+    print("Batched results:")
     print(f"  Result type: {type(results).__name__}")
     print(f"  Number of sources: {results.n_sources}")
     print(f"  Transmission shape: {results.transmission.shape}")
-    print(f"\nTransmission values:")
+    print("\nTransmission values:")
     for i, trans in enumerate(results.transmission[:, 0]):
         angle = results.source_parameters[i]['theta'] * 180 / np.pi
         print(f"  θ={angle:3.0f}°: {trans.item():.4f}")

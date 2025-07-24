@@ -48,6 +48,7 @@ Below is the complete API reference for the shapes module, automatically generat
     * [generate\_rectangle\_mask](#torchrdit.shapes.ShapeGenerator.generate_rectangle_mask)
     * [generate\_polygon\_mask](#torchrdit.shapes.ShapeGenerator.generate_polygon_mask)
     * [combine\_masks](#torchrdit.shapes.ShapeGenerator.combine_masks)
+    * [get\_layout](#torchrdit.shapes.ShapeGenerator.get_layout)
 
 <a id="torchrdit.shapes"></a>
 
@@ -419,4 +420,39 @@ circle1_minus_circle2 = sg.combine_masks(circle1, circle2, operation="subtract")
   
   Keywords:
   mask combination, boolean operations, union, intersection, difference, compound shape
+
+<a id="torchrdit.shapes.ShapeGenerator.get_layout"></a>
+
+#### get\_layout
+
+```python
+def get_layout() -> Tuple[torch.Tensor, torch.Tensor]
+```
+
+Return the coordinate layout (XO, YO) for GDS export.
+
+Returns the x and y coordinate grids that define the spatial layout
+of the masks. This is used by GDS export functions to map mask pixels
+to physical coordinates.
+
+**Returns**:
+
+  Tuple of (X, Y) coordinate tensors, where:
+  - X: x-coordinates of each point in the grid
+  - Y: y-coordinates of each point in the grid
+  
+
+**Examples**:
+
+```python
+# Get layout for GDS export
+X, Y = shape_gen.get_layout()
+
+# Use with GDS export
+from torchrdit.gds import mask_to_gds
+mask_to_gds(mask, shape_gen, "DEVICE", "output.gds")
+```
+  
+  Keywords:
+  layout, coordinates, GDS, export, grid
 

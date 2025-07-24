@@ -69,6 +69,7 @@ Keywords:
 """
 
 import os
+from functools import lru_cache
 from typing import Dict, List, Optional, Tuple, Any
 
 import numpy as np
@@ -220,7 +221,8 @@ class MaterialClass:
         self._data_format = data_format.lower()
         self._data_unit = data_unit.lower()
         self._max_poly_order = max_poly_fit_order
-        self._perm_cache: Dict[Tuple[Tuple[float, ...], str], torch.Tensor] = {}
+        # Use LRU cache with limited size instead of unbounded dict
+        self._compute_permittivity_cached = lru_cache(maxsize=128)(self._compute_permittivity)
 
         # Validate data format if dispersive
         if dielectric_dispersion and self._data_format not in self._SUPPORTED_FORMATS:
@@ -337,27 +339,24 @@ class MaterialClass:
         self.load_dispersive_er(wavelengths, wavelength_unit)
         return self._er
 
-    def load_dispersive_er(self, lam0: np.ndarray, lengthunit: str = "um") -> None:
+    def _compute_permittivity(self, wavelengths_tuple: Tuple[float, ...], lengthunit: str) -> torch.Tensor:
         """
-        Load the dispersive profile and fit with the wavelengths to be simulated.
-
+        Internal method to compute permittivity for given wavelengths.
+        
+        This method is wrapped with lru_cache for efficient caching.
+        
         Args:
-            lam0: Wavelengths to simulate
-            lengthunit: Length unit used in the solver
-
-        Raises:
-            ValueError: If wavelengths are out of the available data range
+            wavelengths_tuple: Tuple of wavelengths (hashable for caching)
+            lengthunit: Length unit used
+            
+        Returns:
+            Complex permittivity tensor
         """
         if not self._isdiedispersive or self._loadeder is None:
-            return
-
-        # Check cache for previously calculated permittivity
-        cache_key = (tuple(lam0), lengthunit)
-        if cache_key in self._perm_cache:
-            self._er = self._perm_cache[cache_key]
-            return
-
+            return self._er
+            
         min_ref_pts = 6
+        lam0 = np.array(wavelengths_tuple)
 
         # Convert simulation wavelengths to um (internal proxy unit)
         converter = UnitConverter()
@@ -407,11 +406,31 @@ class MaterialClass:
             "fitted_eps2": eps_imag,
         }
 
-        # Set the permittivity tensor
-        self._er = torch.tensor(eps_real(sim_wavelengths) - 1j * eps_imag(sim_wavelengths))
+        # Return the permittivity tensor
+        return torch.tensor(eps_real(sim_wavelengths) - 1j * eps_imag(sim_wavelengths))
 
-        # Cache the result
-        self._perm_cache[cache_key] = self._er
+    def load_dispersive_er(self, lam0: np.ndarray, lengthunit: str = "um") -> None:
+        """
+        Load the dispersive profile and fit with the wavelengths to be simulated.
+
+        This method now uses LRU caching to avoid redundant calculations for 
+        the same wavelength and unit combinations.
+
+        Args:
+            lam0: Wavelengths to simulate
+            lengthunit: Length unit used in the solver
+
+        Raises:
+            ValueError: If wavelengths are out of the available data range
+        """
+        if not self._isdiedispersive:
+            return
+
+        # Convert to tuple for hashability in LRU cache
+        wavelengths_tuple = tuple(lam0)
+        
+        # Use the cached computation method
+        self._er = self._compute_permittivity_cached(wavelengths_tuple, lengthunit)
 
     @classmethod
     def from_nk_data(cls, name: str, n: float, k: float = 0.0, permeability: float = 1.0) -> "MaterialClass":
@@ -432,7 +451,7 @@ class MaterialClass:
 
         return cls(
             name=name,
-            permittivity=permittivity.real,  # We use the real part for initialization
+            permittivity=permittivity,  # Pass complete complex value
             permeability=permeability,
             dielectric_dispersion=False,
         )
@@ -476,7 +495,14 @@ class MaterialClass:
 
     def clear_cache(self) -> None:
         """Clear the permittivity cache to free memory."""
-        self._perm_cache.clear()
+        if hasattr(self, '_compute_permittivity_cached'):
+            self._compute_permittivity_cached.cache_clear()
+            
+    def cache_info(self):
+        """Get cache statistics."""
+        if hasattr(self, '_compute_permittivity_cached'):
+            return self._compute_permittivity_cached.cache_info()
+        return None
 
     def __str__(self) -> str:
         """String representation of the material."""

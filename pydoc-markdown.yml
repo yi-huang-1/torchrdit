@@ -66,3 +66,6 @@ modules:
   - name: torchrdit.viz
     source_path: ./src
     output_file: Visualization.md
+  - name: torchrdit.gds
+    source_path: ./src
+    output_file: GDS-API.md
