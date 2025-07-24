@@ -269,13 +269,13 @@ def gds_export(boundary_list: list, layout: tuple, cell_name: str, file_path: Un
         file_path: File path of the generated gds file (str or pathlib.Path)
         smooth: Parameter in the UnivariateSpline function controls the smoothness
     """
-    import gdspy
+    import gdstk
 
     # Convert to Path object
     file_path = Path(file_path)
 
     # Initialize GDSII Library
-    gds_lib = gdspy.GdsLibrary()
+    gds_lib = gdstk.Library()
 
     X0, Y0 = layout
 
@@ -311,27 +311,32 @@ def gds_export(boundary_list: list, layout: tuple, cell_name: str, file_path: Un
         # Create GDS polygon using Boolean operations for holes
         if len(sub_coord_list) > 0 and len(sub_coord_list[0]) > 2:
             # Create the main pattern polygon
-            polygon = gdspy.Polygon(sub_coord_list[0])
+            polygon = gdstk.Polygon(sub_coord_list[0])
             
             # Subtract holes using Boolean operations
             if len(sub_coord_list) > 1:
                 holes = []
                 for hole_coords in sub_coord_list[1:]:
                     if len(hole_coords) > 2:
-                        hole = gdspy.Polygon(hole_coords)
+                        hole = gdstk.Polygon(hole_coords)
                         holes.append(hole)
                 
                 if holes:
                     # Subtract all holes from the pattern
-                    result = gdspy.boolean(polygon, holes, "not")
+                    result = gdstk.boolean(polygon, holes, "not")
                     if result:
-                        cell.add(result)
+                        # gdstk returns a list of polygons
+                        if isinstance(result, list):
+                            for poly in result:
+                                cell.add(poly)
+                        else:
+                            cell.add(result)
                 else:
                     cell.add(polygon)
             else:
                 cell.add(polygon)
 
-    # Save the GDS file (gdspy requires string path)
+    # Save the GDS file (gdstk accepts string path)
     gds_lib.write_gds(str(file_path))
 
     # Save JSON coordinates
