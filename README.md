@@ -55,13 +55,21 @@ pip install torchrdit
 
 ## Dependencies
 
-- pytorch>=2.5.1
-- torchvision
-- numpy
-- tensorboard
-- matplotlib
-- tqdm
-- scikit-image
+- torch>=2.5.1
+- numpy>=2.2.0
+- scipy>=1.15.3
+- scikit-image>=0.25.2
+- matplotlib>=3.10.3
+- tqdm>=4.67.1
+- pyyaml>=6.0.2
+- ruff>=0.12.2
+- gdstk>=0.9.60
+
+**Note**: The gdstk library may require additional system dependencies:
+- [zlib](https://zlib.net/) - compression library
+- [qhull](http://www.qhull.org/) - computational geometry library
+
+These are typically available through your system's package manager (e.g., `apt-get install libz-dev libqhull-dev` on Ubuntu).
 
 ---
 
