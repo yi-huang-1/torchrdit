@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.25] - 2025-01-24
+
+### Changed
+
+- **Migrated from gdspy to gdstk**: Replaced legacy gdspy library with modern gdstk for improved platform compatibility
+  - gdstk provides better build support across different platforms
+  - Maintains full backward compatibility with existing GDS functionality
+  - All GDS tests pass without modification
+  - IoU metrics remain > 0.9 for all test shapes
+  - No API changes visible to end users
+
+### Removed
+
+- gdspy dependency (replaced with gdstk v0.9.60)
+
 ## [0.1.24] - 2025-01-24
 
 ### Added

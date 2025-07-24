@@ -465,13 +465,48 @@ wheels = [
 ]
 
 [[package]]
-name = "gdspy"
-version = "1.6.13"
+name = "gdstk"
+version = "0.9.60"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7a/c5/01a4b160bc9ac9b0f8621dd6f90e964596e60a369ff2d076ebb4ce52c402/gdspy-1.6.13.zip", hash = "sha256:38c61a7267f90767d90b8fcdda96c7a629df26e06f7153084c773f3d6363f4f0", size = 157902, upload_time = "2023-04-26T12:21:35.91Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f7/06/041d9a64f736309209d5f190b81ee7e0ca8f3c5a9d19d8d53e37b739b367/gdstk-0.9.60.tar.gz", hash = "sha256:6d9b807bf0ea43903779c0ba8c65b4fdfbca903a90dbb1acfd11b41fd0574588", size = 317689, upload_time = "2025-04-15T12:38:11.883Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0d/d3/efc09f1288e0203f50f9b960b20f2e26cd74e5521c2126bc6b6a5db551ba/gdstk-0.9.60-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:003f265080557aca32622b4a6770e59bacb002c418657b18a2066620c98e0679", size = 921500, upload_time = "2025-04-15T12:37:20.449Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/bf/fa7f8c8246cb9d5e055c35f6a92154176b5884793ffc31a20fc346a5867f/gdstk-0.9.60-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:af46e6f5c8646ad633c569bee6246827c969329eeabc605ba88ddf377f50c489", size = 476402, upload_time = "2025-04-15T12:37:21.883Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/68/b38e098b0d72c9f9a86684f4547b686d98300962e47c19d7769c6096198a/gdstk-0.9.60-cp310-cp310-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:75fa27b7bd8975c398b50352162502ff5b5b8c4b64f8ec84c04fa4a2d820bbbe", size = 599798, upload_time = "2025-04-15T12:37:22.867Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/21/1a4022b6e8bf4aa344f4fe239e3ae874ed9513166a85da24907195617bec/gdstk-0.9.60-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:16faf1a648881a011769a57e61265e0e6e8c0564f86720a4493a6df339272596", size = 535584, upload_time = "2025-04-15T12:37:24.432Z" },
+    { url = "https://files.pythonhosted.org/packages/ef/ef/ccdb6fb1ffa6ac5db4d14911a88e28831254a146fa0a04c380f07a6dd50f/gdstk-0.9.60-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:98965bc06ea9c81d36cfa3721bb582182f579ed03d6780de89055626b39233f9", size = 534517, upload_time = "2025-04-15T12:37:25.48Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/ca/cca77474cf52e0b46772b3159c122ab0dc29ae7a84b160027be2a1621945/gdstk-0.9.60-cp310-cp310-musllinux_1_2_i686.whl", hash = "sha256:cc4312a6c1dd52c5b2c0edf1ea44766040e4dc617aad5dddb8d1445ce6c17c2e", size = 1712080, upload_time = "2025-04-15T12:37:27.326Z" },
+    { url = "https://files.pythonhosted.org/packages/bb/15/f66c1dbc3db97efcd7594369cbacea115e1fee23851635b639e2d1f9849f/gdstk-0.9.60-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:3908d8eeb65fefbbaefbad4c9f946ae62ddd5516e73ec11864f24d0f6030deb0", size = 1534130, upload_time = "2025-04-15T12:37:28.516Z" },
+    { url = "https://files.pythonhosted.org/packages/0b/c9/c74278d8c4e682080a7915e744d7e4996d0735a73290ce5c51e163e9a2b6/gdstk-0.9.60-cp310-cp310-win_amd64.whl", hash = "sha256:5f29c6d35d440de8923462e150eb8fb355e38a5b3af79008b4b73c073f9eabb3", size = 498804, upload_time = "2025-04-15T12:37:30.025Z" },
+    { url = "https://files.pythonhosted.org/packages/9f/f2/d5b3757d33d32bf895d8f09ce281faf630d8854a9edf8a463f367be0a8d5/gdstk-0.9.60-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:8ab9c85024179ac987133f7681f40565771b19fc689e512d7907a8faf4a6b4be", size = 921506, upload_time = "2025-04-15T12:37:31.185Z" },
+    { url = "https://files.pythonhosted.org/packages/86/70/6e372ace40d057d6d12f1b1906af86fcb8b621ad133de4b57dac750ecfc4/gdstk-0.9.60-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:5b8ed8fdc80962c1a330ba8711094a61dff0304b30f44b9c141b850424290b6a", size = 476402, upload_time = "2025-04-15T12:37:32.27Z" },
+    { url = "https://files.pythonhosted.org/packages/1a/12/3deb01f55113ca66898515758979ae81a3cd0d44a7ecaedaf3d152448219/gdstk-0.9.60-cp311-cp311-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:0aea4dbaf777a8e7cd14f14c8612bf3f15aea76d94451933751fefe8bb63be47", size = 599780, upload_time = "2025-04-15T12:37:33.296Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/f5/5ba61a4c22bab2cfc177affec292e39b6be138a6ff766d8378a47d57d3eb/gdstk-0.9.60-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f7f54deea2d9350835eb32d0c6a3c4404d778def9ea68b4d33d2436b760f56dc", size = 535599, upload_time = "2025-04-15T12:37:34.358Z" },
+    { url = "https://files.pythonhosted.org/packages/be/96/df827259d74dfdce02e919fcdfa48338afa7c2c7c401a8f7aff2f7ccd221/gdstk-0.9.60-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:494492019c3e58c9f112084ca3a2d171e6010f48a4f60b8415cfad97f7918090", size = 534652, upload_time = "2025-04-15T12:37:35.336Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/60/205cce64ac1358e5c6065e0e8075206562dc58fb831ea1088176b59fee04/gdstk-0.9.60-cp311-cp311-musllinux_1_2_i686.whl", hash = "sha256:9bb0cd759fc1e10b26b47ae45620f29e36ee492030f3b965ac53ed4a443ed57f", size = 1712067, upload_time = "2025-04-15T12:37:36.487Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/53/018f3c57b7cdc85977fc209d6ba566516aea812b3af3de0c428d28cd212f/gdstk-0.9.60-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:807594d81677e7865e3d63692a6faeb27d09e4206b542315a0779b69cde47182", size = 1534196, upload_time = "2025-04-15T12:37:37.712Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/2b/22a0fda2a68f99d515d0f6d262f19bc0161269eecc7f5752a26341f1eec8/gdstk-0.9.60-cp311-cp311-win_amd64.whl", hash = "sha256:56b6706f598601be17c8f9fecf8adc9649cbe6bfd3da5e389018d96369996630", size = 498802, upload_time = "2025-04-15T12:37:39.109Z" },
+    { url = "https://files.pythonhosted.org/packages/94/a3/6af43207b5b2e19159849b0def21634e3dc47d5526c5043eee163a1e7f62/gdstk-0.9.60-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:724054622a6afff52bd6863d88e09053b13f8e015c874d81a7de6f0d37a88df2", size = 922600, upload_time = "2025-04-15T12:37:40.206Z" },
+    { url = "https://files.pythonhosted.org/packages/9e/20/e35419a30cae6b9dba91d031f2ff7cea50569eafc280c1e3225ad3272417/gdstk-0.9.60-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:8ce17b51e6f6494e038224033f55c4f8226897e3505ad5d7e0c37a7aadbf2e81", size = 477080, upload_time = "2025-04-15T12:37:41.212Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/d1/008837b68e35d75c56d10884b486ffe2ceb57fb1567fe10e0ec0b1a9446e/gdstk-0.9.60-cp312-cp312-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:5c525fd1b4c9a56df3aa55646be1980e3edcc326485ca2058b889f63fd9d265f", size = 600644, upload_time = "2025-04-15T12:37:42.693Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/51/147f1ca9c3ba76e08e4e5e7271ad05d9276a3f93cba4f61332c3cab03ebc/gdstk-0.9.60-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:9155d90b3035140201519f4ab97af6ec7ac96fa2cc4ca2927b93e5877c458315", size = 536859, upload_time = "2025-04-15T12:37:43.729Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/a1/27a362bd1175705986d709fe4113695c7240866e4332f40df2068c7975d3/gdstk-0.9.60-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:a51d0561f76059db7cfd6396163e10b3c89c2dd8285a38ef940f374caeac38a5", size = 535697, upload_time = "2025-04-15T12:37:45.403Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/bb/27674fec6fe62dda386f85036e64fbb4cc4c214868ea4386547005849485/gdstk-0.9.60-cp312-cp312-musllinux_1_2_i686.whl", hash = "sha256:7702cec46ab36b3cc6f08db29e7fb20cc93946a2cf3fa01188b0b6a831d83cdf", size = 1711695, upload_time = "2025-04-15T12:37:46.563Z" },
+    { url = "https://files.pythonhosted.org/packages/0d/7b/ffea1d8403475c3fd3737dd293739ba5b6f37e3166b2b0aed611541fc828/gdstk-0.9.60-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:ce367af239b4cf07e305cdd682e3a84df56e26c3ddbc4b1f55bc91467363386b", size = 1535214, upload_time = "2025-04-15T12:37:48.262Z" },
+    { url = "https://files.pythonhosted.org/packages/71/84/26178f14c7e068b62af11ce7ea68751f334774f7b7cbb0b5e232d3875ccf/gdstk-0.9.60-cp312-cp312-win_amd64.whl", hash = "sha256:a94f259a453736f24d4a98f8fca857f082081f84051094ad6b2d0f1b81fee19d", size = 499969, upload_time = "2025-04-15T12:37:50.179Z" },
+    { url = "https://files.pythonhosted.org/packages/55/13/2fd6504c0508b84f712574386b02c3d61d36a7b5111ca24220d62f0a06c6/gdstk-0.9.60-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:5f1832f90f23c761e182e8f0dffcf9e47260f6be47a445b5027cd17ff9b2d51b", size = 922591, upload_time = "2025-04-15T12:37:51.201Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/15/8429f34a2429c63adcb875b704723eca606e4fafa0bea768b5e3511a0cc7/gdstk-0.9.60-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:db240ecabacf0063e035d7ad7e156a500d895c0b9886d0b2adaa9681b83d9424", size = 477069, upload_time = "2025-04-15T12:37:52.228Z" },
+    { url = "https://files.pythonhosted.org/packages/38/7b/ae724d43d081f480a582eb11fd06cabf90cc7e0bb0fdcb32ce8d4093e017/gdstk-0.9.60-cp313-cp313-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:f9c80eed22802b72566a89e4d429b1ec820a1b28658bc20830f455933d5ed963", size = 600640, upload_time = "2025-04-15T12:37:53.709Z" },
+    { url = "https://files.pythonhosted.org/packages/86/08/1ac9df64fd281017d6aeefddda2fb4b9821d20b45db1910ecf1fe9f7740d/gdstk-0.9.60-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b0a35625a965848aabf52b4e92c37e0876bdc6f01099f0614fc97dfb28676e19", size = 536872, upload_time = "2025-04-15T12:37:54.742Z" },
+    { url = "https://files.pythonhosted.org/packages/8a/f6/95d4d6176cfbd2236bf15bb1e60bf18dd49604b0a9548c1b534ed1a7354a/gdstk-0.9.60-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:bc52f232471b97e52004b047e4300de9e92575e62fbf40fe6bd1d4fbb1b87bc4", size = 535696, upload_time = "2025-04-15T12:37:55.752Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/33/7a1f4e1bd8b68f90a47cc306f3b3bc91b26e85d4cc690c620edffad48786/gdstk-0.9.60-cp313-cp313-musllinux_1_2_i686.whl", hash = "sha256:aa0a7a617f90bd2c4ab5b5032638ea01c39f3305490bda67a82d8310e266aeb4", size = 1711735, upload_time = "2025-04-15T12:37:56.768Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/ba/6588229bb74dcbf10f07b5a803914a04c1b1842f77f704629bb726be131b/gdstk-0.9.60-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:64249dfc5803e987decbae5bc28144242f0297869fca1074b26380f261998ee6", size = 1535206, upload_time = "2025-04-15T12:37:58.301Z" },
+    { url = "https://files.pythonhosted.org/packages/30/bc/70950ace7b5db1cbe5bdf2f9238cab885f51ad51d6befac2d0fb11d94fb9/gdstk-0.9.60-cp313-cp313-win_amd64.whl", hash = "sha256:9e41b38a719991b1e36ea0320c44688ac18e64ae53d9e5775fc7222fccfbb34a", size = 499802, upload_time = "2025-04-15T12:37:59.404Z" },
+]
 
 [[package]]
 name = "identify"
@@ -1610,7 +1645,7 @@ wheels = [
 name = "torchrdit"
 source = { editable = "." }
 dependencies = [
-    { name = "gdspy" },
+    { name = "gdstk" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pyyaml" },
@@ -1633,7 +1668,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "gdspy", specifier = ">=1.6.13" },
+    { name = "gdstk", specifier = ">=0.9.60" },
     { name = "matplotlib", specifier = ">=3.10.3" },
     { name = "numpy", specifier = ">=2.2.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
