@@ -84,6 +84,39 @@ TorchRDIT now uses gdstk instead of gdspy for improved platform compatibility:
 Note: gdstk may require system dependencies (zlib and qhull).
 See README for installation details.
 
+New in v0.1.26: Enhanced Numerical Stability
+---------------------------------------------
+TorchRDIT now includes automatic protection for numerical edge cases:
+
+1. **Plasmonic Material Stabilization**:
+   - Automatic stabilization for materials near plasmon resonance (ε ≈ -1)
+   - Configurable parameters for custom applications
+   
+   ```python
+   from torchrdit.materials import MaterialClass
+   
+   # Automatic stabilization with default parameters
+   plasmon = MaterialClass(name="plasmon", permittivity=-1.0 + 0j)
+   
+   # Custom stabilization parameters
+   custom_plasmon = MaterialClass(
+       name="custom_plasmon",
+       permittivity=-1.0 + 0j,
+       stabilization_params={
+           'min_loss': 1e-4,     # Larger minimum loss
+           'threshold': 0.05     # Wider detection window
+       }
+   )
+   ```
+
+2. **Extreme Grazing Incidence Protection**:
+   - Automatic protection for numerical underflow at θ > 89.5°
+   - Configurable threshold via `solver.min_kinc_z`
+   
+3. **Differentiable Alternatives**:
+   - Smooth, differentiable operations for gradient-based optimization
+   - Replaces non-differentiable torch.where with softplus alternatives
+
 For more information, see:
 - Huang et al., "Eigendecomposition-free inverse design of meta-optics devices,"
   Opt. Express 32, 13986-13997 (2024)
@@ -91,7 +124,7 @@ For more information, see:
   Rigorous Diffraction Interface Theory," CLEO (2023)
 """
 
-__version__ = "0.1.25"
+__version__ = "0.1.26"
 
 # Import core functionality
 from .batched_results import BatchedSolverResults, BatchedFieldComponents
