@@ -125,6 +125,8 @@ if TYPE_CHECKING:
     from .builder import SolverBuilder
 
 
+
+
 class SolverObserver:
     """Interface for observers that track solver progress.
 
@@ -693,6 +695,48 @@ def create_solver(
     return solver
 
 
+def softplus_protect_kz(kz, min_kz=1e-3, beta=100):
+    """Apply differentiable protection to small kz values using softplus.
+    
+    This function provides a smooth, differentiable alternative to torch.where
+    for protecting against numerical instabilities when kz values are very small.
+    
+    Args:
+        kz: Complex tensor of kz values to protect
+        min_kz: Minimum threshold for kz magnitude (default: 1e-3)
+        beta: Sharpness parameter for softplus transition (default: 100)
+        
+    Returns:
+        Protected kz values with smooth transition around threshold
+        
+    Note:
+        Higher beta values create sharper transitions but may affect gradient smoothness.
+        The default beta=100 provides a good balance between accuracy and differentiability.
+    """
+    import torch.nn.functional as F
+    kz_abs = torch.abs(kz)
+    protection = F.softplus(min_kz - kz_abs, beta=beta)
+    return kz + protection * torch.sign(torch.real(kz) + 1e-16)
+
+
+def softplus_clamp_min(x, min_val, beta=100):
+    """Apply differentiable minimum clamping using softplus.
+    
+    This function provides a smooth, differentiable alternative to torch.maximum
+    for ensuring values stay above a minimum threshold.
+    
+    Args:
+        x: Real tensor of values to clamp
+        min_val: Minimum value threshold
+        beta: Sharpness parameter for softplus transition (default: 100)
+        
+    Returns:
+        Clamped values with smooth transition at threshold
+    """
+    import torch.nn.functional as F
+    return x + F.softplus(min_val - x, beta=beta)
+
+
 class FourierBaseSolver(Cell3D, SolverSubjectMixin):
     """Base class for Fourier-based electromagnetic solvers.
 
@@ -1103,6 +1147,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         Returns:
             Modified kx_0, ky_0 with epsilon added to zero values
         """
+        # Original non-differentiable version
         # This function works for any tensor shape due to tensor broadcasting
         zero_indices = torch.nonzero(kx_0 == 0.0, as_tuple=True)
         if len(zero_indices[0]) > 0:
@@ -3107,10 +3152,14 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         # Use matrices from the common setup
         # Apply epsilon protection to prevent singular matrices in field calculations
-        mat_kz_ref_protected = matrices["mat_kz_ref"] + 1e-12 * torch.where(
-            torch.abs(matrices["mat_kz_ref"]) < 1e-10, 
-            torch.ones_like(matrices["mat_kz_ref"]), 
-            torch.zeros_like(matrices["mat_kz_ref"])
+        # For extreme grazing incidence, we need stronger protection
+        min_kz = getattr(self, 'min_kinc_z', 1e-3)  # Use same threshold as kinc_z protection
+        
+        # Differentiable softplus protection for mat_kz_ref
+        mat_kz_ref_protected = softplus_protect_kz(
+            matrices["mat_kz_ref"],
+            min_kz=min_kz,
+            beta=100
         )
         ref_field_z = -matrices["mat_kx_diag"] @ tsolve(
             to_diag_util(mat_kz_ref_protected, self.kdim), ref_field_x
@@ -3121,11 +3170,12 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         etrn = mat_w_trn @ ctrn
         trn_field_x = etrn[:, 0:n_harmonics_squared, :]
         trn_field_y = etrn[:, n_harmonics_squared : 2 * n_harmonics_squared, :]
-        # Apply epsilon protection to prevent singular matrices in transmission field calculations
-        mat_kz_trn_protected = matrices["mat_kz_trn"] + 1e-12 * torch.where(
-            torch.abs(matrices["mat_kz_trn"]) < 1e-10, 
-            torch.ones_like(matrices["mat_kz_trn"]), 
-            torch.zeros_like(matrices["mat_kz_trn"])
+        
+        # Differentiable softplus protection for mat_kz_trn
+        mat_kz_trn_protected = softplus_protect_kz(
+            matrices["mat_kz_trn"],
+            min_kz=min_kz,
+            beta=100
         )
         trn_field_z = -matrices["mat_kx_diag"] @ tsolve(
             to_diag_util(mat_kz_trn_protected, self.kdim), trn_field_x
@@ -3134,24 +3184,36 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         # Calculate diffraction efficiencies
         # Handle both 2D and 3D kinc
         kinc_z = self.kinc[:, 2] if self.kinc.dim() == 2 else self.kinc[0, :, 2]
+        
+        # Apply kinc_z protection to prevent numerical underflow at extreme grazing angles
+        min_kinc_z = getattr(self, 'min_kinc_z', 1e-3)  # Default threshold of 1e-3
+        # kinc_z is complex but should have zero imaginary part, so we work with the real part
+        kinc_z_real = torch.real(kinc_z)
+        
+        # Differentiable softplus protection for kinc_z
+        kinc_z_protected = softplus_clamp_min(kinc_z_real, min_kinc_z, beta=100)
+        
+        # Calculate field intensity
+        field_intensity = (
+            torch.real(ref_field_x) ** 2
+            + torch.imag(ref_field_x) ** 2
+            + torch.real(ref_field_y) ** 2
+            + torch.imag(ref_field_y) ** 2
+            + torch.real(ref_field_z) ** 2
+            + torch.imag(ref_field_z) ** 2
+        )
+        
         ref_diff_efficiency = torch.reshape(
             torch.real(
-                self.ur2 / self.ur1 * to_diag_util(mat_kz_ref_protected, self.kdim) / kinc_z[:, None, None]
+                self.ur2 / self.ur1 * to_diag_util(mat_kz_ref_protected, self.kdim) / kinc_z_protected[:, None, None]
             )
-            @ (
-                torch.real(ref_field_x) ** 2
-                + torch.imag(ref_field_x) ** 2
-                + torch.real(ref_field_y) ** 2
-                + torch.imag(ref_field_y) ** 2
-                + torch.real(ref_field_z) ** 2
-                + torch.imag(ref_field_z) ** 2
-            ),
+            @ field_intensity,
             shape=(self.n_freqs, self.kdim[0], self.kdim[1]),
         ).transpose(dim0=-2, dim1=-1)
 
         trn_diff_efficiency = torch.reshape(
             torch.real(
-                self.ur1 / self.ur2 * to_diag_util(mat_kz_trn_protected, self.kdim) / kinc_z[:, None, None]
+                self.ur1 / self.ur2 * to_diag_util(mat_kz_trn_protected, self.kdim) / kinc_z_protected[:, None, None]
             )
             @ (
                 torch.real(trn_field_x) ** 2
