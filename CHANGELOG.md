@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.26] - 2025-07-25
+
+### Added
+
+- **Plasmonic Material Stabilization**: Automatic stabilization for materials near plasmon resonance
+  - Prevents matrix singularities at ε ≈ -1.0
+  - Configurable parameters via `stabilization_params` dictionary
+  - Custom `min_loss` and `threshold` settings for specific applications
+  - Full backward compatibility with sensible defaults
+  - Physical damping based on industry-standard approach
+
+- **Extreme Grazing Incidence Protection**: Numerical stability for extreme angles
+  - Automatic protection for kinc_z underflow at θ > 89.5°
+  - Configurable `min_kinc_z` threshold for fine-tuning
+  - Prevents numerical breakdown in single precision
+  - Maintains energy conservation for protected cases
+
+- **Differentiable Stability Operations**: Gradient-preserving alternatives
+  - `softplus_protect_kz()` for complex kz protection
+  - `softplus_clamp_min()` for real value clamping
+  - Smooth transitions prevent gradient discontinuities
+  - Full differentiability for optimization workflows
+
+- **Comprehensive Test Suites**:
+  - `test_plasmonic_stability.py`: 13 tests for material stabilization
+  - `test_extreme_grazing_incidence.py`: 4 tests for angle protection
+  - `test_differentiable_stability.py`: 11 tests for gradient flow
+  - All tests pass without warnings or skips
+
+### Changed
+
+- Material class now accepts `stabilization_params` for customization
+- Helper functions export properly with `__all__` list in materials.py
+- Tensor operations use PyTorch native functions (NumPy 2.0 compatibility)
+
+### Fixed
+
+- Matrix singularity at plasmon resonance (ε = -1.0) now prevented
+- Numerical underflow at extreme grazing incidence (single precision)
+- NumPy 2.0 deprecation warnings in tensor conversions
+- All previously skipped tests now pass
+
 ## [0.1.25] - 2025-01-24
 
 ### Changed
