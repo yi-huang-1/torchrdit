@@ -12,6 +12,12 @@ of different material data formats and sources, including:
 - Refractive index and extinction coefficient (n, k) specification
 - Loading from data files with different formats (freq-eps, wl-eps, freq-nk, wl-nk)
 
+Plasmonic Material Handling:
+    Materials near surface plasmon resonance (ε ≈ -1) are automatically stabilized
+    by adding minimal physical losses (Im(ε) = -1e-5) to prevent matrix singularities.
+    This represents realistic material damping that is always present in real metals.
+    The stabilization is applied transparently during material property queries.
+
 Classes:
     MaterialClass: Main class for representing materials with their electromagnetic properties.
 
@@ -78,6 +84,87 @@ import torch
 from .material_proxy import MaterialDataProxy, UnitConverter
 
 
+__all__ = [
+    'MaterialClass',
+    'handle_plasmonic_materials',
+    'stabilize_epsilon_batch'
+]
+
+
+def handle_plasmonic_materials(
+    epsilon: torch.Tensor, wavelength: Optional[float] = None, min_loss: float = 1e-5, threshold: float = 0.01
+) -> torch.Tensor:
+    """
+    Add minimal physical damping near plasmon resonances.
+
+    This function prevents matrix singularities that occur when the real part
+    of permittivity approaches -1, which corresponds to a surface plasmon pole.
+    The added losses represent realistic material damping that is always present
+    in real metals.
+
+    Uses negative imaginary convention where lossy materials have Im(ε) < 0.
+
+    Args:
+        epsilon: Complex permittivity tensor
+        wavelength: Optional wavelength for adaptive damping (not implemented yet)
+        min_loss: Minimum loss value (positive, will be applied as negative)
+        threshold: Detection window around ε = -1
+
+    Returns:
+        Stabilized permittivity tensor
+    """
+    # Ensure we have a tensor
+    if not isinstance(epsilon, torch.Tensor):
+        epsilon = torch.tensor(epsilon, dtype=torch.complex64)
+
+    # Check if we're near plasmon resonance
+    # Handle both scalar and array tensors
+    if epsilon.dim() == 0:  # Scalar tensor
+        if torch.abs(epsilon.real + 1.0) < threshold:
+            # Check if material needs additional losses
+            if epsilon.imag > -min_loss:  # Not enough loss
+                # Add losses with negative imaginary part
+                epsilon = epsilon.real - 1j * max(abs(epsilon.imag.item()), min_loss)
+    else:  # Array tensor - use vectorized approach
+        mask = torch.abs(epsilon.real + 1.0) < threshold
+        needs_damping = mask & (epsilon.imag > -min_loss)
+
+        if needs_damping.any():
+            # Apply stabilization only where needed
+            epsilon = torch.where(needs_damping, epsilon.real - 1j * min_loss, epsilon)
+
+    return epsilon
+
+
+def stabilize_epsilon_batch(
+    epsilon_tensor: torch.Tensor,
+    wavelengths: Optional[torch.Tensor] = None,
+    min_loss: float = 1e-5,
+    threshold: float = 0.01,
+) -> torch.Tensor:
+    """
+    Vectorized version of plasmonic stabilization for batched operations.
+
+    Args:
+        epsilon_tensor: Batch of complex permittivity values
+        wavelengths: Optional wavelengths for adaptive damping
+        min_loss: Minimum loss value (positive, will be applied as negative)
+        threshold: Detection window around ε = -1
+
+    Returns:
+        Stabilized permittivity tensor batch
+    """
+    # Create masks for materials that need stabilization
+    mask = torch.abs(epsilon_tensor.real + 1.0) < threshold
+    needs_damping = mask & (epsilon_tensor.imag > -min_loss)
+
+    if needs_damping.any():
+        # Apply stabilization only where needed
+        epsilon_tensor = torch.where(needs_damping, epsilon_tensor.real - 1j * min_loss, epsilon_tensor)
+
+    return epsilon_tensor
+
+
 class MaterialClass:
     """Class for representing materials and their electromagnetic properties in TorchRDIT.
 
@@ -90,6 +177,13 @@ class MaterialClass:
     allowing it to support multiple data formats and unit systems. For dispersive
     materials, it can load data from files and perform polynomial fitting to interpolate
     property values at specific wavelengths needed for simulations.
+
+    Automatic Plasmonic Stabilization:
+        When materials have permittivity near the surface plasmon resonance condition
+        (ε ≈ -1), the class automatically adds minimal physical losses to prevent
+        numerical singularities. This is physically motivated as all real metals have
+        some level of loss. The stabilization is applied transparently when accessing
+        material properties through get_permittivity().
 
     Attributes:
         name (str): Name identifier for the material.
@@ -155,6 +249,7 @@ class MaterialClass:
         data_unit: str = "thz",
         max_poly_fit_order: int = 10,
         data_proxy: Optional[MaterialDataProxy] = None,
+        stabilization_params: Optional[Dict[str, float]] = None,
     ) -> None:
         """Initialize a MaterialClass instance with electromagnetic properties.
 
@@ -186,6 +281,9 @@ class MaterialClass:
                                dispersion curves but may lead to overfitting.
             data_proxy: Custom data proxy instance for handling material data loading.
                        Uses the shared class-level proxy if None.
+            stabilization_params: Optional dictionary with plasmonic stabilization parameters:
+                                 - 'min_loss': Minimum loss value (default: 1e-5)
+                                 - 'threshold': Detection window around ε = -1 (default: 0.01)
 
         Raises:
             ValueError: If dispersive material is missing a data file,
@@ -223,6 +321,11 @@ class MaterialClass:
         self._max_poly_order = max_poly_fit_order
         # Use LRU cache with limited size instead of unbounded dict
         self._compute_permittivity_cached = lru_cache(maxsize=128)(self._compute_permittivity)
+        
+        # Set stabilization parameters
+        self._stabilization_params = stabilization_params or {}
+        self._min_loss = self._stabilization_params.get('min_loss', 1e-5)
+        self._threshold = self._stabilization_params.get('threshold', 0.01)
 
         # Validate data format if dispersive
         if dielectric_dispersion and self._data_format not in self._SUPPORTED_FORMATS:
@@ -248,9 +351,19 @@ class MaterialClass:
                     raise ValueError(f"Invalid input permittivity [{permittivity}]: {str(e)}")
             else:
                 if torch.is_complex(permittivity) and permittivity.imag < 0:
-                    permittivity = permittivity.detach().clone().to(dtype=torch.complex64)
+                    if permittivity.requires_grad:
+                        # Preserve gradients
+                        permittivity = permittivity.to(dtype=torch.complex64)
+                    else:
+                        permittivity = permittivity.detach().clone().to(dtype=torch.complex64)
                 else:
-                    permittivity = torch.tensor(np.conj(permittivity), dtype=torch.complex64)
+                    # Handle gradient-enabled tensors
+                    if permittivity.requires_grad:
+                        # Use torch operations to preserve gradients
+                        permittivity = torch.conj(permittivity).to(dtype=torch.complex64)
+                    else:
+                        # Use torch operations to avoid numpy conversion
+                        permittivity = torch.conj(permittivity).to(dtype=torch.complex64)
 
             self._er = permittivity
         else:
@@ -320,41 +433,46 @@ class MaterialClass:
         Get the material's permittivity at specified wavelengths.
 
         This is a standardized interface that handles both dispersive and
-        non-dispersive materials.
+        non-dispersive materials. Automatically stabilizes materials near
+        plasmon resonance conditions (ε ≈ -1) to prevent matrix singularities.
 
         Args:
             wavelengths: Array of wavelengths to calculate permittivity at
             wavelength_unit: Unit of the provided wavelengths
 
         Returns:
-            Permittivity tensor at the specified wavelengths
+            Permittivity tensor at the specified wavelengths, stabilized if needed
 
         Raises:
             ValueError: If the wavelengths are out of the available data range
         """
         if not self._isdiedispersive:
-            return self._er
+            # Apply plasmonic stabilization to non-dispersive materials
+            epsilon = handle_plasmonic_materials(self._er, min_loss=self._min_loss, threshold=self._threshold)
+            return epsilon
 
         # Load dispersive data
         self.load_dispersive_er(wavelengths, wavelength_unit)
-        return self._er
+        # Apply plasmonic stabilization to dispersive materials
+        epsilon = handle_plasmonic_materials(self._er, min_loss=self._min_loss, threshold=self._threshold)
+        return epsilon
 
     def _compute_permittivity(self, wavelengths_tuple: Tuple[float, ...], lengthunit: str) -> torch.Tensor:
         """
         Internal method to compute permittivity for given wavelengths.
-        
+
         This method is wrapped with lru_cache for efficient caching.
-        
+
         Args:
             wavelengths_tuple: Tuple of wavelengths (hashable for caching)
             lengthunit: Length unit used
-            
+
         Returns:
             Complex permittivity tensor
         """
         if not self._isdiedispersive or self._loadeder is None:
             return self._er
-            
+
         min_ref_pts = 6
         lam0 = np.array(wavelengths_tuple)
 
@@ -406,14 +524,16 @@ class MaterialClass:
             "fitted_eps2": eps_imag,
         }
 
-        # Return the permittivity tensor
-        return torch.tensor(eps_real(sim_wavelengths) - 1j * eps_imag(sim_wavelengths))
+        # Create permittivity tensor and stabilize if needed
+        epsilon = torch.tensor(eps_real(sim_wavelengths) - 1j * eps_imag(sim_wavelengths))
+        epsilon = handle_plasmonic_materials(epsilon, min_loss=self._min_loss, threshold=self._threshold)
+        return epsilon
 
     def load_dispersive_er(self, lam0: np.ndarray, lengthunit: str = "um") -> None:
         """
         Load the dispersive profile and fit with the wavelengths to be simulated.
 
-        This method now uses LRU caching to avoid redundant calculations for 
+        This method now uses LRU caching to avoid redundant calculations for
         the same wavelength and unit combinations.
 
         Args:
@@ -428,7 +548,7 @@ class MaterialClass:
 
         # Convert to tuple for hashability in LRU cache
         wavelengths_tuple = tuple(lam0)
-        
+
         # Use the cached computation method
         self._er = self._compute_permittivity_cached(wavelengths_tuple, lengthunit)
 
@@ -495,12 +615,12 @@ class MaterialClass:
 
     def clear_cache(self) -> None:
         """Clear the permittivity cache to free memory."""
-        if hasattr(self, '_compute_permittivity_cached'):
+        if hasattr(self, "_compute_permittivity_cached"):
             self._compute_permittivity_cached.cache_clear()
-            
+
     def cache_info(self):
         """Get cache statistics."""
-        if hasattr(self, '_compute_permittivity_cached'):
+        if hasattr(self, "_compute_permittivity_cached"):
             return self._compute_permittivity_cached.cache_info()
         return None
 
