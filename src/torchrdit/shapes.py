@@ -221,7 +221,7 @@ class ShapeGenerator:
 
         return mask
 
-    def generate_rectangle_mask(self, center=(0.0, 0.0), width=0.2, height=0.2, angle=0.0, soft_edge=0.001):
+    def generate_rectangle_mask(self, center=(0.0, 0.0), x_size=0.2, y_size=0.2, angle=0.0, soft_edge=0.001):
         """Generate a mask for a rectangle in Cartesian coordinates.
 
         Creates a binary mask representing a rectangle with the specified center,
@@ -230,8 +230,8 @@ class ShapeGenerator:
         Args:
             center (Tuple[float, float], optional): Center coordinates (x, y) of the rectangle.
                 Defaults to (0.0, 0.0).
-            width (float, optional): Width of the rectangle. Defaults to 0.2.
-            height (float, optional): Height of the rectangle. Defaults to 0.2.
+            x_size (float, optional): Size of the rectangle along the X-axis. Defaults to 0.2.
+            y_size (float, optional): Size of the rectangle along the Y-axis. Defaults to 0.2.
             angle (float, optional): Rotation angle in degrees. Defaults to 0.0.
             soft_edge (float, optional): Width of the soft transition at the edge.
                 Use 0 for a binary hard edge. Defaults to 0.001.
@@ -251,13 +251,13 @@ class ShapeGenerator:
         X, Y = torch.meshgrid(x, y, indexing='ij')
         sg = ShapeGenerator(X, Y, (128, 128))
         # Generate a rectangle mask
-        rect = sg.generate_rectangle_mask(width=0.5, height=0.3, angle=45)
+        rect = sg.generate_rectangle_mask(x_size=0.5, y_size=0.3, angle=45)
         # Generate a square mask
-        square = sg.generate_rectangle_mask(width=0.4, height=0.4, angle=0)
+        square = sg.generate_rectangle_mask(x_size=0.4, y_size=0.4, angle=0)
         ```
 
         Keywords:
-            rectangle, square, mask, binary mask, shape generation, photonics, rotation
+            rectangle, square, mask, binary mask, shape generation, photonics, rotation, x-axis, y-axis
         """
         device = self.XO.device
         mask = torch.zeros(self.rdim, dtype=self.tfloat, device=device)
@@ -279,8 +279,8 @@ class ShapeGenerator:
         y_rotated = -x_centered * sin_theta + y_centered * cos_theta
 
         # Calculate half dimensions
-        half_width = width / 2.0
-        half_height = height / 2.0
+        half_width = x_size / 2.0
+        half_height = y_size / 2.0
 
         # Calculate distances to edges
         left_dist = x_rotated + half_width
@@ -582,29 +582,29 @@ class ShapeGenerator:
             return mask1 * (1 - mask2)
         else:
             raise ValueError("Invalid operation. Choose from 'union', 'intersection', 'difference', or 'subtract'.")
-    
+
     def get_layout(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """Return the coordinate layout (XO, YO) for GDS export.
-        
+
         Returns the x and y coordinate grids that define the spatial layout
         of the masks. This is used by GDS export functions to map mask pixels
         to physical coordinates.
-        
+
         Returns:
             Tuple of (X, Y) coordinate tensors, where:
             - X: x-coordinates of each point in the grid
             - Y: y-coordinates of each point in the grid
-            
+
         Examples:
         ```python
         # Get layout for GDS export
         X, Y = shape_gen.get_layout()
-        
+
         # Use with GDS export
         from torchrdit.gds import mask_to_gds
         mask_to_gds(mask, shape_gen, "DEVICE", "output.gds")
         ```
-        
+
         Keywords:
             layout, coordinates, GDS, export, grid
         """

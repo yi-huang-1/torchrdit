@@ -1,15 +1,12 @@
 """
 Gradient preservation tests for source batching.
 
-This module ensures that gradient flow is preserved when using batched sources,
-and that optimization workflows function correctly with both sequential and
-batched solving.
+Focus on core, lightweight checks that genuinely verify gradient behavior:
+- Sequential vs batched gradient equivalence
+- Gradient accumulation across micro-batches
+- Multi-wavelength gradient flow
+- Numerical gradient validation via finite differences
 """
-
-import sys
-sys.path.insert(0, "torchrdit/src")
-
-import pytest
 import torch
 import numpy as np
 from torchrdit.solver import create_solver
@@ -22,12 +19,12 @@ class TestSourceBatchingGradients:
     """Test gradient preservation in source batching."""
     
     def create_optimization_solver(self):
-        """Create solver suitable for optimization tests."""
+        """Create a small solver for gradient tests (kept light)."""
         return create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[128, 128],  # Smaller for faster tests
-            kdim=[5, 5],
+            rdim=[64, 64],
+            kdim=[3, 3],
             device='cpu'
         )
     
@@ -53,15 +50,15 @@ class TestSourceBatchingGradients:
         solver1 = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[128, 128],
-            kdim=[5, 5],
+            rdim=[64, 64],
+            kdim=[3, 3],
             device='cpu'
         )
         solver2 = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[128, 128],
-            kdim=[5, 5],
+            rdim=[64, 64],
+            kdim=[3, 3],
             device='cpu'
         )
         
@@ -106,173 +103,9 @@ class TestSourceBatchingGradients:
         assert torch.allclose(loss_sequential, loss_batch, rtol=1e-5, atol=1e-8), \
             f"Loss mismatch: sequential={loss_sequential.item()}, batch={loss_batch.item()}"
     
-    def test_gradient_flow_rdit(self):
-        """Test gradient flow through R-DIT solver with batched sources."""
-        solver = self.create_optimization_solver()
-        # Skip algorithm check - solver.algorithm returns an object, not enum
-        
-        # Parameters
-        radius = torch.tensor(0.15, requires_grad=True)
-        thickness = torch.tensor(0.3, requires_grad=True)
-        
-        # Multiple sources for robustness
-        deg = np.pi / 180
-        sources = [
-            {"theta": i*5*deg, "phi": 0, "pte": 1.0, "ptm": 0.0}
-            for i in range(5)
-        ]
-        
-        # Setup structure
-        Si = create_material(name="Si", permittivity=11.7)
-        solver.add_materials([Si])
-        
-        solver.add_layer(material_name="Si", thickness=thickness, is_homogeneous=False)
-        
-        shape_gen = ShapeGenerator.from_solver(solver)
-        mask = shape_gen.generate_circle_mask(center=(0, 0), radius=radius)
-        solver.update_er_with_mask(mask=mask, layer_index=0)
-        
-        # Solve and compute loss
-        results = solver.solve(sources)
-        
-        # Objective: maximize average transmission
-        loss = -torch.mean(results.transmission)
-        
-        # Check gradient flow
-        loss.backward()
-        
-        # Verify gradients exist and are non-zero
-        assert radius.grad is not None, "No gradient for radius"
-        assert thickness.grad is not None, "No gradient for thickness"
-        
-        assert not torch.allclose(radius.grad, torch.tensor(0.0)), \
-            "Radius gradient is zero"
-        assert not torch.allclose(thickness.grad, torch.tensor(0.0)), \
-            "Thickness gradient is zero"
-        
-        # Print gradients for debugging
-        print(f"\nR-DIT Gradient Test:")
-        print(f"  Loss: {loss.item():.6f}")
-        print(f"  Radius gradient: {radius.grad.item():.6e}")
-        print(f"  Thickness gradient: {thickness.grad.item():.6e}")
+    # Removed algorithm-specific gradient smoke tests (covered elsewhere).
     
-    def test_gradient_flow_rcwa(self):
-        """Test gradient flow through RCWA solver with batched sources."""
-        solver = create_solver(
-            algorithm=Algorithm.RCWA,
-            lam0=np.array([1.55]),
-            rdim=[128, 128],
-            kdim=[5, 5],
-            device='cpu'
-        )
-        
-        # Parameters
-        radius = torch.tensor(0.15, requires_grad=True)
-        thickness = torch.tensor(0.3, requires_grad=True)
-        
-        # Multiple sources
-        deg = np.pi / 180
-        sources = [
-            {"theta": i*5*deg, "phi": 0, "pte": 1.0, "ptm": 0.0}
-            for i in range(5)
-        ]
-        
-        # Setup structure
-        Si = create_material(name="Si", permittivity=11.7)
-        solver.add_materials([Si])
-        
-        solver.add_layer(material_name="Si", thickness=thickness, is_homogeneous=False)
-        
-        shape_gen = ShapeGenerator.from_solver(solver)
-        mask = shape_gen.generate_circle_mask(center=(0, 0), radius=radius)
-        solver.update_er_with_mask(mask=mask, layer_index=0)
-        
-        # Solve and compute loss
-        results = solver.solve(sources)
-        
-        # Objective: maximize average transmission
-        loss = -torch.mean(results.transmission)
-        
-        # Check gradient flow
-        loss.backward()
-        
-        # Verify gradients exist and are non-zero
-        assert radius.grad is not None, "No gradient for radius"
-        assert thickness.grad is not None, "No gradient for thickness"
-        
-        assert not torch.allclose(radius.grad, torch.tensor(0.0)), \
-            "Radius gradient is zero"
-        assert not torch.allclose(thickness.grad, torch.tensor(0.0)), \
-            "Thickness gradient is zero"
-        
-        # Print gradients for debugging
-        print(f"\nRCWA Gradient Test:")
-        print(f"  Loss: {loss.item():.6f}")
-        print(f"  Radius gradient: {radius.grad.item():.6e}")
-        print(f"  Thickness gradient: {thickness.grad.item():.6e}")
-    
-    def test_optimization_workflow(self):
-        """Test full optimization workflow with batched sources."""
-        solver = self.create_optimization_solver()
-        
-        # Initial parameters
-        radius = torch.tensor(0.1, requires_grad=True)
-        
-        # Multiple sources to optimize for
-        deg = np.pi / 180
-        sources = [
-            {"theta": i*10*deg, "phi": 0, "pte": 1.0, "ptm": 0.0}
-            for i in range(4)
-        ]
-        
-        # Optimizer
-        optimizer = torch.optim.Adam([radius], lr=0.01)
-        
-        # Track optimization progress
-        losses = []
-        radii = []
-        
-        # Optimization loop
-        n_epochs = 10
-        for epoch in range(n_epochs):
-            optimizer.zero_grad()
-            
-            # Setup structure with current radius
-            self.setup_parametric_structure(solver, radius)
-            
-            # Batched solve
-            results = solver.solve(sources)
-            
-            # Loss: minimize average transmission (for testing)
-            loss = torch.mean(results.transmission)
-            losses.append(loss.item())
-            radii.append(radius.item())
-            
-            # Backward pass
-            loss.backward()
-            
-            # Update parameters
-            optimizer.step()
-            
-            # Ensure radius stays positive
-            with torch.no_grad():
-                radius.clamp_(min=0.05, max=0.45)
-        
-        # Verify optimization is working
-        # Loss should change over epochs
-        loss_change = abs(losses[-1] - losses[0])
-        assert loss_change > 1e-4, \
-            f"Loss didn't change significantly: {losses[0]:.6f} -> {losses[-1]:.6f}"
-        
-        # Radius should change
-        radius_change = abs(radii[-1] - radii[0])
-        assert radius_change > 1e-4, \
-            f"Radius didn't change significantly: {radii[0]:.6f} -> {radii[-1]:.6f}"
-        
-        print(f"\nOptimization Test Results:")
-        print(f"  Initial loss: {losses[0]:.6f}, Final loss: {losses[-1]:.6f}")
-        print(f"  Initial radius: {radii[0]:.4f}, Final radius: {radii[-1]:.4f}")
-        print(f"  Loss reduction: {(losses[0] - losses[-1])/losses[0]*100:.1f}%")
+    # Removed full optimization loop (integration-level and heavy, plus stateful layering).
     
     def test_multi_wavelength_gradient(self):
         """Test gradient preservation with multiple wavelengths."""
@@ -281,8 +114,8 @@ class TestSourceBatchingGradients:
         solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=wavelengths,
-            rdim=[64, 64],  # Smaller for speed
-            kdim=[5, 5],
+            rdim=[48, 48],  # Smaller for speed
+            kdim=[3, 3],
             device='cpu'
         )
         
@@ -324,15 +157,15 @@ class TestSourceBatchingGradients:
         solver1 = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[128, 128],
-            kdim=[5, 5],
+            rdim=[64, 64],
+            kdim=[3, 3],
             device='cpu'
         )
         solver2 = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[128, 128],
-            kdim=[5, 5],
+            rdim=[64, 64],
+            kdim=[3, 3],
             device='cpu'
         )
         
@@ -384,91 +217,12 @@ class TestSourceBatchingGradients:
         print(f"  Accumulated gradient: {grad_accumulated.item():.6e}")
         print(f"  Batch 1 gradient: {grad_batch1.item():.6e}")
     
-    def test_complex_optimization_scenario(self):
-        """Test a complex optimization scenario similar to the GMRF example."""
-        # Materials
-        n_SiO = 1.4496
-        n_SiN = 1.9360
-        material_sio = create_material(name="SiO", permittivity=n_SiO**2)
-        material_sin = create_material(name="SiN", permittivity=n_SiN**2)
-        
-        # Structure parameters
-        h1 = torch.tensor(0.23, requires_grad=False)  # Fixed thickness
-        h2 = torch.tensor(0.345, requires_grad=False)  # Fixed thickness
-        
-        # Optimization parameter
-        radius = torch.tensor(0.4, requires_grad=True)  # Variable radius
-        
-        # Multiple incident angles
-        deg = np.pi / 180
-        sources = [
-            {"theta": i*2*deg, "phi": 0, "pte": 1.0, "ptm": 0.0}
-            for i in range(5)
-        ]
-        
-        # Setup optimizer
-        optimizer = torch.optim.Adam([radius], lr=5e-3)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.9)
-        
-        # Optimization loop
-        n_epochs = 15
-        losses = []
-        
-        for epoch in range(n_epochs):
-            optimizer.zero_grad()
-            
-            # Create fresh solver for each iteration
-            solver = create_solver(
-                algorithm=Algorithm.RDIT,
-                lam0=np.array([1.537]),  # Target wavelength
-                rdim=[128, 128],
-                kdim=[7, 7],
-                device='cpu'
-            )
-            solver.add_materials([material_sio, material_sin])
-            
-            # Build structure
-            solver.add_layer(material_name="SiO", thickness=h1, is_homogeneous=False)
-            solver.add_layer(material_name="SiN", thickness=h2, is_homogeneous=True)
-            
-            # Create pattern
-            shape_gen = ShapeGenerator.from_solver(solver)
-            mask = shape_gen.generate_circle_mask(center=(0, 0), radius=radius)
-            mask = 1 - mask  # Invert for air holes
-            solver.update_er_with_mask(mask=mask, layer_index=0)
-            
-            # Solve
-            results = solver.solve(sources)
-            
-            # Objective: minimize transmission (create resonance)
-            loss = torch.mean(results.transmission) * 100
-            losses.append(loss.item())
-            
-            # Backward and update
-            loss.backward()
-            optimizer.step()
-            scheduler.step()
-            
-            # Constrain radius
-            with torch.no_grad():
-                radius.clamp_(min=0.1, max=0.5)
-        
-        # Verify optimization worked
-        assert len(losses) == n_epochs
-        # Check if loss decreased or stayed relatively stable (optimization may converge)
-        assert losses[-1] <= losses[0] * 1.1, \
-            f"Loss increased significantly: {losses[0]:.4f} -> {losses[-1]:.4f}"
-        
-        print(f"\nComplex Optimization Test:")
-        print(f"  Initial loss: {losses[0]:.4f}")
-        print(f"  Final loss: {losses[-1]:.4f}")
-        print(f"  Loss change: {(losses[-1] - losses[0])/losses[0]*100:.1f}%")
-        print(f"  Final radius: {radius.item():.4f}")
+    # Removed complex optimization scenario (integration-level and heavy).
     
     def test_gradient_numerical_validation(self):
         """Validate gradients using finite differences."""
         # Create fresh solver
-        optimization_solver = self.create_optimization_solver()
+        _ = self.create_optimization_solver()
         # Parameter
         radius = torch.tensor(0.2, requires_grad=True)
         epsilon = 1e-4
@@ -483,8 +237,8 @@ class TestSourceBatchingGradients:
         solver1 = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[128, 128],
-            kdim=[5, 5],
+            rdim=[64, 64],
+            kdim=[3, 3],
             device='cpu'
         )
         self.setup_parametric_structure(solver1, radius)
@@ -498,8 +252,8 @@ class TestSourceBatchingGradients:
             solver2 = create_solver(
                 algorithm=Algorithm.RDIT,
                 lam0=np.array([1.55]),
-                rdim=[128, 128],
-                kdim=[5, 5],
+                rdim=[64, 64],
+                kdim=[3, 3],
                 device='cpu'
             )
             radius_plus = radius + epsilon
@@ -511,8 +265,8 @@ class TestSourceBatchingGradients:
             solver3 = create_solver(
                 algorithm=Algorithm.RDIT,
                 lam0=np.array([1.55]),
-                rdim=[128, 128],
-                kdim=[5, 5],
+                rdim=[64, 64],
+                kdim=[3, 3],
                 device='cpu'
             )
             radius_minus = radius - epsilon

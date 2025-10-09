@@ -10,6 +10,8 @@
     * [notify\_observers](#torchrdit.solver.SolverSubjectMixin.notify_observers)
   * [create\_solver\_from\_config](#torchrdit.solver.create_solver_from_config)
   * [create\_solver](#torchrdit.solver.create_solver)
+  * [softplus\_protect\_kz](#torchrdit.solver.softplus_protect_kz)
+  * [softplus\_clamp\_min](#torchrdit.solver.softplus_clamp_min)
   * [FourierBaseSolver](#torchrdit.solver.FourierBaseSolver)
     * [algorithm](#torchrdit.solver.FourierBaseSolver.algorithm)
     * [algorithm](#torchrdit.solver.FourierBaseSolver.algorithm)
@@ -18,7 +20,6 @@
     * [add\_source](#torchrdit.solver.FourierBaseSolver.add_source)
     * [solve](#torchrdit.solver.FourierBaseSolver.solve)
     * [update\_er\_with\_mask](#torchrdit.solver.FourierBaseSolver.update_er_with_mask)
-    * [update\_er\_with\_mask\_extern\_NV](#torchrdit.solver.FourierBaseSolver.update_er_with_mask_extern_NV)
     * [update\_layer\_thickness](#torchrdit.solver.FourierBaseSolver.update_layer_thickness)
     * [expand\_dims](#torchrdit.solver.FourierBaseSolver.expand_dims)
   * [RCWASolver](#torchrdit.solver.RCWASolver)
@@ -587,6 +588,10 @@ def create_solver(
         t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),
         t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),
         is_use_FFF: bool = False,
+        fff_vector_scheme: str = "POL",
+        fff_fourier_weight: float = 1e-2,
+        fff_smoothness_weight: float = 1e-3,
+        fff_vector_steps: int = 1,
         device: Union[str, torch.device] = "cpu",
         debug_batching: bool = False,
         debug_tensorization: bool = False,
@@ -646,6 +651,16 @@ better performance for inverse design applications.
 - `is_use_FFF` _bool_ - Whether to use Fast Fourier Factorization. Default is False.
   This improves convergence for high-contrast material interfaces
   but adds computational overhead.
+  
+- `fff_vector_scheme` _str_ - Tangent vector field scheme to use when generating
+  Fourier-factorization normals. Options include ``'POL'``, ``'NORMAL'``,
+  ``'JONES'``, and ``'JONES_DIRECT'``. Default is ``'POL'``.
+- `fff_fourier_weight` _float_ - Weight applied to the Fourier-domain loss
+  during tangent field refinement. Default is ``1e-2``.
+- `fff_smoothness_weight` _float_ - Weight applied to the smoothness loss
+  term for tangent field refinement. Default is ``1e-3``.
+- `fff_vector_steps` _int_ - Number of Newton iterations used when refining the
+  tangent field. Must be a positive integer. Default is ``1``.
   
 - `device` _Union[str, torch.device]_ - The device to run the solver on.
   Options include 'cpu' (default) or 'cuda' for GPU acceleration.
@@ -728,7 +743,7 @@ sources = [
 ]
 
 # Batch solve - much faster than sequential processing
-results = solver.solve(sources)  # Returns BatchedSolverResults
+results = solver.solve(sources)  # Returns unified SolverResults with batching support
 
 # Analyze results
 best_idx = results.find_optimal_source('max_transmission')
@@ -748,6 +763,60 @@ print(f"Best angle: {sources[best_idx]['theta'] * 180/np.pi:.1f}°")
   solver creation, RCWA, R-DIT, factory function, electromagnetic simulation,
   photonics, meta-optics, GPU acceleration, lattice vectors, Fourier harmonics,
   numerical precision, wavelength, inverse design
+
+<a id="torchrdit.solver.softplus_protect_kz"></a>
+
+#### softplus\_protect\_kz
+
+```python
+def softplus_protect_kz(kz, min_kz=1e-3, beta=100)
+```
+
+Apply differentiable protection to small kz values using softplus.
+
+This function provides a smooth, differentiable alternative to torch.where
+for protecting against numerical instabilities when kz values are very small.
+
+**Arguments**:
+
+- `kz` - Complex tensor of kz values to protect
+- `min_kz` - Minimum threshold for kz magnitude (default: 1e-3)
+- `beta` - Sharpness parameter for softplus transition (default: 100)
+  
+
+**Returns**:
+
+  Protected kz values with smooth transition around threshold
+  
+
+**Notes**:
+
+  Higher beta values create sharper transitions but may affect gradient smoothness.
+  The default beta=100 provides a good balance between accuracy and differentiability.
+
+<a id="torchrdit.solver.softplus_clamp_min"></a>
+
+#### softplus\_clamp\_min
+
+```python
+def softplus_clamp_min(x, min_val, beta=100)
+```
+
+Apply differentiable minimum clamping using softplus.
+
+This function provides a smooth, differentiable alternative to torch.maximum
+for ensuring values stay above a minimum threshold.
+
+**Arguments**:
+
+- `x` - Real tensor of values to clamp
+- `min_val` - Minimum value threshold
+- `beta` - Sharpness parameter for softplus transition (default: 100)
+  
+
+**Returns**:
+
+  Clamped values with smooth transition at threshold
 
 <a id="torchrdit.solver.FourierBaseSolver"></a>
 
@@ -992,8 +1061,7 @@ source = solver.add_source(
 #### solve
 
 ```python
-def solve(source: Union[dict, List[dict]],
-          **kwargs) -> Union[SolverResults, BatchedSolverResults]
+def solve(source: Union[dict, List[dict]], **kwargs) -> SolverResults
 ```
 
 Solve the electromagnetic problem for the configured structure.
@@ -1045,25 +1113,30 @@ that have requires_grad=True.
 
 **Returns**:
 
-  Union[SolverResults, BatchedSolverResults]: Results of the electromagnetic simulation.
+- `SolverResults` - Unified results container (v0.1.27) supporting both single and batched sources.
   
-  SolverResults (when single source dict is provided):
-  - reflection: Total reflection efficiency for each wavelength
-  - transmission: Total transmission efficiency for each wavelength
-  - reflection_diffraction: Reflection efficiencies for each diffraction order
-  - transmission_diffraction: Transmission efficiencies for each diffraction order
-  - reflection_field: Field components (x, y, z) in reflection region
-  - transmission_field: Field components (x, y, z) in transmission region
+  For single source (dict input):
+  - reflection: Shape (n_freqs) - Total reflection efficiency
+  - transmission: Shape (n_freqs) - Total transmission efficiency
+  - reflection_diffraction: Shape (n_freqs, kdim[0], kdim[1])
+  - transmission_diffraction: Shape (n_freqs, kdim[0], kdim[1])
+  - reflection_field: FieldComponents with E-field Fourier coefficients (S_x, S_y, S_z)
+  and H-field Fourier coefficients (U_x, U_y, U_z)
+  - transmission_field: FieldComponents with E and H Fourier coefficients
   - structure_matrix: Scattering matrix for the entire structure
   - wave_vectors: Wave vector components (kx, ky, kinc, kzref, kztrn)
+  - lattice_t1, lattice_t2: Lattice vectors for field reconstruction
+  - Field APIs: get_reflection_interface_fields(), get_transmission_interface_fields()
   
-  BatchedSolverResults (when list of sources is provided):
+  For batched sources (list input):
   - reflection: Shape (n_sources, n_freqs)
   - transmission: Shape (n_sources, n_freqs)
   - reflection_diffraction: Shape (n_sources, n_freqs, kdim[0], kdim[1])
   - transmission_diffraction: Shape (n_sources, n_freqs, kdim[0], kdim[1])
-  - Individual results accessible via indexing: results[i] returns SolverResults
-  - Helper methods: find_optimal_source(), get_parameter_sweep_data()
+  - Indexing: results[i] returns SolverResults for source i
+  - Iteration: for result in results iterates over sources
+  - Batched methods: find_optimal_source(), get_parameter_sweep_data()
+  - All field APIs work with batched results
   
   The results also provide helper methods for extracting specific diffraction orders
   and analyzing propagating modes.
@@ -1151,7 +1224,7 @@ for i in range(100):
     optimizer.step()
 ```
   
-  Batched source processing:
+  Batched source processing (v0.1.27 unified interface):
 ```python
 # Create multiple sources for angle sweep
 deg = np.pi / 180
@@ -1162,18 +1235,22 @@ sources = [
     solver.add_source(theta=60*deg, phi=0, pte=1.0, ptm=0.0)
 ]
 
-# Solve with batched sources
-batched_results = solver.solve(sources)  # BatchedSolverResults object
+# Solve with batched sources - returns unified SolverResults
+results = solver.solve(sources)  # Single SolverResults class handles batching
 
 # Access results for all sources at once
-print(f"Transmission values: {batched_results.transmission[:, 0]}")
+print(f"Transmission values: {results.transmission[:, 0]}")
 
-# Access individual results
-result_30deg = batched_results[1]  # SolverResults for 30° incidence
+# Access individual results via indexing
+result_30deg = results[1]  # SolverResults for 30° incidence
 
-# Find optimal angle
-best_idx = batched_results.find_optimal_source('max_transmission')
+# Find optimal angle (batched-only method)
+best_idx = results.find_optimal_source('max_transmission')
 print(f"Best angle: {sources[best_idx]['theta'] * 180/np.pi:.1f}°")
+
+# Iterate over sources
+for i, result in enumerate(results):
+    print(f"Angle {sources[i]['theta']*180/np.pi:.0f}°: T={result.transmission[0]:.3f}")
 ```
   
   Optimization with multiple sources:
@@ -1196,7 +1273,7 @@ sources = [
 optimizer = torch.optim.Adam([mask], lr=0.01)
 for i in range(100):
     optimizer.zero_grad()
-    results = solver.solve(sources)  # BatchedSolverResults
+    results = solver.solve(sources)  # SolverResults with batching
     loss = -results.transmission.mean()  # Maximize average transmission
     loss.backward()
     optimizer.step()
@@ -1362,90 +1439,6 @@ for i in range(100):
   Opt. Express 32, 13986-13997 (2024)
   - Huang et al., "Inverse Design of Photonic Structures Using Automatic Differentiable
   Rigorous Diffraction Interface Theory," CLEO (2023)
-
-<a id="torchrdit.solver.FourierBaseSolver.update_er_with_mask_extern_NV"></a>
-
-#### update\_er\_with\_mask\_extern\_NV
-
-```python
-def update_er_with_mask_extern_NV(mask: torch.Tensor,
-                                  nv_vectors: tuple,
-                                  layer_index: int,
-                                  bg_material: str = "air",
-                                  method: str = "FFT") -> None
-```
-
-Update permittivity in a layer using a mask with external normal vectors.
-
-This method is an advanced version of update_er_with_mask that allows you
-to provide pre-computed normal vectors for Fast Fourier Factorization (FFF).
-It's particularly useful for complex geometries where normal vectors need
-to be computed using specialized algorithms or external tools.
-
-The method creates a patterned material distribution in the specified layer,
-where the mask defines the regions of foreground and background materials.
-It then uses the provided normal vectors for improved accuracy in the
-Fourier factorization process.
-
-**Arguments**:
-
-- `mask` _torch.Tensor_ - Binary pattern mask that defines the material distribution.
-  Regions with mask=1 use the layer's material, while regions with
-  mask=0 use the background material. Must match the solver's rdim dimensions.
-  
-- `nv_vectors` _tuple_ - Tuple containing two tensors (norm_vec_x, norm_vec_y) that
-  represent the x and y components of the normal vectors at material
-  interfaces. These vectors are used for the FFF algorithm.
-  
-- `layer_index` _int_ - Index of the layer to update. Must be a valid index
-  in the range 0 to (number of layers - 1).
-  
-- `bg_material` _str, optional_ - Name of the background material to use
-  where mask=0. Must be a valid material name in the solver's
-  material list. Default is 'air'.
-  
-- `method` _str, optional_ - Method for computing the Toeplitz matrix:
-  - 'FFT': Fast Fourier Transform method (works for all cell types)
-  - 'Analytical': Analytical method (only works for Cartesian cells)
-  Default is 'FFT'.
-  
-
-**Examples**:
-
-```python
-import torch
-import numpy as np
-from torchrdit.solver import create_solver
-
-# Create a solver and add materials
-solver = create_solver(is_use_FFF=True)  # Enable FFF
-solver.add_materials(['Si', 'Air'])
-solver.add_layer('Si', thickness=0.5, is_homogeneous=False)
-
-# Create a mask and compute normal vectors externally
-mask = torch.zeros(512, 512)
-mask[200:300, 200:300] = 1.0  # Square pattern
-
-# Pre-computed normal vectors (would normally come from specialized algorithm)
-norm_x = torch.zeros_like(mask)
-norm_y = torch.zeros_like(mask)
-# ... compute normal vectors at material interfaces ...
-
-# Update the layer with the mask and external normal vectors
-solver.update_er_with_mask_extern_NV(
-    mask=mask,
-    nv_vectors=(norm_x, norm_y),
-    layer_index=0,
-    bg_material='Air'
-)
-```
-  
-
-**Notes**:
-
-  This method is specifically designed for advanced users who need precise
-  control over the Fast Fourier Factorization process. For most applications,
-  the standard update_er_with_mask method is sufficient.
 
 <a id="torchrdit.solver.FourierBaseSolver.update_layer_thickness"></a>
 

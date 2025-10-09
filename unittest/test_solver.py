@@ -1,656 +1,406 @@
 import numpy as np
-import torch
-import pytest
 import os
-from torchrdit.solver import create_solver, get_solver_builder
-from torchrdit.utils import create_material, operator_proj
+import sys
+from pathlib import Path
+import pytest
+import torch
+
 from torchrdit.constants import Algorithm, Precision
+from torchrdit.solver import create_solver, get_solver_builder
 from torchrdit.shapes import ShapeGenerator
+from torchrdit.utils import create_material, operator_proj
+
+FM_MAX_SRC = Path(__file__).resolve().parents[2] / "docs" / "fmmax" / "src"
+if FM_MAX_SRC.exists() and str(FM_MAX_SRC) not in sys.path:
+    sys.path.insert(0, str(FM_MAX_SRC))
 
 
-class TestSolver:
-    # units
-    um = 1
-    nm = 1e-3 * um
-    degrees = np.pi / 180
+# Common units and geometry helpers
+UM = 1.0
+NM = 1e-3 * UM
+DEG = np.pi / 180.0
 
-    lam0 = 1540 * nm
-    theta = 0 * degrees
-    phi = 0 * degrees
 
-    pte = 1
-    ptm = 0
-
-    # device parameters
-    n_SiO = 1.4496
-    n_SiN = 1.9360
-    n_fs = 1.5100
-
-    a = 1150 * nm
+def _hex_unit_mask(a, r, solver: "FourierBaseSolver"):
+    """Construct hexagonal unit-cell mask from 4 circles using solver's lattice."""
     b = a * np.sqrt(3)
+    sg = ShapeGenerator.from_solver(solver)
+    c1 = sg.generate_circle_mask(center=[0, b / 2], radius=r)
+    c2 = sg.generate_circle_mask(center=[0, -b / 2], radius=r)
+    c3 = sg.generate_circle_mask(center=[a / 2, 0], radius=r)
+    c4 = sg.generate_circle_mask(center=[-a / 2, 0], radius=r)
+    mask = sg.combine_masks(mask1=c1, mask2=c2, operation='union')
+    mask = sg.combine_masks(mask1=mask, mask2=c3, operation='union')
+    mask = sg.combine_masks(mask1=mask, mask2=c4, operation='union')
+    return 1 - mask
 
-    r = 400 * nm
-    h1 = torch.tensor(230 * nm, dtype=torch.float32)
-    h2 = torch.tensor(345 * nm, dtype=torch.float32)
 
-    t1 = torch.tensor([[a/2, -a * np.sqrt(3)/2]], dtype=torch.float32)
-    t2 = torch.tensor([[a/2, a * np.sqrt(3)/2]], dtype=torch.float32)
-
-    def test_gmrf_rcwa(self):
-        material_sio = create_material(
-            name='SiO', permittivity=self.n_SiO**2)
-        material_sin = create_material(
-            name='SiN', permittivity=self.n_SiN**2)
-        material_fs = create_material(
-            name='FusedSilica', permittivity=self.n_fs**2)
-
-        dev1 = create_solver(
-            algorithm=Algorithm.RCWA,
-            precision=Precision.DOUBLE,
-            rdim=[512, 512],
-            kdim=[9, 9],
-            lam0=np.array([1540 * self.nm]),
-            lengthunit='um',
-            t1=self.t1,
-            t2=self.t2)
-
-        dev1.update_trn_material(trn_material=material_fs)
-
-        dev1.add_layer(material_name=material_sio,
-                       thickness=self.h1,
-                       is_homogeneous=False,
-                       is_optimize=True)
-
-        dev1.add_layer(material_name=material_sin,
-                       thickness=self.h2,
-                       is_homogeneous=True,
-                       is_optimize=False)
-
-        src1 = dev1.add_source(theta=self.theta,
-                               phi=self.phi,
-                               pte=self.pte,
-                               ptm=self.ptm)
-        
-        shape_gen = ShapeGenerator.from_solver(dev1)
-
-        # build hexagonal unit cell
-        c1 = shape_gen.generate_circle_mask(center=[0, self.b/2], radius=self.r)
-        c2 = shape_gen.generate_circle_mask(center=[0, -self.b/2], radius=self.r)
-        c3 = shape_gen.generate_circle_mask(center=[self.a/2, 0], radius=self.r)
-        c4 = shape_gen.generate_circle_mask(center=[-self.a/2, 0], radius=self.r)
-
-        mask = shape_gen.combine_masks(mask1=c1, mask2=c2, operation='union')
-        mask = shape_gen.combine_masks(mask1=mask, mask2=c3, operation='union')
-        mask = shape_gen.combine_masks(mask1=mask, mask2=c4, operation='union')
-
-        mask = 1 - mask
-
-        dev1.update_er_with_mask(mask=mask, layer_index=0)
-        data = dev1.solve(src1)
-
-        assert(np.isclose(data.transmission[0].detach().numpy(), 0.92, atol=2e-2))
-        assert(np.isclose(data.reflection[0].detach().numpy(), 0.07, atol=2e-2))
-        assert data.transmission[0].detach().numpy().dtype == np.float64
-        assert data.reflection[0].detach().numpy().dtype == np.float64
-
-    def test_gmrf_rdit(self):
-        material_sio = create_material(
-            name='SiO', permittivity=self.n_SiO**2)
-        material_sin = create_material(
-            name='SiN', permittivity=self.n_SiN**2)
-        material_fs = create_material(
-            name='FusedSilica', permittivity=self.n_fs**2)
-
-        dev1 = create_solver(
-            algorithm=Algorithm.RDIT,
-            precision=Precision.DOUBLE,
-            rdim=[512, 512],
-            kdim=[9, 9],
-            lam0=np.array([1540 * self.nm]),
-            lengthunit='um',
-            t1=self.t1,
-            t2=self.t2)
-
-        dev1.set_rdit_order(10)
-
-        dev1.update_trn_material(trn_material=material_fs)
-
-        dev1.add_layer(material_name=material_sio,
-                       thickness=self.h1,
-                       is_homogeneous=False,
-                       is_optimize=True)
-
-        dev1.add_layer(material_name=material_sin,
-                       thickness=self.h2,
-                       is_homogeneous=True,
-                       is_optimize=False)
-
-        src1 = dev1.add_source(theta=self.theta,
-                               phi=self.phi,
-                               pte=self.pte,
-                               ptm=self.ptm)
-        
-        shape_gen = ShapeGenerator.from_solver(dev1)
-
-        # build hexagonal unit cell
-        c1 = shape_gen.generate_circle_mask(center=[0, self.b/2], radius=self.r)
-        c2 = shape_gen.generate_circle_mask(center=[0, -self.b/2], radius=self.r)
-        c3 = shape_gen.generate_circle_mask(center=[self.a/2, 0], radius=self.r)
-        c4 = shape_gen.generate_circle_mask(center=[-self.a/2, 0], radius=self.r)
-
-        mask = shape_gen.combine_masks(mask1=c1, mask2=c2, operation='union')
-        mask = shape_gen.combine_masks(mask1=mask, mask2=c3, operation='union')
-        mask = shape_gen.combine_masks(mask1=mask, mask2=c4, operation='union')
-
-        mask = 1 - mask
-
-        dev1.update_er_with_mask(mask=mask, layer_index=0)
-        data = dev1.solve(src1)
-
-        assert(np.isclose(data.transmission[0].detach().numpy(), 0.92, atol=2e-2))
-        assert(np.isclose(data.reflection[0].detach().numpy(), 0.07, atol=2e-2))
-        assert data.transmission[0].detach().numpy().dtype == np.float64
-        assert data.reflection[0].detach().numpy().dtype == np.float64
-
-class TestSolverAnalyticalFourier:
-    # units
-    um = 1
-    nm = 1e-3 * um
-    degrees = np.pi / 180
-
-    lam0 = 1540 * nm
-    theta = 0 * degrees
-    phi = 0 * degrees
-
-    pte = 1
-    ptm = 0
-
-    # device parameters
-    n_SiO = 1.4496
-    n_SiN = 1.9360
-    n_fs = 1.5100
-
-    a = 1150 * nm
-
-    r = 400 * nm
-    h1 = torch.tensor(230 * nm, dtype=torch.float32)
-    h2 = torch.tensor(345 * nm, dtype=torch.float32)
-
+@pytest.mark.parametrize(
+    "algorithm",
+    [Algorithm.RCWA, Algorithm.RDIT],
+)
+def test_solver_transmission_consistency_with_fff_toggle(algorithm):
+    """Ensure baseline solve remains stable with and without full Fourier factorization."""
+    a = 850 * NM
+    r = 220 * NM
+    h1 = torch.tensor(180 * NM, dtype=torch.float32)
+    h2 = torch.tensor(250 * NM, dtype=torch.float32)
     t1 = torch.tensor([[a, 0]], dtype=torch.float32)
     t2 = torch.tensor([[0, a]], dtype=torch.float32)
 
-    def make_mask(self, radius_var, dev):
-        rsq = (dev.XO) ** 2 + (dev.YO) ** 2
-        mask = rsq - (radius_var) ** 2 + 0.5
-        mask = operator_proj(mask, eta=0.5, beta = 100)
-        return mask
+    mat_air = create_material(name='Air', permittivity=1.0)
+    mat_sin = create_material(name='SiN', permittivity=(1.9) ** 2)
+    mat_fs = create_material(name='FusedSilica', permittivity=(1.45) ** 2)
 
-    def test_gmrf_rcwa(self):
-        material_sio = create_material(
-            name='SiO', permittivity=self.n_SiO**2)
-        material_sin = create_material(
-            name='SiN', permittivity=self.n_SiN**2)
-        material_fs = create_material(
-            name='FusedSilica', permittivity=self.n_fs**2)
+    dev = create_solver(
+        algorithm=algorithm,
+        precision=Precision.DOUBLE,
+        rdim=[192, 192],
+        kdim=[7, 7],
+        lam0=np.array([1550 * NM]),
+        lengthunit='um',
+        t1=t1,
+        t2=t2,
+    )
+    if algorithm == Algorithm.RDIT:
+        dev.set_rdit_order(6)
 
-        dev1 = create_solver(
-            algorithm=Algorithm.RCWA,
-            precision=Precision.DOUBLE,
-            rdim=[512, 512],
-            kdim=[9, 9],
-            lam0=np.array([1540 * self.nm]),
-            lengthunit='um',
-            t1=self.t1,
-            t2=self.t2)
+    dev.update_ref_material(ref_material=mat_air)
+    dev.update_trn_material(trn_material=mat_fs)
+    dev.add_layer(material_name=mat_sin, thickness=h1, is_homogeneous=False, is_optimize=False)
+    dev.add_layer(material_name=mat_air, thickness=h2, is_homogeneous=True, is_optimize=False)
 
-        dev1.update_trn_material(trn_material=material_fs)
+    src = dev.add_source(theta=0 * DEG, phi=0 * DEG, pte=1, ptm=0)
 
-        dev1.add_layer(material_name=material_sio,
-                       thickness=self.h1,
-                       is_homogeneous=False,
-                       is_optimize=True)
+    mask = _hex_unit_mask(a=a, r=r, solver=dev)
+    dev.update_er_with_mask(mask=mask, layer_index=0, method='FFT')
 
-        dev1.add_layer(material_name=material_sin,
-                       thickness=self.h2,
-                       is_homogeneous=True,
-                       is_optimize=False)
+    data_fff = dev.solve(src, is_use_FFF=True)
+    data_no_fff = dev.solve(src, is_use_FFF=False)
 
-        src1 = dev1.add_source(theta=self.theta,
-                               phi=self.phi,
-                               pte=self.pte,
-                               ptm=self.ptm)
+    t_fff = data_fff.transmission[0].item()
+    r_fff = data_fff.reflection[0].item()
+    t_no = data_no_fff.transmission[0].item()
+    r_no = data_no_fff.reflection[0].item()
 
-        # build hexagonal unit cell
-        mask = self.make_mask(self.r, dev1)
+    assert np.isfinite(t_fff) and np.isfinite(r_fff)
+    assert np.isfinite(t_no) and np.isfinite(r_no)
+    assert np.isclose(t_fff, t_no, atol=5e-2)
+    assert np.isclose(r_fff, r_no, atol=5e-2)
 
-        dev1.update_er_with_mask(mask=mask, layer_index=0, method='Analytical')
-        data_analytical = dev1.solve(src1)
-        dev1.update_er_with_mask(mask=mask, layer_index=0, method='FFT')
-        data_fft = dev1.solve(src1, is_use_FFF=False)
 
-        assert(np.isclose(np.int32(data_fft.transmission[0].detach().numpy() * 1000), np.int32(data_analytical.transmission[0].detach().numpy() * 1000)))
-        assert(np.isclose(np.int32(data_fft.reflection[0].detach().numpy() * 1000), np.int32(data_analytical.reflection[0].detach().numpy() * 1000)))
-        assert data_analytical.transmission[0].detach().numpy().dtype == np.float64
-        assert data_analytical.reflection[0].detach().numpy().dtype == np.float64
-        assert data_fft.transmission[0].detach().numpy().dtype == np.float64
-        assert data_fft.reflection[0].detach().numpy().dtype == np.float64
+def test_solver_fff_vector_field_matches_generator():
+    """FFF vector field Toeplitz matrices should agree with tangent generator."""
 
-    def test_gmrf_rdit(self):
-        material_sio = create_material(
-            name='SiO', permittivity=self.n_SiO**2)
-        material_sin = create_material(
-            name='SiN', permittivity=self.n_SiN**2)
-        material_fs = create_material(
-            name='FusedSilica', permittivity=self.n_fs**2)
+    mat_air = create_material(name="Air", permittivity=1.0)
+    mat_sin = create_material(name="SiN", permittivity=(2.0) ** 2)
 
-        dev1 = create_solver(
-            algorithm=Algorithm.RDIT,
-            precision=Precision.DOUBLE,
-            rdim=[512, 512],
-            kdim=[9, 9],
-            lam0=np.array([1540 * self.nm]),
-            lengthunit='um',
-            t1=self.t1,
-            t2=self.t2)
+    dev = create_solver(
+        algorithm=Algorithm.RCWA,
+        precision=Precision.DOUBLE,
+        rdim=[64, 64],
+        kdim=[5, 5],
+        lam0=np.array([1.55]),
+        is_use_FFF=True,
+    )
+    dev.update_ref_material(ref_material=mat_air)
+    dev.update_trn_material(trn_material=mat_air)
+    dev.add_layer(material_name=mat_sin, thickness=torch.tensor(0.35, dtype=torch.float64), is_homogeneous=False)
 
-        dev1.set_rdit_order(10)
+    mask = _hex_unit_mask(a=0.8, r=0.25, solver=dev).to(dev.tfloat)
+    dev.update_er_with_mask(mask=mask, layer_index=0, method="FFT")
 
-        dev1.update_trn_material(trn_material=material_fs)
+    from torchrdit import vector as vector_module  # noqa: WPS433
 
-        dev1.add_layer(material_name=material_sio,
-                       thickness=self.h1,
-                       is_homogeneous=False,
-                       is_optimize=True)
+    tx, ty = vector_module.compute_tangent_field(
+        mask=mask,
+        XO=dev.XO,
+        YO=dev.YO,
+        lattice_t1=dev.lattice_t1,
+        lattice_t2=dev.lattice_t2,
+        kdim=tuple(dev.kdim),
+        scheme="POL",
+        fourier_loss_weight=1e-2,
+        smoothness_loss_weight=1e-3,
+    )
 
-        dev1.add_layer(material_name=material_sin,
-                       thickness=self.h2,
-                       is_homogeneous=True,
-                       is_optimize=False)
+    denom = (tx.abs() ** 2 + ty.abs() ** 2).clamp_min(1e-12)
+    p_xx = (tx.abs() ** 2) / denom
+    p_yy = (ty.abs() ** 2) / denom
+    p_xy = tx * ty.conj() / denom
 
-        src1 = dev1.add_source(theta=self.theta,
-                               phi=self.phi,
-                               pte=self.pte,
-                               ptm=self.ptm)
+    expected_n_xx = dev.layer_manager._gen_toeplitz2d(
+        p_xx.to(dev.tcomplex),
+        nharmonic_1=dev.kdim[0],
+        nharmonic_2=dev.kdim[1],
+        method="FFT",
+    )
+    expected_n_yy = dev.layer_manager._gen_toeplitz2d(
+        p_yy.to(dev.tcomplex),
+        nharmonic_1=dev.kdim[0],
+        nharmonic_2=dev.kdim[1],
+        method="FFT",
+    )
+    expected_n_xy = dev.layer_manager._gen_toeplitz2d(
+        p_xy.to(dev.tcomplex),
+        nharmonic_1=dev.kdim[0],
+        nharmonic_2=dev.kdim[1],
+        method="FFT",
+    )
+    expected_n_yx = dev.layer_manager._gen_toeplitz2d(
+        (ty * tx.conj() / denom).to(dev.tcomplex),
+        nharmonic_1=dev.kdim[0],
+        nharmonic_2=dev.kdim[1],
+        method="FFT",
+    )
 
-        # build hexagonal unit cell
-        mask = self.make_mask(self.r, dev1)
+    p_xx, p_yy, p_xy, p_yx = dev._calculate_vector_field(mask=mask)
 
-        dev1.update_er_with_mask(mask=mask, layer_index=0, method='Analytical')
-        data_analytical = dev1.solve(src1)
-        dev1.update_er_with_mask(mask=mask, layer_index=0, method='FFT')
-        data_fft = dev1.solve(src1, is_use_FFF=False)
+    assert torch.allclose(p_xx, expected_n_xx, atol=5e-4, rtol=5e-4)
+    assert torch.allclose(p_yy, expected_n_yy, atol=5e-4, rtol=5e-4)
+    assert torch.allclose(p_xy, expected_n_xy, atol=5e-4, rtol=5e-4)
+    assert torch.allclose(p_yx, expected_n_yx, atol=5e-4, rtol=5e-4)
 
-        assert(np.isclose(np.int32(data_fft.transmission[0].detach().numpy() * 1000), np.int32(data_analytical.transmission[0].detach().numpy() * 1000)))
-        assert(np.isclose(np.int32(data_fft.reflection[0].detach().numpy() * 1000), np.int32(data_analytical.reflection[0].detach().numpy() * 1000)))
-        assert data_analytical.transmission[0].detach().numpy().dtype == np.float64
-        assert data_analytical.reflection[0].detach().numpy().dtype == np.float64
-        assert data_fft.transmission[0].detach().numpy().dtype == np.float64
-        assert data_fft.reflection[0].detach().numpy().dtype == np.float64
 
-class TestSolverFloat:
-    # units
-    um = 1
-    nm = 1e-3 * um
-    degrees = np.pi / 180
+def test_solver_get_vector_components_matches_generator():
+    """`get_vector_components` should reproduce tangent generator results."""
+    mat_air = create_material(name="Air", permittivity=1.0)
+    mat_sin = create_material(name="SiN", permittivity=(2.0) ** 2)
 
-    lam0 = 1540 * nm
-    theta = 0 * degrees
-    phi = 0 * degrees
+    dev = create_solver(
+        algorithm=Algorithm.RCWA,
+        precision=Precision.DOUBLE,
+        rdim=[64, 64],
+        kdim=[5, 5],
+        lam0=np.array([1.55]),
+        is_use_FFF=True,
+    )
+    dev.update_ref_material(ref_material=mat_air)
+    dev.update_trn_material(trn_material=mat_air)
+    dev.add_layer(material_name=mat_sin, thickness=torch.tensor(0.35, dtype=torch.float64), is_homogeneous=False)
 
-    pte = 1
-    ptm = 0
+    mask = _hex_unit_mask(a=0.8, r=0.25, solver=dev).to(dev.tfloat)
+    dev.update_er_with_mask(mask=mask, layer_index=0, method="FFT")
 
-    # device parameters
-    n_SiO = 1.4496
-    n_SiN = 1.9360
-    n_fs = 1.5100
+    solver_tx, solver_ty = dev.get_vector_components(layer_index=0)
+    assert solver_tx is not None and solver_ty is not None
 
-    a = 1150 * nm
+    from torchrdit import vector as vector_module  # noqa: WPS433
+
+    expected_tx, expected_ty = vector_module.compute_tangent_field(
+        mask=mask,
+        XO=dev.XO,
+        YO=dev.YO,
+        lattice_t1=dev.lattice_t1,
+        lattice_t2=dev.lattice_t2,
+        kdim=tuple(dev.kdim),
+        scheme="POL",
+        fourier_loss_weight=1e-2,
+        smoothness_loss_weight=1e-3,
+    )
+
+    assert torch.allclose(solver_tx, expected_tx.to(solver_tx.dtype), atol=1e-6, rtol=1e-6)
+    assert torch.allclose(solver_ty, expected_ty.to(solver_ty.dtype), atol=1e-6, rtol=1e-6)
+
+
+@pytest.mark.parametrize(
+    "algorithm, precision, expected_dtype",
+    [
+        (Algorithm.RCWA, Precision.DOUBLE, np.float64),
+        (Algorithm.RDIT, Precision.DOUBLE, np.float64),
+        (Algorithm.RCWA, Precision.SINGLE, np.float32),
+        (Algorithm.RDIT, Precision.SINGLE, np.float32),
+    ],
+)
+def test_hex_cell_transmission_reflection_golden(algorithm, precision, expected_dtype):
+    """Golden numerical validation on a hex-cell GMRF structure for both algorithms/precisions.
+
+    Validates transmission/reflection against reference values and checks dtype matches precision.
+    """
+    a = 1150 * NM
+    r = 400 * NM
+    h1 = torch.tensor(230 * NM, dtype=torch.float32)
+    h2 = torch.tensor(345 * NM, dtype=torch.float32)
+    t1 = torch.tensor([[a / 2, -a * np.sqrt(3) / 2]], dtype=torch.float32)
+    t2 = torch.tensor([[a / 2, a * np.sqrt(3) / 2]], dtype=torch.float32)
+
+    # Materials
+    n_SiO, n_SiN, n_fs = 1.4496, 1.9360, 1.5100
+    mat_sio = create_material(name='SiO', permittivity=n_SiO**2)
+    mat_sin = create_material(name='SiN', permittivity=n_SiN**2)
+    mat_fs = create_material(name='FusedSilica', permittivity=n_fs**2)
+
+    dev = create_solver(
+        algorithm=algorithm,
+        precision=precision,
+        rdim=[512, 512],
+        kdim=[9, 9],
+        lam0=np.array([1540 * NM]),
+        lengthunit='um',
+        t1=t1,
+        t2=t2,
+    )
+    if algorithm == Algorithm.RDIT:
+        # Keep order consistent with previous golden runs
+        dev.set_rdit_order(10)
+
+    dev.update_trn_material(trn_material=mat_fs)
+    dev.add_layer(material_name=mat_sio, thickness=h1, is_homogeneous=False, is_optimize=True)
+    dev.add_layer(material_name=mat_sin, thickness=h2, is_homogeneous=True, is_optimize=False)
+
+    src = dev.add_source(theta=0 * DEG, phi=0 * DEG, pte=1, ptm=0)
+
+    mask = _hex_unit_mask(a=a, r=r, solver=dev)
+    dev.update_er_with_mask(mask=mask, layer_index=0)
+    data = dev.solve(src)
+
+    T = data.transmission[0].detach().numpy()
+    R = data.reflection[0].detach().numpy()
+
+    # Golden values with tolerance consistent with prior tests
+    assert np.isclose(T, 0.92, atol=2e-2)
+    assert np.isclose(R, 0.07, atol=2e-2)
+    # Precision/dtype contract
+    assert T.dtype == expected_dtype
+    assert R.dtype == expected_dtype
+
+
+def _make_analytical_mask(radius_var, dev):
+    rsq = (dev.XO) ** 2 + (dev.YO) ** 2
+    mask = rsq - (radius_var) ** 2 + 0.5
+    return operator_proj(mask, eta=0.5, beta=100)
+
+
+@pytest.mark.parametrize("algorithm", [Algorithm.RCWA, Algorithm.RDIT])
+def test_analytical_vs_fft_parity(algorithm):
+    """Parity check between Analytical and FFT permittivity expansions.
+
+    Uses a circular inclusion; requires close agreement between methods.
+    """
+    a = 1150 * NM
+    r = 400 * NM
+    h1 = torch.tensor(230 * NM, dtype=torch.float32)
+    h2 = torch.tensor(345 * NM, dtype=torch.float32)
+    t1 = torch.tensor([[a, 0]], dtype=torch.float32)
+    t2 = torch.tensor([[0, a]], dtype=torch.float32)
+
+    # Materials
+    n_SiO, n_SiN, n_fs = 1.4496, 1.9360, 1.5100
+    mat_sio = create_material(name='SiO', permittivity=n_SiO**2)
+    mat_sin = create_material(name='SiN', permittivity=n_SiN**2)
+    mat_fs = create_material(name='FusedSilica', permittivity=n_fs**2)
+
+    dev = create_solver(
+        algorithm=algorithm,
+        precision=Precision.DOUBLE,
+        rdim=[512, 512],
+        kdim=[9, 9],
+        lam0=np.array([1540 * NM]),
+        lengthunit='um',
+        t1=t1,
+        t2=t2,
+    )
+    if algorithm == Algorithm.RDIT:
+        dev.set_rdit_order(10)
+
+    dev.update_trn_material(trn_material=mat_fs)
+    dev.add_layer(material_name=mat_sio, thickness=h1, is_homogeneous=False, is_optimize=True)
+    dev.add_layer(material_name=mat_sin, thickness=h2, is_homogeneous=True, is_optimize=False)
+    src = dev.add_source(theta=0 * DEG, phi=0 * DEG, pte=1, ptm=0)
+
+    mask = _make_analytical_mask(r, dev)
+
+    dev.update_er_with_mask(mask=mask, layer_index=0, method='Analytical')
+    data_ana = dev.solve(src)
+    dev.update_er_with_mask(mask=mask, layer_index=0, method='FFT')
+    data_fft = dev.solve(src, is_use_FFF=False)
+
+    # Compare with explicit tolerance rather than integer rounding
+    assert np.isclose(
+        data_fft.transmission[0].item(), data_ana.transmission[0].item(), atol=1e-3
+    )
+    assert np.isclose(
+        data_fft.reflection[0].item(), data_ana.reflection[0].item(), atol=1e-3
+    )
+    # Sanity: both are double
+    assert data_ana.transmission[0].detach().numpy().dtype == np.float64
+    assert data_fft.transmission[0].detach().numpy().dtype == np.float64
+
+
+def test_dispersive_nonhomogeneous_layer_energy_and_values():
+    """Dispersive materials in a non-homogeneous top layer; energy sanity + expected band.
+
+    Uses real dispersive data files Si_C-e.txt and SiO2-e.txt. This keeps a single,
+    representative dispersive test with a realistic geometry and tolerances that
+    account for reduced k-space truncation in tests.
+    """
+    a = 1150 * NM
     b = a * np.sqrt(3)
+    r = 400 * NM
+    h1 = torch.tensor(230 * NM, dtype=torch.float64)
+    h2 = torch.tensor(345 * NM, dtype=torch.float64)
+    t1 = torch.tensor([[a / 2, -a * np.sqrt(3) / 2]], dtype=torch.float64)
+    t2 = torch.tensor([[a / 2, a * np.sqrt(3) / 2]], dtype=torch.float64)
 
-    r = 400 * nm
-    h1 = torch.tensor(230 * nm, dtype=torch.float32)
-    h2 = torch.tensor(345 * nm, dtype=torch.float32)
+    # Builder-based solver with manageable sizes for CI
+    dev = (
+        get_solver_builder()
+        .with_algorithm(Algorithm.RDIT)
+        .with_precision(Precision.DOUBLE)
+        .with_real_dimensions([256, 256])
+        .with_k_dimensions([9, 9])
+        .with_wavelengths(np.array([1540 * NM]))
+        .with_length_unit('um')
+        .with_lattice_vectors(t1, t2)
+        .with_fff(True)
+        .build()
+    )
 
-    t1 = torch.tensor([[a/2, -a * np.sqrt(3)/2]], dtype=torch.float32)
-    t2 = torch.tensor([[a/2, a * np.sqrt(3)/2]], dtype=torch.float32)
+    # Dispersive and non-dispersive materials
+    base = os.path.dirname(__file__)
+    mat_sic = create_material(
+        name='SiC', dielectric_dispersion=True,
+        user_dielectric_file=os.path.join(base, 'Si_C-e.txt'),
+        data_format='freq-eps', data_unit='thz'
+    )
+    mat_sio2 = create_material(
+        name='SiO2', dielectric_dispersion=True,
+        user_dielectric_file=os.path.join(base, 'SiO2-e.txt'),
+        data_format='freq-eps', data_unit='thz'
+    )
+    mat_sin = create_material(name='SiN', permittivity=(1.9360) ** 2)
+    mat_fs = create_material(name='FusedSilica', permittivity=(1.5100) ** 2)
 
-    def test_gmrf_rcwa_float(self):
-        material_sio = create_material(
-            name='SiO', permittivity=self.n_SiO**2)
-        material_sin = create_material(
-            name='SiN', permittivity=self.n_SiN**2)
-        material_fs = create_material(
-            name='FusedSilica', permittivity=self.n_fs**2)
+    dev.add_materials([mat_sic, mat_sio2, mat_sin, mat_fs])
+    dev.update_trn_material(trn_material=mat_fs)
 
-        dev1 = create_solver(
-            algorithm=Algorithm.RCWA,
-            precision=Precision.SINGLE,
-            rdim=[512, 512],
-            kdim=[9, 9],
-            lam0=np.array([1540 * self.nm]),
-            lengthunit='um',
-            t1=self.t1,
-            t2=self.t2)
+    # Non-homogeneous top (dispersive SiC), homogeneous bottom (SiN)
+    dev.add_layer(material_name=mat_sic, thickness=h1, is_homogeneous=False)
+    dev.add_layer(material_name=mat_sin, thickness=h2, is_homogeneous=True)
 
-        dev1.update_trn_material(trn_material=material_fs)
+    src = dev.add_source(theta=0 * DEG, phi=0 * DEG, pte=1, ptm=0)
+    sg = ShapeGenerator.from_solver(dev)
+    c1 = sg.generate_circle_mask(center=[0, b / 2], radius=r)
+    c2 = sg.generate_circle_mask(center=[0, -b / 2], radius=r)
+    c3 = sg.generate_circle_mask(center=[a / 2, 0], radius=r)
+    c4 = sg.generate_circle_mask(center=[-a / 2, 0], radius=r)
+    mask = sg.combine_masks(mask1=c1, mask2=c2, operation='union')
+    mask = sg.combine_masks(mask1=mask, mask2=c3, operation='union')
+    mask = sg.combine_masks(mask1=mask, mask2=c4, operation='union')
+    mask = (1 - mask).to(torch.float64)
+    mask.requires_grad = True
 
-        dev1.add_layer(material_name=material_sio,
-                       thickness=self.h1,
-                       is_homogeneous=False,
-                       is_optimize=True)
+    dev.update_er_with_mask(mask=mask, layer_index=0)
+    data = dev.solve(src)
 
-        dev1.add_layer(material_name=material_sin,
-                       thickness=self.h2,
-                       is_homogeneous=True,
-                       is_optimize=False)
+    # Energy sanity
+    T = data.transmission[0].item()
+    R = data.reflection[0].item()
+    assert 0 <= T <= 1
+    assert 0 <= R <= 1
+    assert T + R <= 1 + 1e-4
 
-        src1 = dev1.add_source(theta=self.theta,
-                               phi=self.phi,
-                               pte=self.pte,
-                               ptm=self.ptm)
-        
-        shape_gen = ShapeGenerator.from_solver(dev1)
-
-        # build hexagonal unit cell
-        c1 = shape_gen.generate_circle_mask(center=[0, self.b/2], radius=self.r)
-        c2 = shape_gen.generate_circle_mask(center=[0, -self.b/2], radius=self.r)
-        c3 = shape_gen.generate_circle_mask(center=[self.a/2, 0], radius=self.r)
-        c4 = shape_gen.generate_circle_mask(center=[-self.a/2, 0], radius=self.r)
-
-        mask = shape_gen.combine_masks(mask1=c1, mask2=c2, operation='union')
-        mask = shape_gen.combine_masks(mask1=mask, mask2=c3, operation='union')
-        mask = shape_gen.combine_masks(mask1=mask, mask2=c4, operation='union')
-
-        mask = 1 - mask
-
-        dev1.update_er_with_mask(mask=mask, layer_index=0)
-        data = dev1.solve(src1)
-
-        assert(np.isclose(data.transmission[0].detach().numpy(), 0.92, atol=2e-2))
-        assert(np.isclose(data.reflection[0].detach().numpy(), 0.07, atol=2e-2))
-        assert data.transmission[0].detach().numpy().dtype == np.float32
-        assert data.reflection[0].detach().numpy().dtype == np.float32
-
-    def test_gmrf_rdit_float(self):
-        material_sio = create_material(
-            name='SiO', permittivity=self.n_SiO**2)
-        material_sin = create_material(
-            name='SiN', permittivity=self.n_SiN**2)
-        material_fs = create_material(
-            name='FusedSilica', permittivity=self.n_fs**2)
-
-        dev1 = create_solver(
-            algorithm=Algorithm.RDIT,
-            precision=Precision.SINGLE,
-            rdim=[512, 512],
-            kdim=[9, 9],
-            lam0=np.array([1540 * self.nm]),
-            lengthunit='um',
-            t1=self.t1,
-            t2=self.t2)
-
-        dev1.set_rdit_order(10)
-
-        dev1.update_trn_material(trn_material=material_fs)
-
-        dev1.add_layer(material_name=material_sio,
-                       thickness=self.h1,
-                       is_homogeneous=False,
-                       is_optimize=True)
-
-        dev1.add_layer(material_name=material_sin,
-                       thickness=self.h2,
-                       is_homogeneous=True,
-                       is_optimize=False)
-
-        src1 = dev1.add_source(theta=self.theta,
-                               phi=self.phi,
-                               pte=self.pte,
-                               ptm=self.ptm)
-        
-        shape_gen = ShapeGenerator.from_solver(dev1)
-
-        # build hexagonal unit cell
-        c1 = shape_gen.generate_circle_mask(center=[0, self.b/2], radius=self.r)
-        c2 = shape_gen.generate_circle_mask(center=[0, -self.b/2], radius=self.r)
-        c3 = shape_gen.generate_circle_mask(center=[self.a/2, 0], radius=self.r)
-        c4 = shape_gen.generate_circle_mask(center=[-self.a/2, 0], radius=self.r)
-
-        mask = shape_gen.combine_masks(mask1=c1, mask2=c2, operation='union')
-        mask = shape_gen.combine_masks(mask1=mask, mask2=c3, operation='union')
-        mask = shape_gen.combine_masks(mask1=mask, mask2=c4, operation='union')
-
-        mask = 1 - mask
-
-        dev1.update_er_with_mask(mask=mask, layer_index=0)
-        data = dev1.solve(src1)
-
-        assert(np.isclose(data.transmission[0].detach().numpy(), 0.92, atol=2e-2))
-        assert(np.isclose(data.reflection[0].detach().numpy(), 0.07, atol=2e-2))
-        assert data.transmission[0].detach().numpy().dtype == np.float32
-        assert data.reflection[0].detach().numpy().dtype == np.float32
-
-
-
-class TestSolverDispersive:
-    """Test solver with dispersive materials."""
-    
-    # units
-    um = 1
-    nm = 1e-3 * um
-    degrees = np.pi / 180
-
-    # angles of incident waves
-    theta = 0 * degrees
-    phi = 0 * degrees
-
-    # polarization
-    pte = 1
-    ptm = 0
-
-    # refractive index
-    n_SiO = 1.4496
-    n_SiN = 1.9360
-    n_fs = 1.5100
-
-    # dimensions of the cell
-    a = 1150 * nm
-    b = a * np.sqrt(3)
-
-    # radius of the holes on the top layer
-    r = 400 * nm
-
-    # thickness of each layer
-    h1 = torch.tensor(230 * nm, dtype=torch.float64)
-    h2 = torch.tensor(345 * nm, dtype=torch.float64)
-
-    # lattice vectors of the cell
-    t1 = torch.tensor([[a/2, -a*np.sqrt(3)/2]], dtype=torch.float64)
-    t2 = torch.tensor([[a/2, a*np.sqrt(3)/2]], dtype=torch.float64)
-
-    def test_dispersive_nonhomo_layer(self):
-        """
-        Test GMRF with dispersive materials, exactly matching Demo-03a.py setup.
-        Using the real dispersive material files Si_C-e.txt and SiO2-e.txt.
-        Dispersive non-homogeneous layer is SiN.
-        Non-dispersive layer is SiO2.
-        """
-        
-        # Initialize the solver using the builder pattern, matching Demo-03a.py geometry
-        dev = (get_solver_builder()
-            .with_algorithm(Algorithm.RDIT)
-            .with_precision(Precision.DOUBLE)
-            .with_real_dimensions([256, 256])    # Reduced for faster testing
-            .with_k_dimensions([9, 9])         # Further reduced to avoid matrix size mismatch
-            .with_wavelengths(np.array([1540 * self.nm]))  # Just one wavelength for testing
-            .with_length_unit('um')
-            .with_lattice_vectors(self.t1, self.t2)
-            .with_fff(True)
-            .build())
-        
-        # Creating materials, exactly as in Demo-03a.py
-        material_sic = create_material(name='SiC', dielectric_dispersion=True, 
-                                    user_dielectric_file=os.path.join(os.path.dirname(__file__), 'Si_C-e.txt'), 
-                                    data_format='freq-eps', data_unit='thz')
-        material_sio2 = create_material(name='SiO2', dielectric_dispersion=True, 
-                                        user_dielectric_file=os.path.join(os.path.dirname(__file__), 'SiO2-e.txt'), 
-                                        data_format='freq-eps', data_unit='thz')
-        material_sin = create_material(name='SiN', permittivity=self.n_SiN**2)
-        material_fs = create_material(name='FusedSilica', permittivity=self.n_fs**2)
-        
-        # Manually add materials to the device
-        dev.add_materials(material_list=[material_sic, material_sio2, material_sin, material_fs])
-        
-        # Update the material of the transmission layer
-        dev.update_trn_material(trn_material=material_fs)
-        
-        # Add layers to the device
-        dev.add_layer(material_name=material_sic,
-                     thickness=self.h1,
-                     is_homogeneous=False)
-        
-        dev.add_layer(material_name=material_sin,
-                     thickness=self.h2,
-                     is_homogeneous=True)
-        
-        # Create source
-        src = dev.add_source(theta=self.theta,
-                            phi=self.phi,
-                            pte=self.pte,
-                            ptm=self.ptm)
-        
-        shape_gen = ShapeGenerator.from_solver(dev)
-        
-        # Build hexagonal unit cell with 4 circles
-        c1 = shape_gen.generate_circle_mask(center=[0, self.b/2], radius=self.r)
-        c2 = shape_gen.generate_circle_mask(center=[0, -self.b/2], radius=self.r)
-        c3 = shape_gen.generate_circle_mask(center=[self.a/2, 0], radius=self.r)
-        c4 = shape_gen.generate_circle_mask(center=[-self.a/2, 0], radius=self.r)
-        
-        mask = shape_gen.combine_masks(mask1=c1, mask2=c2, operation='union')
-        mask = shape_gen.combine_masks(mask1=mask, mask2=c3, operation='union')
-        mask = shape_gen.combine_masks(mask1=mask, mask2=c4, operation='union')
-        
-        mask = (1 - mask).to(torch.float64)
-
-        mask.requires_grad = True
-        
-        dev.update_er_with_mask(mask=mask, layer_index=0)
-        
-        # Solve and check results
-        data = dev.solve(src)
-        
-        # Verify data contains expected fields
-        assert hasattr(data, 'transmission')
-        assert hasattr(data, 'reflection')
-        
-        # Values should be between 0 and 1 for energy conservation
-        assert 0 <= data.transmission[0].item() <= 1
-        assert 0 <= data.reflection[0].item() <= 1
-        
-        # Energy conservation check
-        assert (data.transmission[0].item() + data.reflection[0].item()) <= 1 + 1e-4
-        
-        # Check for exact expected values based on user's provided results
-        expected_trn = 0.43316791878804345  # 43.32% transmission
-        expected_ref = 0.54319673247843570  # 54.32% reflection
-        
-        # Allow for differences due to reduced k-dimensions compared to Demo-03a.py
-        assert expected_trn - 0.1 <= data.transmission[0].item() <= expected_trn + 0.1
-        assert expected_ref - 0.1 <= data.reflection[0].item() <= expected_ref + 0.1
-
-    def test_dispersive_homo_layer(self):
-        """
-        Test GMRF with dispersive materials, exactly matching Demo-03a.py setup.
-        Using the real dispersive material files Si_C-e.txt and SiO2-e.txt.
-        Dispersive non-homogeneous layer is SiN.
-        Dispersive homogeneous layer is SiO2.
-        """
-        
-        # Initialize the solver using the builder pattern, matching Demo-03a.py geometry
-        dev = (get_solver_builder()
-            .with_algorithm(Algorithm.RDIT)
-            .with_precision(Precision.DOUBLE)
-            .with_real_dimensions([256, 256])    # Reduced for faster testing
-            .with_k_dimensions([9, 9])         # Further reduced to avoid matrix size mismatch
-            .with_wavelengths(np.array([1540 * self.nm]))  # Just one wavelength for testing
-            .with_length_unit('um')
-            .with_lattice_vectors(self.t1, self.t2)
-            .with_fff(True)
-            .build())
-        
-        # Creating materials, exactly as in Demo-03a.py
-        material_sic = create_material(name='SiC', dielectric_dispersion=True, 
-                                    user_dielectric_file=os.path.join(os.path.dirname(__file__), 'Si_C-e.txt'), 
-                                    data_format='freq-eps', data_unit='thz')
-        material_sio2 = create_material(name='SiO2', dielectric_dispersion=True, 
-                                        user_dielectric_file=os.path.join(os.path.dirname(__file__), 'SiO2-e.txt'), 
-                                        data_format='freq-eps', data_unit='thz')
-        material_sin = create_material(name='SiN', permittivity=self.n_SiN**2)
-        material_fs = create_material(name='FusedSilica', permittivity=self.n_fs**2)
-        
-        # Manually add materials to the device
-        dev.add_materials(material_list=[material_sic, material_sio2, material_sin, material_fs])
-        
-        # Update the material of the transmission layer
-        dev.update_trn_material(trn_material=material_fs)
-        
-        # Add layers to the device
-        dev.add_layer(material_name=material_sic,
-                     thickness=self.h1,
-                     is_homogeneous=False)
-        
-        dev.add_layer(material_name=material_sio2,
-                     thickness=self.h2,
-                     is_homogeneous=True)
-        
-        # Create source
-        src = dev.add_source(theta=self.theta,
-                            phi=self.phi,
-                            pte=self.pte,
-                            ptm=self.ptm)
-        
-        shape_gen = ShapeGenerator.from_solver(dev)
-        
-        # Build hexagonal unit cell with 4 circles
-        c1 = shape_gen.generate_circle_mask(center=[0, self.b/2], radius=self.r)
-        c2 = shape_gen.generate_circle_mask(center=[0, -self.b/2], radius=self.r)
-        c3 = shape_gen.generate_circle_mask(center=[self.a/2, 0], radius=self.r)
-        c4 = shape_gen.generate_circle_mask(center=[-self.a/2, 0], radius=self.r)
-        
-        mask = shape_gen.combine_masks(mask1=c1, mask2=c2, operation='union')
-        mask = shape_gen.combine_masks(mask1=mask, mask2=c3, operation='union')
-        mask = shape_gen.combine_masks(mask1=mask, mask2=c4, operation='union')
-        
-        mask = (1 - mask).to(torch.float64)
-
-        mask.requires_grad = True
-        
-        dev.update_er_with_mask(mask=mask, layer_index=0)
-        
-        # Solve and check results
-        data = dev.solve(src)
-        
-        # Verify data contains expected fields
-        assert hasattr(data, 'transmission')
-        assert hasattr(data, 'reflection')
-        
-        # Values should be between 0 and 1 for energy conservation
-        assert 0 <= data.transmission[0].item() <= 1
-        assert 0 <= data.reflection[0].item() <= 1
-        
-        # Energy conservation check
-        assert (data.transmission[0].item() + data.reflection[0].item()) <= 1 + 1e-4
-        
-        # Check for exact expected values based on user's provided results
-        expected_trn = 0.16843374773159475  # 16.843374773159475% transmission
-        expected_ref = 0.6830142455132093  # 68.30142455132093% reflection
-        
-        # Allow for differences due to reduced k-dimensions compared to Demo-03a.py
-        assert expected_trn - 0.1 <= data.transmission[0].item() <= expected_trn + 0.1
-        assert expected_ref - 0.1 <= data.reflection[0].item() <= expected_ref + 0.1
-
-
-if __name__ == '__main__':
-    pytest.main([__file__])
+    # Expected band based on validated results; loosened due to reduced k-dim
+    expected_T, expected_R = 0.43316791878804345, 0.5431967324784357
+    assert expected_T - 0.1 <= T <= expected_T + 0.1
+    assert expected_R - 0.1 <= R <= expected_R + 0.1

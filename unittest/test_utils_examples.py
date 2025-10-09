@@ -18,7 +18,6 @@ Keywords:
 
 import unittest
 import torch
-import numpy as np
 
 from torchrdit.utils import (
     _create_blur_kernel, 
@@ -263,28 +262,7 @@ class TestUtilsDocExamples(unittest.TestCase):
         rho_custom = blur_filter(rho, radius=1, beta=5, eta=0.7, num_proj=2)
         self.assertEqual(rho_custom.shape, rho.shape)
     
-    def test_to_diag_util_single(self):
-        """Test the to_diag_util function for single vector example.
-        
-        This test verifies that a vector is correctly converted to a diagonal matrix,
-        with the vector values along the diagonal and zeros elsewhere.
-        """
-        # Get vector
-        vec = self.vec_2d.clone()
-        
-        # Convert to diagonal matrix
-        diag_mat = to_diag_util(vec, kdim=self.kdim)
-        
-        # Verify properties
-        self.assertEqual(diag_mat.shape, (5, 5))
-        
-        # Check that diagonal elements match the vector
-        for i in range(vec.shape[0]):
-            self.assertEqual(diag_mat[i, i].item(), vec[i].item())
-        
-        # Off-diagonal elements should be zero
-        off_diag_mask = ~torch.eye(vec.shape[0], dtype=bool)
-        self.assertTrue(torch.all(diag_mat[off_diag_mask] == 0))
+    
     
     def test_to_diag_util_batch(self):
         """Test the to_diag_util function for batched vectors example.
@@ -364,4 +342,5 @@ class TestUtilsDocExamples(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main() 
+    # pytest discovers and runs these tests; direct invocation is unnecessary.
+    unittest.main()

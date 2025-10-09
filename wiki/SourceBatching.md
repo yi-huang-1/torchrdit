@@ -1,7 +1,9 @@
 # Source Batching Module
 
 ## Overview
-The source batching feature in TorchRDIT v0.1.22 enables efficient processing of multiple incident sources simultaneously, providing significant performance improvements for parameter sweeps and multi-condition optimizations.
+The source batching feature in TorchRDIT enables efficient processing of multiple incident sources simultaneously, providing significant performance improvements for parameter sweeps and multi-condition optimizations.
+
+As of v0.1.27, source batching is fully integrated into the unified SolverResults interface - there is no separate BatchedSolverResults class.
 
 ## Key Features
 - Process multiple incident angles in a single solve() call
@@ -9,7 +11,7 @@ The source batching feature in TorchRDIT v0.1.22 enables efficient processing of
 - Full gradient support for optimization workflows
 - 3-6x speedup compared to sequential processing
 - Memory-efficient processing of large parameter sweeps
-- Zero breaking changes - fully backward compatible
+- Unified interface - single SolverResults class handles both single and batched sources
 
 ## Quick Start
 
@@ -28,11 +30,11 @@ sources = [
     for angle in np.linspace(0, 60, 13) * deg
 ]
 
-# Batch solve - returns BatchedSolverResults
+# Batch solve - returns SolverResults with unified interface
 results = solver.solve(sources)
 
 # Access results
-print(f"Transmission for all angles: {results.transmission[:, 0]}")
+print(f"Transmission for all angles: {results.transmission[:, 0].item()}")
 best_idx = results.find_optimal_source('max_transmission')
 print(f"Best angle: {sources[best_idx]['theta'] * 180/np.pi:.1f}°")
 ```
@@ -94,45 +96,53 @@ sources = [
 for epoch in range(100):
     optimizer.zero_grad()
     solver.update_er_with_mask(mask=mask, layer_index=0)
-    
+
     results = solver.solve(sources)
     loss = -results.transmission.mean()  # Maximize average
-    
+
     loss.backward()
     optimizer.step()
 ```
 
-## BatchedSolverResults API
+## Unified SolverResults API (v0.1.27)
 
-The `BatchedSolverResults` class provides convenient access to results from multiple sources:
+The unified `SolverResults` class now handles both single and batched sources seamlessly:
 
-### Attributes
-- `transmission`: Shape (n_sources, n_freqs) - Total transmission efficiency
-- `reflection`: Shape (n_sources, n_freqs) - Total reflection efficiency
-- `n_sources`: Number of sources in the batch
-- `source_parameters`: List of source dictionaries
+### Key Properties
+- `n_sources`: Number of sources (1 for single, >1 for batched)
+- `is_batched`: Returns True if results contain multiple sources
+- `transmission`: Shape (n_freqs) or (n_sources, n_freqs) depending on batching
+- `reflection`: Shape (n_freqs) or (n_sources, n_freqs) depending on batching
 
-### Methods
+### Batched-Only Methods
+When `is_batched` is True, these additional methods are available:
 - `__getitem__(idx)`: Get results for specific source(s)
 - `__iter__()`: Iterate over individual source results
+- `__len__()`: Get number of sources
 - `find_optimal_source(metric)`: Find source with best performance
 - `get_parameter_sweep_data(parameter, metric)`: Extract sweep data
 
 ### Example Usage
 ```python
-# Access individual results
-result_30deg = results[1]  # Returns SolverResults
+# Works with both single and batched sources
+results = solver.solve(sources)  # Unified SolverResults
 
-# Iterate through results
-for i, result in enumerate(results):
-    print(f"Source {i}: T={result.transmission[0]:.3f}")
+if results.is_batched:
+    # Access individual results
+    result_30deg = results[1]  # Returns SolverResults for one source
 
-# Find optimal source
-best_idx = results.find_optimal_source('max_transmission')
-worst_idx = results.find_optimal_source('min_reflection')
+    # Iterate through results
+    for i, result in enumerate(results):
+        print(f"Source {i}: T={result.transmission[0]:.3f}")
 
-# Extract parameter sweep data
-angles, trans = results.get_parameter_sweep_data('theta', 'transmission')
+    # Find optimal source (batched only)
+    best_idx = results.find_optimal_source('max_transmission')
+
+    # Extract parameter sweep data
+    angles, trans = results.get_parameter_sweep_data('theta', 'transmission')
+else:
+    # Single source - access directly
+    print(f"T={results.transmission[0]:.3f}")
 ```
 
 ## Performance Considerations
@@ -143,7 +153,7 @@ For very large parameter sweeps, use chunking:
 ```python
 def process_large_sweep(solver, angles, chunk_size=100):
     all_results = []
-    
+
     for i in range(0, len(angles), chunk_size):
         chunk = angles[i:i+chunk_size]
         sources = [
@@ -152,7 +162,7 @@ def process_large_sweep(solver, angles, chunk_size=100):
         ]
         results = solver.solve(sources)
         all_results.append(results.transmission[:, 0].numpy())
-    
+
     return np.concatenate(all_results)
 ```
 

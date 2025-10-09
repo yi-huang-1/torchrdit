@@ -61,7 +61,7 @@ Keywords:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional, Union
 import torch
 
 
@@ -107,37 +107,72 @@ class ScatteringMatrix:
 
 
 @dataclass
-class FieldComponents:
-    """Field components in x, y, z directions for electromagnetic fields.
+class _FourierCoefficients:
+    """Internal class for k-space Fourier coefficients (not real-space fields).
 
-    Contains the spatial distribution of electromagnetic field components along
-    the x, y, and z directions in the Fourier domain.
+    Contains Fourier coefficients in k-space representing spectral amplitudes.
+    These are the raw coefficients from the electromagnetic solver
+
+    Note: This is an internal class - use public field API methods instead.
+    """
+
+    s_x: torch.Tensor  # Electric field Fourier coefficient x-component
+    s_y: torch.Tensor  # Electric field Fourier coefficient y-component
+    s_z: torch.Tensor  # Electric field Fourier coefficient z-component
+    u_x: Optional[torch.Tensor] = None  # Magnetic field Fourier coefficient x-component
+    u_y: Optional[torch.Tensor] = None  # Magnetic field Fourier coefficient y-component
+    u_z: Optional[torch.Tensor] = None  # Magnetic field Fourier coefficient z-component
+
+@dataclass
+class FieldComponents:
+    """Electromagnetic field Fourier coefficients in k-space.
+
+    Contains Fourier coefficients (not real-space fields) of electromagnetic field
+    components in k-space. These represent the spectral amplitudes s_x, s_y, s_z for
+    electric fields and u_x, u_y, u_z for magnetic fields, indexed by harmonic orders.
+
+    Important: These are Fourier coefficients in k-space, not real-space field values.
 
     Attributes:
-        x (torch.Tensor): X-component of the electromagnetic field.
-            Shape: (n_freqs, kdim[0], kdim[1])
-        y (torch.Tensor): Y-component of the electromagnetic field.
-            Shape: (n_freqs, kdim[0], kdim[1])
-        z (torch.Tensor): Z-component of the electromagnetic field.
-            Shape: (n_freqs, kdim[0], kdim[1])
+        x (torch.Tensor): X-component Fourier coefficient of electric field (s_x).
+            Shape: (n_freqs, n_harmonics_x, n_harmonics_y)
+        y (torch.Tensor): Y-component Fourier coefficient of electric field (s_y).
+            Shape: (n_freqs, n_harmonics_x, n_harmonics_y)
+        z (torch.Tensor): Z-component Fourier coefficient of electric field (s_z).
+            Shape: (n_freqs, n_harmonics_x, n_harmonics_y)
+        mag_x (Optional[torch.Tensor]): X-component Fourier coefficient of magnetic field (u_x).
+            Shape: (n_freqs, n_harmonics_x, n_harmonics_y). Default: None
+            Note: These are Fourier coefficients of normalized magnetic field h_hat(x,y,z) where h_hat(x,y,z) = -j * sqrt(mu0/epsilon0) * h(x,y,z)
+        mag_y (Optional[torch.Tensor]): Y-component Fourier coefficient of magnetic field (u_y).
+            Shape: (n_freqs, n_harmonics_x, n_harmonics_y). Default: None
+            Note: These are Fourier coefficients of normalized magnetic field h_hat(x,y,z) where h_hat(x,y,z) = -j * sqrt(mu0/epsilon0) * h(x,y,z)
+        mag_z (Optional[torch.Tensor]): Z-component Fourier coefficient of magnetic field (u_z).
+            Shape: (n_freqs, n_harmonics_x, n_harmonics_y). Default: None
+            Note: These are Fourier coefficients of normalized magnetic field h_hat(x,y,z) where h_hat(x,y,z) = -j * sqrt(mu0/epsilon0) * h(x,y,z)
 
     Examples:
     ```python
-    # Calculate field intensity (|E|²) at first frequency
-    intensity = (abs(field.x[0])**2 + abs(field.y[0])**2 + abs(field.z[0])**2)
+    # Calculate electric field intensity from Fourier coefficients at first frequency
+    e_intensity = (abs(field.x[0])**2 + abs(field.y[0])**2 + abs(field.z[0])**2)
 
-    # Extract phase of x-component
-    phase_x = torch.angle(field.x)
+    # Access Fourier coefficients of normalized magnetic field h_hat(x,y,z)
+    if field.mag_x is not None:
+        u_x = field.mag_x  # Fourier coefficients of h_hat_x(x,y,z)
+        u_y = field.mag_y  # Fourier coefficients of h_hat_y(x,y,z)
+
     ```
 
     Keywords:
         field components, electromagnetic field, electric field, magnetic field,
-        Fourier domain, x-component, y-component, z-component, vectorial
+        Fourier domain, x-component, y-component, z-component, vectorial, Poynting vector
     """
 
-    x: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
-    y: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
-    z: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
+    x: torch.Tensor  # Electric field x-component (n_freqs, kdim[0], kdim[1])
+    y: torch.Tensor  # Electric field y-component (n_freqs, kdim[0], kdim[1])
+    z: torch.Tensor  # Electric field z-component (n_freqs, kdim[0], kdim[1])
+    mag_x: Optional[torch.Tensor] = None  # Magnetic field x-component
+    mag_y: Optional[torch.Tensor] = None  # Magnetic field y-component
+    mag_z: Optional[torch.Tensor] = None  # Magnetic field z-component
 
 
 @dataclass
@@ -182,12 +217,11 @@ class WaveVectors:
 
 @dataclass
 class SolverResults:
-    """Complete results from electromagnetic solver.
+    """Unified results container for electromagnetic solver with single/batched source support.
 
-    Comprehensive container for all results from an electromagnetic simulation,
-    including reflection and transmission coefficients, diffraction efficiencies,
-    field components, scattering matrices, and wave vectors. This class also provides
-    methods for analyzing diffraction orders and extracting specific field components.
+    Comprehensive container for all results from electromagnetic simulations, supporting
+    both single and batched source solving. Includes reflection and transmission coefficients,
+    diffraction efficiencies, field components, scattering matrices, wave vectors.
 
     Note:
         kdim_0_tims_1 = kdim[0] * kdim[1], where kdim is the k-space dimensions
@@ -195,42 +229,51 @@ class SolverResults:
         component's tensor shapes.
 
     Attributes:
-        reflection (torch.Tensor): Total reflection efficiency for each wavelength.
-            Shape: (n_freqs)
-        transmission (torch.Tensor): Total transmission efficiency for each wavelength.
-            Shape: (n_freqs)
+        reflection (torch.Tensor): Total reflection efficiency.
+            Shape: (n_freqs) for single source, (n_sources, n_freqs) for batched
+        transmission (torch.Tensor): Total transmission efficiency.
+            Shape: (n_freqs) for single source, (n_sources, n_freqs) for batched
         reflection_diffraction (torch.Tensor): Reflection efficiencies for each diffraction order.
-            Shape: (n_freqs, kdim[0], kdim[1])
+            Shape: (n_freqs, kdim[0], kdim[1]) or (n_sources, n_freqs, kdim[0], kdim[1])
         transmission_diffraction (torch.Tensor): Transmission efficiencies for each diffraction order.
-            Shape: (n_freqs, kdim[0], kdim[1])
-        reflection_field (FieldComponents): Field components in the reflection region.
-        transmission_field (FieldComponents): Field components in the transmission region.
+            Shape: (n_freqs, kdim[0], kdim[1]) or (n_sources, n_freqs, kdim[0], kdim[1])
+        reflection_field (FieldComponents): Field Fourier coefficients in the reflection region.
+        transmission_field (FieldComponents): Field Fourier coefficients in the transmission region.
         structure_matrix (ScatteringMatrix): Scattering matrix for the entire structure.
         wave_vectors (WaveVectors): Wave vector components for the simulation.
-        raw_data (Dict): Raw dictionary data for backward compatibility.
+        n_sources (int): Number of sources (1 for single, >1 for batched).
+        lattice_t1, lattice_t2 (Optional[torch.Tensor]): Lattice vectors.
+        default_rdim (Optional[Tuple[int, int]]): Default spatial resolution from solver.
 
     Examples:
     ```python
-    # Get overall reflection and transmission
+    # Single source results
+    results = solver.solve(source)
     total_reflection = results.reflection[0]  # First wavelength
-    total_transmission = results.transmission[0]  # First wavelength
+    total_transmission = results.transmission[0]
 
-    # Access field components
-    tx, ty, tz = results.get_zero_order_transmission()
+    # Batched source results
+    sources = [solver.add_source(theta=angle) for angle in angles]
+    results = solver.solve(sources)  # Returns SolverResults with batching
 
-    # Calculate field amplitude and phase
-    amplitude = torch.abs(tx[0])  # Amplitude of x-component
-    phase = torch.angle(tx[0])    # Phase in radians
+    # Access individual source results
+    for i, result in enumerate(results):
+        print(f"Source {i}: T={result.transmission[0]:.3f}")
 
-    # Analyze diffraction orders
-    orders = results.get_propagating_orders()
-    efficiency = results.get_order_transmission_efficiency(1, 0)  # First order in x
+    # Find optimal source (batched only)
+    if results.is_batched:
+        best_idx = results.find_optimal_source('max_transmission')
+
+    # Interface Fourier coefficients
+    coeffs = results.get_reflection_interface_fourier_coefficients()
+    S_x, S_y, S_z = coeffs['S_x'], coeffs['S_y'], coeffs['S_z']  # E-field coefficients
+    U_x, U_y, U_z = coeffs['U_x'], coeffs['U_y'], coeffs['U_z']  # H-field coefficients
     ```
 
     Keywords:
         electromagnetic simulation, results, reflection, transmission, diffraction,
         scattering matrix, field components, wave vectors, RCWA, R-DIT, diffraction order,
-        efficiency, Fourier optics
+        efficiency, Fourier optics, batched sources
     """
 
     # Overall efficiencies
@@ -254,6 +297,167 @@ class SolverResults:
     # Raw dictionary for backward compatibility
     raw_data: Dict = field(default_factory=dict)
 
+    # Field data
+    mat_v_ref: Optional[torch.Tensor] = None  # V matrix for reflection region (magnetic field mode matrix)
+    mat_v_trn: Optional[torch.Tensor] = None  # V matrix for transmission region (magnetic field mode matrix)
+    polarization_data: Optional[Dict] = None  # Polarization data containing esrc and other vectors
+    solver_config: Optional[Dict] = None  # Solver configuration (kdim, n_freqs, device, etc.)
+    smat_layers: Optional[Dict] = None  # Individual layer S-matrices for proper mode coefficient calculation
+
+    # Lattice vectors
+    lattice_t1: Optional[torch.Tensor] = None  # First lattice vector [x, y] from solver
+    lattice_t2: Optional[torch.Tensor] = None  # Second lattice vector [x, y] from solver
+    default_rdim: Optional[Tuple[int, int]] = None  # Default spatial resolution [height, width] from solver
+
+    # Unified batching support (new fields for merged BatchedSolverResults functionality)
+    n_sources: int = field(default=1)  # Number of sources (1 for single, >1 for batched)
+    source_parameters: Optional[List[Dict]] = None  # Original source dictionaries for batched case
+    loss: Optional[torch.Tensor] = None  # Total loss for each source/wavelength (batched only)
+    _is_batched: Optional[bool] = field(default=None)  # Explicit batched flag to override n_sources logic
+
+    @property
+    def is_batched(self) -> bool:
+        """Return True if this represents batched source results.
+
+        This is True when:
+        1. Explicitly set via _is_batched (for single-element list inputs)
+        2. When n_sources > 1 (multiple sources)
+        """
+        if self._is_batched is not None:
+            return self._is_batched
+        return self.n_sources > 1
+
+    def __len__(self) -> int:
+        """Return number of sources in the results."""
+        return self.n_sources
+
+    def __getitem__(self, idx: Union[int, slice]) -> Union["SolverResults", "SolverResults"]:
+        """Get results for specific source(s).
+
+        Args:
+            idx: Integer index or slice for source selection.
+
+        Returns:
+            SolverResults for single index, SolverResults for slice (both single and batched compatible).
+        """
+        if isinstance(idx, int):
+            # Handle negative indexing
+            if idx < 0:
+                idx = self.n_sources + idx
+            if idx < 0 or idx >= self.n_sources:
+                raise IndexError(f"Source index {idx} out of range for {self.n_sources} sources")
+
+            if not self.is_batched:
+                # For single source, only index 0 is valid
+                if idx != 0:
+                    raise IndexError(f"Single source result only supports index 0, got {idx}")
+                return self
+
+            # Extract single source from batched results
+            # Handle both single and batched wave_vectors
+            single_wave_vectors = self.wave_vectors
+            if isinstance(self.wave_vectors, list):
+                single_wave_vectors = self.wave_vectors[idx]
+
+            return SolverResults(
+                reflection=self.reflection[idx],
+                transmission=self.transmission[idx],
+                reflection_diffraction=self.reflection_diffraction[idx],
+                transmission_diffraction=self.transmission_diffraction[idx],
+                reflection_field=FieldComponents(
+                    x=self.reflection_field.x[idx],
+                    y=self.reflection_field.y[idx],
+                    z=self.reflection_field.z[idx],
+                    mag_x=self.reflection_field.mag_x[idx] if self.reflection_field.mag_x is not None else None,
+                    mag_y=self.reflection_field.mag_y[idx] if self.reflection_field.mag_y is not None else None,
+                    mag_z=self.reflection_field.mag_z[idx] if self.reflection_field.mag_z is not None else None,
+                ),
+                transmission_field=FieldComponents(
+                    x=self.transmission_field.x[idx],
+                    y=self.transmission_field.y[idx],
+                    z=self.transmission_field.z[idx],
+                    mag_x=self.transmission_field.mag_x[idx] if self.transmission_field.mag_x is not None else None,
+                    mag_y=self.transmission_field.mag_y[idx] if self.transmission_field.mag_y is not None else None,
+                    mag_z=self.transmission_field.mag_z[idx] if self.transmission_field.mag_z is not None else None,
+                ),
+                structure_matrix=self.structure_matrix,
+                wave_vectors=single_wave_vectors,
+                raw_data={},  # Could populate with source-specific data
+                lattice_t1=self.lattice_t1,
+                lattice_t2=self.lattice_t2,
+                default_rdim=self.default_rdim,
+                n_sources=1,  # Single source result
+                source_parameters=[self.source_parameters[idx]] if self.source_parameters else None,
+                loss=self.loss[idx] if self.loss is not None else None,
+                _is_batched=None,  # Single source extracted from batch is not batched
+            )
+
+        elif isinstance(idx, slice):
+            # Handle slicing
+            indices = range(*idx.indices(self.n_sources))
+            if len(indices) == 0:
+                raise ValueError("Empty slice")
+
+            # Extract subset using slicing
+            subset_wave_vectors = self.wave_vectors
+            if isinstance(self.wave_vectors, list):
+                subset_wave_vectors = [self.wave_vectors[i] for i in indices]
+
+            return SolverResults(
+                reflection=self.reflection[idx],
+                transmission=self.transmission[idx],
+                reflection_diffraction=self.reflection_diffraction[idx],
+                transmission_diffraction=self.transmission_diffraction[idx],
+                reflection_field=FieldComponents(
+                    x=self.reflection_field.x[idx],
+                    y=self.reflection_field.y[idx],
+                    z=self.reflection_field.z[idx],
+                    mag_x=self.reflection_field.mag_x[idx] if self.reflection_field.mag_x is not None else None,
+                    mag_y=self.reflection_field.mag_y[idx] if self.reflection_field.mag_y is not None else None,
+                    mag_z=self.reflection_field.mag_z[idx] if self.reflection_field.mag_z is not None else None,
+                ),
+                transmission_field=FieldComponents(
+                    x=self.transmission_field.x[idx],
+                    y=self.transmission_field.y[idx],
+                    z=self.transmission_field.z[idx],
+                    mag_x=self.transmission_field.mag_x[idx] if self.transmission_field.mag_x is not None else None,
+                    mag_y=self.transmission_field.mag_y[idx] if self.transmission_field.mag_y is not None else None,
+                    mag_z=self.transmission_field.mag_z[idx] if self.transmission_field.mag_z is not None else None,
+                ),
+                structure_matrix=self.structure_matrix,
+                wave_vectors=subset_wave_vectors,
+                lattice_t1=self.lattice_t1,
+                lattice_t2=self.lattice_t2,
+                default_rdim=self.default_rdim,
+                n_sources=len(indices),
+                source_parameters=[self.source_parameters[i] for i in indices] if self.source_parameters else None,
+                loss=self.loss[idx] if self.loss is not None else None,
+                _is_batched=True if len(indices) >= 1 else None,  # Sliced results maintain batched status
+            )
+        else:
+            raise TypeError(f"Invalid index type: {type(idx)}")
+
+    def __iter__(self):
+        """Iterate over individual source results."""
+        for i in range(self.n_sources):
+            yield self[i]
+
+    @property
+    def as_list(self) -> List["SolverResults"]:
+        """Get all results as a list of SolverResults objects."""
+        return list(self)
+
+    def get_source_result(self, idx: int) -> "SolverResults":
+        """Get results for a specific source.
+
+        Args:
+            idx: Source index.
+
+        Returns:
+            SolverResults for the specified source.
+        """
+        return self[idx]
+
     @classmethod
     def from_dict(cls, data: Dict) -> "SolverResults":
         """Create a SolverResults instance from a dictionary.
@@ -264,7 +468,8 @@ class SolverResults:
 
         Args:
             data (Dict): Raw dictionary containing simulation results with keys like
-                'REF', 'TRN', 'RDE', 'TDE', 'rx', 'ry', 'rz', 'tx', 'ty', 'tz',
+                'REF', 'TRN', 'RDE', 'TDE', 'ref_s_x', 'ref_s_y', 'ref_s_z', 'trn_s_x', 'trn_s_y', 'trn_s_z',
+                'ref_u_x', 'ref_u_y', 'ref_u_z', 'trn_u_x', 'trn_u_y', 'trn_u_z',
                 'smat_structure', 'kx', 'ky', 'kinc', 'kzref', 'kztrn'.
 
         Returns:
@@ -288,8 +493,24 @@ class SolverResults:
             transmission=data["TRN"],
             reflection_diffraction=data["RDE"],
             transmission_diffraction=data["TDE"],
-            reflection_field=FieldComponents(x=data["rx"], y=data["ry"], z=data["rz"]),
-            transmission_field=FieldComponents(x=data["tx"], y=data["ty"], z=data["tz"]),
+            reflection_field=FieldComponents(
+                # Use new Fourier coefficient naming with backward compatibility
+                x=data.get("ref_s_x", data.get("rx")),  # Reflection E-field Fourier coeff, x
+                y=data.get("ref_s_y", data.get("ry")),  # Reflection E-field Fourier coeff, y
+                z=data.get("ref_s_z", data.get("rz")),  # Reflection E-field Fourier coeff, z
+                mag_x=data.get("ref_u_x", data.get("rmag_x")),  # Reflection H-field Fourier coeff, x
+                mag_y=data.get("ref_u_y", data.get("rmag_y")),  # Reflection H-field Fourier coeff, y
+                mag_z=data.get("ref_u_z", data.get("rmag_z")),  # Reflection H-field Fourier coeff, z
+            ),
+            transmission_field=FieldComponents(
+                # Use new Fourier coefficient naming with backward compatibility
+                x=data.get("trn_s_x", data.get("tx")),  # Transmission E-field Fourier coeff, x
+                y=data.get("trn_s_y", data.get("ty")),  # Transmission E-field Fourier coeff, y
+                z=data.get("trn_s_z", data.get("tz")),  # Transmission E-field Fourier coeff, z
+                mag_x=data.get("trn_u_x", data.get("tmag_x")),  # Transmission H-field Fourier coeff, x
+                mag_y=data.get("trn_u_y", data.get("tmag_y")),  # Transmission H-field Fourier coeff, y
+                mag_z=data.get("trn_u_z", data.get("tmag_z")),  # Transmission H-field Fourier coeff, z
+            ),
             structure_matrix=ScatteringMatrix(
                 S11=data["smat_structure"]["S11"],
                 S12=data["smat_structure"]["S12"],
@@ -300,6 +521,16 @@ class SolverResults:
                 kx=data["kx"], ky=data["ky"], kinc=data["kinc"], kzref=data["kzref"], kztrn=data["kztrn"]
             ),
             raw_data=data,
+            # New fields with backward compatibility (use .get() for safe access)
+            mat_v_ref=data.get("mat_v_ref"),
+            mat_v_trn=data.get("mat_v_trn"),
+            polarization_data=data.get("polarization_data"),
+            solver_config=data.get("solver_config"),
+            smat_layers=data.get("smat_layers"),
+            # Lattice vectors
+            lattice_t1=data.get("lattice_t1"),
+            lattice_t2=data.get("lattice_t2"),
+            default_rdim=data.get("default_rdim"),
         )
 
     def to_dict(self) -> Dict:
@@ -617,3 +848,310 @@ class SolverResults:
                     propagating_orders.append((order_x, order_y))
 
         return propagating_orders
+
+    def get_reflection_interface_fourier_coefficients(self) -> Dict[str, torch.Tensor]:
+        """Get E and H Fourier coefficients at the reflection interface.
+
+        Returns the electromagnetic field Fourier coefficients (s and u components)
+        at the reflection interface between the incident region and the first layer.
+        This provides complete field information needed for energy flow analysis
+        and field visualization.
+
+        Returns:
+            Dict[str, torch.Tensor]: Dictionary containing field coefficients:
+                - 'S_x': Electric field Fourier coefficient x-component (s_x) at reflection interface
+                - 'S_y': Electric field Fourier coefficient y-component (s_y) at reflection interface
+                - 'S_z': Electric field Fourier coefficient z-component (s_z) at reflection interface
+                - 'U_x': Magnetic field Fourier coefficient x-component (u_x) at reflection interface
+                - 'U_y': Magnetic field Fourier coefficient y-component (u_y) at reflection interface
+                - 'U_z': Magnetic field Fourier coefficient z-component (u_z) at reflection interface
+
+            Each tensor has shape (n_freqs, kdim[0], kdim[1]).
+            Returns None for magnetic components if not available.
+
+            Note:
+                U components are Fourier coefficients of normalized magnetic fields h_hat(x,y,z).
+                The normalization is applied in real space: h_hat(x,y,z) = -j * sqrt(mu0/epsilon0) * h(x,y,z).
+
+        Examples:
+        ```python
+        # Get complete Fourier coefficient information at reflection interface
+        ref_fields = results.get_reflection_interface_fourier_coefficients()
+
+        # Access electric field Fourier coefficients
+        S_x = ref_fields['S_x']  # x-component electric field coefficient
+        S_y = ref_fields['S_y']  # y-component electric field coefficient
+
+        # Access normalized magnetic field Fourier coefficients
+        # Note: U components are normalized and require denormalization for physical calculations
+        U_x = ref_fields['U_x']  # x-component magnetic field coefficient (normalized)
+        U_y = ref_fields['U_y']  # y-component magnetic field coefficient (normalized)
+
+        # Analyze electric field intensity from Fourier coefficients
+        electric_field_intensity = (
+            torch.abs(ref_fields['S_x'])**2 +
+            torch.abs(ref_fields['S_y'])**2 +
+            torch.abs(ref_fields['S_z'])**2
+        )
+        ```
+
+        Keywords:
+            interface fields, reflection interface, Fourier coefficients, Poynting vector,
+            field enhancement, electromagnetic fields, energy flow
+        """
+        return {
+            "S_x": self.reflection_field.x,
+            "S_y": self.reflection_field.y,
+            "S_z": self.reflection_field.z,
+            "U_x": self.reflection_field.mag_x,
+            "U_y": self.reflection_field.mag_y,
+            "U_z": self.reflection_field.mag_z,
+        }
+
+    def get_transmission_interface_fourier_coefficients(self) -> Dict[str, torch.Tensor]:
+        """Get E and H Fourier coefficients at the transmission interface.
+
+        Returns the electromagnetic field Fourier coefficients (s and u components)
+        at the transmission interface between the last layer and the transmission region.
+        This provides complete field information needed for energy flow analysis
+        and field visualization.
+
+        Returns:
+            Dict[str, torch.Tensor]: Dictionary containing field coefficients:
+                - 'S_x': Electric field Fourier coefficient x-component (s_x) at transmission interface
+                - 'S_y': Electric field Fourier coefficient y-component (s_y) at transmission interface
+                - 'S_z': Electric field Fourier coefficient z-component (s_z) at transmission interface
+                - 'U_x': Magnetic field Fourier coefficient x-component (u_x) at transmission interface
+                - 'U_y': Magnetic field Fourier coefficient y-component (u_y) at transmission interface
+                - 'U_z': Magnetic field Fourier coefficient z-component (u_z) at transmission interface
+
+            Each tensor has shape (n_freqs, kdim[0], kdim[1]).
+            Returns None for magnetic components if not available.
+
+            Note:
+                U components are Fourier coefficients of normalized magnetic fields h_hat(x,y,z).
+                The normalization is applied in real space: h_hat(x,y,z) = -j * sqrt(mu0/epsilon0) * h(x,y,z).
+
+        Examples:
+        ```python
+        # Get complete Fourier coefficient information at transmission interface
+        trn_fields = results.get_transmission_interface_fourier_coefficients()
+
+        # Access electric field Fourier coefficients
+        S_x = trn_fields['S_x']  # x-component electric field coefficient
+        S_y = trn_fields['S_y']  # y-component electric field coefficient
+
+        # Access normalized magnetic field Fourier coefficients
+        # Note: U components are normalized and require denormalization for physical calculations
+        U_x = trn_fields['U_x']  # x-component magnetic field coefficient (normalized)
+        U_y = trn_fields['U_y']  # y-component magnetic field coefficient (normalized)
+
+        # Analyze electric field intensity from Fourier coefficients
+        electric_field_intensity = (
+            torch.abs(trn_fields['S_x'])**2 +
+            torch.abs(trn_fields['S_y'])**2 +
+            torch.abs(trn_fields['S_z'])**2
+        )
+
+        # TODO: Energy conservation analysis and Poynting vector calculations require
+        # denormalization of U coefficients. This will be implemented in future versions.
+        ```
+
+        Keywords:
+            interface fields, transmission interface, Fourier coefficients, Poynting vector,
+            energy conservation, electromagnetic fields, energy flow
+        """
+        return {
+            "S_x": self.transmission_field.x,
+            "S_y": self.transmission_field.y,
+            "S_z": self.transmission_field.z,
+            "U_x": self.transmission_field.mag_x,
+            "U_y": self.transmission_field.mag_y,
+            "U_z": self.transmission_field.mag_z,
+        }
+
+    def calculate_interface_fourier_coefficients(self, interface: str = "both") -> Dict[str, Dict[str, torch.Tensor]]:
+        """Calculate E and H Fourier coefficients at specified interface(s).
+
+        Main API method for calculating electromagnetic Fourier coefficients at
+        the reflection and/or transmission interfaces. This method provides
+        the foundation for field monitoring, energy flow analysis, and
+        electromagnetic field visualization.
+
+        Args:
+            interface (str): Which interface(s) to calculate. Options:
+                - 'reflection': Only reflection interface coefficients
+                - 'transmission': Only transmission interface coefficients
+                - 'both': Both interfaces (default)
+
+        Returns:
+            Dict[str, Dict[str, torch.Tensor]]: Nested dictionary containing:
+                - 'reflection': Reflection interface coefficients (if requested)
+                - 'transmission': Transmission interface coefficients (if requested)
+
+            Each interface dict contains:
+                - 'S_x', 'S_y', 'S_z': Electric field Fourier coefficients
+                - 'U_x', 'U_y', 'U_z': Magnetic field Fourier coefficients (normalized)
+
+            Note:
+                U components are Fourier coefficients of normalized magnetic fields h_hat(x,y,z).
+                The normalization is applied in real space: h_hat(x,y,z) = -j * sqrt(mu0/epsilon0) * h(x,y,z).
+
+        Examples:
+        ```python
+        # Get coefficients at both interfaces
+        all_fields = results.calculate_interface_fourier_coefficients('both')
+
+        # Access electric field Fourier coefficients
+        reflection_S_x = all_fields['reflection']['S_x']
+        transmission_S_x = all_fields['transmission']['S_x']
+
+        # Access normalized magnetic field Fourier coefficients
+        # Note: U components are normalized and require denormalization for physical calculations
+        reflection_U_x = all_fields['reflection']['U_x']  # normalized magnetic coefficient
+        transmission_U_x = all_fields['transmission']['U_x']  # normalized magnetic coefficient
+
+        # Analyze field properties at interfaces
+        for iface in ['reflection', 'transmission']:
+            fields = all_fields[iface]
+            # Electric field intensity analysis
+            E_intensity = (
+                torch.abs(fields['S_x'])**2 +
+                torch.abs(fields['S_y'])**2 +
+                torch.abs(fields['S_z'])**2
+            )
+            print(f"Electric field intensity at {iface} interface: {torch.sum(E_intensity)}")
+
+        # Get coefficients at just transmission interface
+        trn_only = results.calculate_interface_fourier_coefficients('transmission')
+        ```
+
+        Raises:
+            ValueError: If interface parameter is not valid.
+
+        Keywords:
+            interface fields, electromagnetic fields, Fourier coefficients, field monitoring,
+            energy flow analysis, reflection interface, transmission interface
+        """
+        if interface not in ["reflection", "transmission", "both"]:
+            raise ValueError(f"Interface must be 'reflection', 'transmission', or 'both', got '{interface}'")
+
+        result = {}
+
+        if interface in ["reflection", "both"]:
+            result["reflection"] = self.get_reflection_interface_fourier_coefficients()
+
+        if interface in ["transmission", "both"]:
+            result["transmission"] = self.get_transmission_interface_fourier_coefficients()
+
+        return result
+
+    def find_optimal_source(self, metric: str = "max_transmission", frequency_idx: Optional[int] = None) -> int:
+        """Find the source index that optimizes the specified metric.
+
+        This method is only available for batched results (n_sources > 1).
+
+        Args:
+            metric: Optimization criterion. Options:
+                - 'max_transmission': Maximum transmission
+                - 'min_reflection': Minimum reflection
+                - 'max_efficiency': Maximum total efficiency (T+R)
+            frequency_idx: Specific frequency index to optimize for.
+                If None, uses average over all frequencies.
+
+        Returns:
+            Index of the optimal source.
+
+        Raises:
+            ValueError: If called on single source results or invalid metric.
+
+        Examples:
+        ```python
+        # Find source with highest transmission (batched results only)
+        best_idx = results.find_optimal_source('max_transmission')
+        best_result = results[best_idx]
+
+        # Find source with lowest reflection at specific frequency
+        best_idx = results.find_optimal_source('min_reflection', frequency_idx=0)
+        ```
+        """
+        if not self.is_batched:
+            raise ValueError("find_optimal_source() is only available for batched results (n_sources > 1)")
+
+        if frequency_idx is None:
+            # Use average over frequencies
+            if metric == "max_transmission":
+                values = self.transmission.mean(dim=1)
+                return torch.argmax(values).item()
+            elif metric == "min_reflection":
+                values = self.reflection.mean(dim=1)
+                return torch.argmin(values).item()
+            elif metric == "max_efficiency":
+                values = (self.transmission + self.reflection).mean(dim=1)
+                return torch.argmax(values).item()
+            else:
+                raise ValueError(f"Unknown metric: {metric}")
+        else:
+            # Use specific frequency
+            if metric == "max_transmission":
+                return torch.argmax(self.transmission[:, frequency_idx]).item()
+            elif metric == "min_reflection":
+                return torch.argmin(self.reflection[:, frequency_idx]).item()
+            elif metric == "max_efficiency":
+                values = self.transmission[:, frequency_idx] + self.reflection[:, frequency_idx]
+                return torch.argmax(values).item()
+            else:
+                raise ValueError(f"Unknown metric: {metric}")
+
+    def get_parameter_sweep_data(
+        self, parameter: str, metric: str, frequency_idx: int = 0
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Extract parameter sweep data for plotting.
+
+        This method is only available for batched results (n_sources > 1).
+
+        Args:
+            parameter: Source parameter name ('theta', 'phi', 'pte', 'ptm').
+            metric: Result metric ('transmission', 'reflection', 'loss').
+            frequency_idx: Frequency index to extract data for.
+
+        Returns:
+            Tuple of (parameter_values, metric_values) tensors.
+
+        Raises:
+            ValueError: If called on single source results.
+            KeyError: If parameter not found in source_parameters.
+
+        Examples:
+        ```python
+        # Get data for angle sweep (batched results only)
+        angles, trans = results.get_parameter_sweep_data('theta', 'transmission')
+
+        # Plot the sweep
+        plt.plot(angles * 180/np.pi, trans)
+        plt.xlabel('Angle (degrees)')
+        plt.ylabel('Transmission')
+        ```
+        """
+        if not self.is_batched:
+            raise ValueError("get_parameter_sweep_data() is only available for batched results (n_sources > 1)")
+
+        if self.source_parameters is None:
+            raise ValueError("Source parameters not available. Ensure solver stores source_parameters in results.")
+
+        # Extract parameter values
+        param_values = torch.tensor([src[parameter] for src in self.source_parameters])
+
+        # Extract metric values
+        if metric == "transmission":
+            metric_values = self.transmission[:, frequency_idx]
+        elif metric == "reflection":
+            metric_values = self.reflection[:, frequency_idx]
+        elif metric == "loss":
+            if self.loss is None:
+                raise ValueError("Loss data not available for this results object")
+            metric_values = self.loss[:, frequency_idx]
+        else:
+            raise ValueError(f"Unknown metric: {metric}")
+
+        return param_values, metric_values

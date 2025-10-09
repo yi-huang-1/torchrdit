@@ -13,7 +13,7 @@ The examples are organized into several categories:
 
 ### Simulation Algorithms
 - RCWA (Rigorous Coupled-Wave Analysis)
-- R-DIT (Rigorous Diffraction Interface Theory) 
+- R-DIT (Rigorous Diffraction Interface Theory)
 
 ### Material Properties
 - Homogeneous materials
@@ -130,10 +130,10 @@ device.update_er_with_mask(mask=mask, layer_index=0)
 ```python
 # Creating materials with dispersion from data files
 material_sic = create_material(
-    name='SiC', 
-    dielectric_dispersion=True, 
-    user_dielectric_file='Si_C-e.txt', 
-    data_format='freq-eps', 
+    name='SiC',
+    dielectric_dispersion=True,
+    user_dielectric_file='Si_C-e.txt',
+    data_format='freq-eps',
     data_unit='thz'
 )
 
@@ -169,13 +169,13 @@ def objective_GMRF(dev, src, radius):
 for epoch in trange(num_epochs):
     # Zero gradients
     optimizer.zero_grad()
-    
+
     # Forward pass
     loss = objective_GMRF(dev, src, radius)
-    
+
     # Backward pass
     loss.backward()
-    
+
     # Update parameters
     optimizer.step()
 ```
@@ -237,14 +237,14 @@ Keywords: GDS, GDSII, export, import, fabrication, mask, photonics, complex topo
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-import os
+from pathlib import Path
 
 from torchrdit.shapes import ShapeGenerator
-from torchrdit.gds import mask_to_gds, gds_to_mask, load_gds_vertices
+from torchrdit.gds import mask_to_gds, gds_to_mask
 
 # Create output directory for GDS files
-output_dir = "gds_examples"
-os.makedirs(output_dir, exist_ok=True)
+output_dir = Path(__file__).parent / "gds_examples"
+output_dir.mkdir(parents=True, exist_ok=True)
 
 # =============================================================================
 # Part 1: Basic Setup and Simple Shapes
@@ -286,7 +286,7 @@ circle_mask = shape_gen.generate_circle_mask(
 # The mask_to_gds function creates both .gds and .json files
 # - .gds file: Standard GDSII format readable by CAD tools
 # - .json file: Polygon vertices for reconstruction
-circle_gds_path = os.path.join(output_dir, "circle.gds")
+circle_gds_path = output_dir / "circle.gds"
 mask_to_gds(
     mask=circle_mask,
     layout=shape_gen.get_layout(),  # Coordinate system information
@@ -301,13 +301,13 @@ print(f"✓ Exported circle to {circle_gds_path}")
 # Rotated rectangles are common in photonic waveguides and couplers
 rect_mask = shape_gen.generate_rectangle_mask(
     center=(0.2 * um, 0.1 * um),    # Offset from center
-    width=0.8 * um,
-    height=0.4 * um,
+    x_size=0.8 * um,
+    y_size=0.4 * um,
     angle=30.0,                     # 30 degrees rotation
     soft_edge=0.001
 )
 
-rect_gds_path = os.path.join(output_dir, "rectangle.gds")
+rect_gds_path = output_dir / "rectangle.gds"
 mask_to_gds(
     mask=rect_mask,
     layout=shape_gen.get_layout(),
@@ -399,7 +399,7 @@ for i in range(rdim[0]):
 
 # Export complex topology
 # For shapes with holes, higher smoothing values prevent numerical issues
-complex_gds_path = os.path.join(output_dir, "complex_topology.gds")
+complex_gds_path = output_dir / "complex_topology.gds"
 mask_to_gds(
     mask=complex_mask,
     layout=shape_gen.get_layout(),
@@ -421,7 +421,7 @@ print("-" * 40)
 
 # Import the complex topology back from GDS
 # The gds_to_mask function reads the JSON file created during export
-json_path = complex_gds_path.replace('.gds', '.json')
+json_path = complex_gds_path.with_suffix('.json')
 reconstructed_complex = gds_to_mask(json_path, shape_gen, soft_edge=0.0)
 
 # Calculate reconstruction quality using IoU (Intersection over Union)
@@ -461,7 +461,7 @@ axes[2].set_title('Absolute Difference')
 axes[2].axis('off')
 
 plt.tight_layout()
-plt.savefig(os.path.join(output_dir, "complex_topology_comparison.png"), dpi=150)
+plt.savefig(output_dir / "complex_topology_comparison.png", dpi=150)
 plt.close()
 
 # =============================================================================
@@ -486,7 +486,7 @@ for i, radius in enumerate(radii):
     batch_masks.append(mask)
 
 # Batch export - creates multiple GDS files with index suffixes
-batch_gds_path = os.path.join(output_dir, "batch_circles.gds")
+batch_gds_path = output_dir / "batch_circles.gds"
 gds_paths = mask_to_gds(
     mask=batch_masks,                   # List of masks
     layout=shape_gen.get_layout(),
@@ -532,7 +532,7 @@ hex_mask = shape_gen_hex.generate_circle_mask(
 )
 
 # Export hexagonal lattice pattern
-hex_gds_path = os.path.join(output_dir, "hexagonal_pattern.gds")
+hex_gds_path = output_dir / "hexagonal_pattern.gds"
 mask_to_gds(
     mask=hex_mask,
     layout=shape_gen_hex.get_layout(),
@@ -560,7 +560,7 @@ print("  - connectivity=1: 4-connectivity (better separation)")
 print("  - connectivity=2: 8-connectivity (preserves thin connections)")
 
 print("\n✓ Example completed successfully!")
-print(f"✓ GDS files saved to: {os.path.abspath(output_dir)}/")
+print(f"✓ GDS files saved to: {output_dir}/")
 
 # =============================================================================
 # Visualization of all created masks
@@ -586,10 +586,10 @@ for idx, (mask, title) in enumerate(masks_to_plot):
     axes[idx].axis('off')
 
 plt.tight_layout()
-plt.savefig(os.path.join(output_dir, "gds_export_summary.png"), dpi=150, bbox_inches='tight')
+plt.savefig(output_dir / "gds_export_summary.png", dpi=150, bbox_inches='tight')
 plt.close()
 
-print(f"\n✓ Summary visualization saved to: {os.path.join(output_dir, 'gds_export_summary.png')}")
+print(f"\n✓ Summary visualization saved to: {output_dir / 'gds_export_summary.png'}")
 ```
 
 ### example_gmrf_dispersive
@@ -748,7 +748,7 @@ print("Example 1: Getting zero-order field components")
 tx, ty, tz = result.get_zero_order_transmission()
 rx, ry, rz = result.get_zero_order_reflection()
 
-print(f"Zero-order transmission field amplitudes (first wavelength):")
+print("Zero-order transmission field amplitudes (first wavelength):")
 tx_amplitude = torch.abs(tx[0])
 ty_amplitude = torch.abs(ty[0])
 tz_amplitude = torch.abs(tz[0])
@@ -808,12 +808,12 @@ print("\nExample 6: Structure scattering matrix analysis")
 s11 = result.structure_matrix.S11
 s12 = result.structure_matrix.S12
 print(f"S11 shape: {s11.shape} - Shows matrix for each wavelength ({len(torchrdit_sim.lam0)} wavelengths)")
-print(f"S-matrix values vary with wavelength due to material dispersion")
+print("S-matrix values vary with wavelength due to material dispersion")
 
 # Example 7: Effect of wavelength on wave vectors
 print("\nExample 7: Wave vector analysis with dispersive materials")
-print(f"Wave vectors are affected by wavelength-dependent material properties:")
-print(f"kzref for different wavelengths:")
+print("Wave vectors are affected by wavelength-dependent material properties:")
+print("kzref for different wavelengths:")
 for i in range(len(torchrdit_sim.lam0)):
     wavelength = torchrdit_sim.lam0[i] * 1e3  # in nm
     # Get the central value (zero-order)
@@ -863,7 +863,7 @@ from torchrdit.solver import get_solver_builder
 from torchrdit.shapes import ShapeGenerator
 from torchrdit.utils import create_material
 from torchrdit.constants import Algorithm, Precision
-from torchrdit.viz import plot_layer
+from torchrdit.viz import plot_layer, plot_cross_section
 
 import matplotlib.pyplot as plt
 
@@ -982,6 +982,23 @@ output_filename = os.path.join(script_dir, f"{os.path.splitext(os.path.basename(
 plt.savefig(output_filename, dpi=300)
 plt.close(fig)
 
+# plot cross-sections of the layer stack structure
+# Create a figure with both XZ and YZ cross-sections
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+# XZ cross-section (y=0 slice) - shows hexagonal pattern structure across X direction
+plot_cross_section(dev1, plane='xz', slice_position=0.0, fig_ax=ax1, 
+                title='XZ Cross-Section (y=0)\nHexagonal GMRF Structure')
+
+# YZ cross-section (x=0 slice) - shows layer stack structure across Y direction  
+plot_cross_section(dev1, plane='yz', slice_position=0.0, fig_ax=ax2,
+                title='YZ Cross-Section (x=0)\nHexagonal GMRF Structure')
+
+plt.tight_layout()
+cross_section_filename = os.path.join(script_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_cross_sections.png")
+plt.savefig(cross_section_filename, dpi=300, bbox_inches='tight')
+plt.close(fig)
+
 data = dev1.solve(src1)
 
 # Print the Efficiency each wavelength
@@ -1004,13 +1021,13 @@ except ValueError as e:
 # Example 2: Get zero-order field components
 print("\nExample 2: Getting zero-order field components")
 tx, ty, tz = data.get_zero_order_transmission()
-print(f"Zero-order transmission field components (first wavelength):")
+print("Zero-order transmission field components (first wavelength):")
 print(f"  x-component: {tx[0].item():.6f}")
 print(f"  y-component: {ty[0].item():.6f}")
 print(f"  z-component: {tz[0].item():.6f}")
 
 rx, ry, rz = data.get_zero_order_reflection()
-print(f"Zero-order reflection field components (first wavelength):")
+print("Zero-order reflection field components (first wavelength):")
 print(f"  x-component: {rx[0].item():.6f}")
 print(f"  y-component: {ry[0].item():.6f}")
 print(f"  z-component: {rz[0].item():.6f}")
@@ -1118,7 +1135,7 @@ try:
     tx_1_0_phase = torch.angle(tx_1_0) * rad_to_deg
     ty_1_0_phase = torch.angle(ty_1_0) * rad_to_deg
     
-    print(f"Phase of (1,0) order transmission field (first wavelength):")
+    print("Phase of (1,0) order transmission field (first wavelength):")
     print(f"  x-component: {tx_1_0_phase[0].item():.2f}°")
     print(f"  y-component: {ty_1_0_phase[0].item():.2f}°")
 except ValueError as e:
@@ -1711,7 +1728,6 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import time
-from pathlib import Path
 
 from torchrdit.solver import create_solver
 from torchrdit.constants import Algorithm
@@ -1861,7 +1877,7 @@ def example_polarization_sweep():
     # Create elliptical pattern
     shape_gen = ShapeGenerator.from_solver(solver)
     # Create an elongated pattern using a rectangle to simulate ellipse
-    mask = shape_gen.generate_rectangle_mask(center=(0, 0), width=0.3, height=0.5, angle=0)
+    mask = shape_gen.generate_rectangle_mask(center=(0, 0), x_size=0.3, y_size=0.5, angle=0)
     solver.update_er_with_mask(mask=mask, layer_index=1)
     
     solver.add_layer(material_name="air", thickness=0.5, is_homogeneous=True)
@@ -1929,13 +1945,13 @@ def example_polarization_sweep():
         S0 = abs(Ex)**2 + abs(Ey)**2
         S1 = abs(Ex)**2 - abs(Ey)**2
         S2 = 2 * Ex * Ey  # For real polarizations
-        S3 = 0  # For real polarizations, imaginary part is 0
+        # S3 = 0  # For real polarizations, imaginary part is 0
         
         # Normalize
         if S0 > 0:
             s1 = S1 / S0
             s2 = S2 / S0
-            s3 = S3 / S0
+            # s3 = S3 / S0
             
             # Plot on unit circle (equatorial projection)
             color = plt.cm.viridis(trans)
@@ -2190,7 +2206,7 @@ def example_wavelength_and_angle_sweep():
     best_wl_idx = np.argmax(transmission[best_idx, :])
     best_wl = wavelengths[best_wl_idx]
     
-    print(f"\nOptimal operating point:")
+    print("\nOptimal operating point:")
     print(f"  Angle: {best_angle:.1f}°")
     print(f"  Wavelength: {best_wl:.3f} μm")
     print(f"  Transmission: {transmission[best_idx, best_wl_idx]:.4f}")
@@ -2551,7 +2567,7 @@ def example_large_sweep_chunking():
     
     solver.add_layer(material_name="Si", thickness=0.5, is_homogeneous=False)
     shape_gen = ShapeGenerator.from_solver(solver)
-    mask = shape_gen.generate_rectangle_mask(width=0.4, height=0.2, angle=45)
+    mask = shape_gen.generate_rectangle_mask(x_size=0.4, y_size=0.2, angle=45)
     solver.update_er_with_mask(mask=mask, layer_index=0)
     
     # Process 1000 angles
@@ -2773,7 +2789,7 @@ def example_single_vs_batched():
     source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
     result = solver.solve(source)
     
-    print(f"Single source result:")
+    print("Single source result:")
     print(f"  Transmission: {result.transmission[0].item():.4f}")
     print(f"  Reflection: {result.reflection[0].item():.4f}")
     print(f"  Result type: {type(result).__name__}")
@@ -2791,11 +2807,11 @@ def example_single_vs_batched():
     # Batch solve
     results = solver.solve(sources)
     
-    print(f"Batched results:")
+    print("Batched results:")
     print(f"  Result type: {type(results).__name__}")
     print(f"  Number of sources: {results.n_sources}")
     print(f"  Transmission shape: {results.transmission.shape}")
-    print(f"\nTransmission values:")
+    print("\nTransmission values:")
     for i, trans in enumerate(results.transmission[:, 0]):
         angle = results.source_parameters[i]['theta'] * 180 / np.pi
         print(f"  θ={angle:3.0f}°: {trans.item():.4f}")
@@ -2919,7 +2935,7 @@ def example_polarization_analysis():
     # Create elliptical pattern
     shape_gen = ShapeGenerator.from_solver(solver)
     # Create an elongated pattern using a rectangle to simulate ellipse
-    mask = shape_gen.generate_rectangle_mask(center=(0, 0), width=0.3, height=0.5, angle=0)
+    mask = shape_gen.generate_rectangle_mask(center=(0, 0), x_size=0.3, y_size=0.5, angle=0)
     solver.update_er_with_mask(mask=mask, layer_index=1)
     
     solver.add_layer(material_name="air", thickness=0.5, is_homogeneous=True)

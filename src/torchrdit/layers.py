@@ -132,6 +132,7 @@ class Layer(metaclass=ABCMeta):
         self.kermat = None
         self.kurmat = None
         self.mask_format = None
+        self._bg_material = None
 
     @abstractmethod
     def __str__(self) -> str:
@@ -187,6 +188,32 @@ class Layer(metaclass=ABCMeta):
             material, layer property, update material
         """
         self._material_name = material_name
+
+    @property
+    def bg_material(self) -> str:
+        """Get the background material name for patterned layers.
+
+        Returns:
+            str: The name of the background material used in patterned layers,
+                 or None if not set.
+
+        Keywords:
+            background material, pattern material, patterned layer
+        """
+        return self._bg_material
+
+    @bg_material.setter
+    def bg_material(self, bg_material: str):
+        """Set the background material name for patterned layers.
+
+        Args:
+            bg_material (str): The name of the background material to use
+                             where the mask is 0 (False).
+
+        Keywords:
+            background material, pattern material, update material
+        """
+        self._bg_material = bg_material
 
     @property
     def is_homogeneous(self) -> bool:

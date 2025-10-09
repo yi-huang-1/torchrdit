@@ -4,6 +4,7 @@
   * [plot2d](#torchrdit.viz.plot2d)
   * [plot\_layer](#torchrdit.viz.plot_layer)
   * [display\_fitted\_permittivity](#torchrdit.viz.display_fitted_permittivity)
+  * [plot\_cross\_section](#torchrdit.viz.plot_cross_section)
 
 <a id="torchrdit.viz"></a>
 
@@ -18,6 +19,7 @@ and field distributions in TorchRDIT. It includes tools for:
 2. Visualizing material property distributions in layers
 3. Displaying dispersive material properties
 4. Analyzing fitted dispersive material models
+5. Cross-section visualization of layer stack structures
 
 The visualization functions in this module work with matplotlib to create
 publication-quality figures for analyzing simulation results and understanding
@@ -26,6 +28,7 @@ the behavior of electromagnetic fields in complex structures.
 Key functions:
 - plot2d: General-purpose function for plotting 2D data with customizable options
 - plot_layer: Visualize the permittivity distribution in a specific layer
+- plot_cross_section: Visualize cross-section of layer stack structure (XZ/YZ planes)
 - display_fitted_permittivity: Plot fitted dispersive material properties in a simulation
 - display_dispersive_profile: Visualize raw dispersive material data
 
@@ -33,7 +36,8 @@ All functions return matplotlib objects that can be further customized as needed
 
 Keywords:
     visualization, plotting, matplotlib, field distribution, permittivity,
-    material properties, dispersive materials, electromagnetic simulation
+    material properties, dispersive materials, electromagnetic simulation,
+    cross-section, layer stack
 
 <a id="torchrdit.viz.plot2d"></a>
 
@@ -272,4 +276,117 @@ plt.show()
   dispersive material, permittivity, wavelength dependence, polynomial fitting,
   material characterization, complex permittivity, optical properties,
   Drude-Lorentz model, material dispersion
+
+<a id="torchrdit.viz.plot_cross_section"></a>
+
+#### plot\_cross\_section
+
+```python
+def plot_cross_section(sim,
+                       plane: str = "xz",
+                       slice_position: float = 0.0,
+                       frequency_index: int = 0,
+                       fig_ax=None,
+                       material_colormap: Optional[Dict[str, str]] = None,
+                       labels: Optional[Tuple[str, str]] = None,
+                       title: str = "",
+                       layer_boundaries: bool = True,
+                       z_scale: float = 1.0,
+                       show_semi_infinite: bool = True,
+                       show_legend: bool = True)
+```
+
+Visualize cross-section of layer stack structure.
+
+Creates a 2D cross-sectional view of the layer stack showing material
+distributions with different colors. Supports both XZ-plane (y=0) and
+YZ-plane (x=0) visualizations. Includes reflection and transmission
+semi-infinite regions for complete electromagnetic domain visualization.
+
+This function helps users understand the structure of their layered
+electromagnetic simulation domains by showing different materials with
+distinct colors and transparent air/vacuum regions. It integrates with
+the existing TorchRDIT solver workflow and coordinate systems.
+
+**Arguments**:
+
+- `sim` - Solver instance with configured layers and materials.
+  Must have layer_manager with layers and get_layout() method.
+- `plane` - Cross-section plane ('xz' for XZ-plane or 'yz' for YZ-plane).
+  Default is 'xz'.
+- `slice_position` - Position along the slicing axis (y-coordinate for XZ plane,
+  x-coordinate for YZ plane). Default is 0.0.
+- `frequency_index` - Index for selecting frequency in dispersive materials.
+  Only relevant for frequency-dependent materials. Default is 0.
+- `fig_ax` - Matplotlib axis object to use for plotting. If None, a new
+  figure and axis will be created. Default is None.
+- `material_colormap` - Dictionary mapping material names to color strings.
+  If None, uses default distinguishable colors. Default is None.
+- `labels` - Tuple of (horizontal_axis_label, vertical_axis_label). If None,
+  automatically determined from plane. Default is None.
+- `title` - Title for the plot. If empty, a descriptive title is generated.
+  Default is "".
+- `layer_boundaries` - Whether to show layer interface lines as vertical
+  boundaries. Default is True.
+- `z_scale` - Scaling factor for Z-axis display to adjust aspect ratio.
+  Default is 1.0.
+- `show_semi_infinite` - Whether to include reflection and transmission
+  semi-infinite regions (each 10% of effective layer thickness).
+  Default is True.
+- `show_legend` - Whether to display material legend with colors and permittivity
+  values. Legend positioned outside plot area. Default is True.
+  
+
+**Returns**:
+
+- `matplotlib.axes.Axes` - The matplotlib axes object containing the plot,
+  allowing for further customization if needed.
+  
+
+**Raises**:
+
+- `ValueError` - If plane is not 'xz' or 'yz'.
+- `AttributeError` - If sim doesn't have required layer_manager or get_layout method.
+  
+
+**Examples**:
+
+```python
+from torchrdit.solver import create_solver
+from torchrdit.viz import plot_cross_section
+from torchrdit.utils import create_material
+import torch
+import matplotlib.pyplot as plt
+
+# Create a solver with layered structure
+solver = create_solver(algorithm=Algorithm.RCWA, lam0=[1.55], rdim=[256, 256])
+
+# Add materials
+silicon = create_material(name="silicon", permittivity=11.7)
+sio2 = create_material(name="sio2", permittivity=2.25)
+solver.add_materials([silicon, sio2])
+
+# Add layers
+solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
+solver.add_layer(material_name="sio2", thickness=torch.tensor(0.3))
+
+# Show XZ cross-section at y=0
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+plot_cross_section(solver, plane='xz', fig_ax=ax1, title='XZ Cross-Section')
+plot_cross_section(solver, plane='yz', fig_ax=ax2, title='YZ Cross-Section')
+plt.tight_layout()
+plt.show()
+
+# Custom material colors and slice position
+custom_colors = {'silicon': 'blue', 'sio2': 'red'}
+plot_cross_section(solver, plane='xz', slice_position=0.1,
+                  material_colormap=custom_colors,
+                  title='XZ Cross-Section at y=0.1μm')
+plt.show()
+```
+  
+  Keywords:
+  layer stack, cross-section, visualization, XZ plane, YZ plane, materials,
+  electromagnetic simulation, structure visualization, layer boundaries,
+  permittivity distribution, photonic structure
 

@@ -21,6 +21,7 @@
   - [Results](Results)
   - [Shapes](Shapes)
   - [Solver](Solver)
+  - [Vector](Vector)
   - [Utils](Utils)
   - [Visualization](Visualization)
   - [GDS](GDS)

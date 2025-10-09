@@ -83,11 +83,42 @@ class TestObserverPattern(unittest.TestCase):
         # Create observer for tracking events
         self.observer = EventCountingObserver()
         self.solver.add_observer(self.observer)
-    
-    def test_batch_mode_events(self):
-        """Test that events are properly triggered in batch frequency mode."""
-        # Solve in batch mode
-        self.solver.solve(self.source, is_solve_batch=True)
+
+    def test_observer_events_batched_sources(self):
+        """Test that observer events fire with correct metadata (batched sources)."""
+        # Create a second source and run in true batched mode
+        source2 = self.solver.add_source(theta=0.1, phi=0, pte=1, ptm=0)
+        sources = [self.source, source2]
+
+        self.solver.solve(sources)
+
+        # Verify calculation started and completed events with batched metadata
+        self.assertEqual(self.observer.get_count("calculation_starting"), 1)
+        start_data = self.observer.get_data("calculation_starting")
+        self.assertEqual(start_data["mode"], "solving_structure_batched")
+        self.assertEqual(start_data["n_sources"], 2)
+        self.assertEqual(start_data["n_freqs"], len(self.lam0))
+        self.assertEqual(start_data["n_layers"], 1)
+
+        # Layer events should occur once per layer (not per source)
+        self.assertEqual(self.observer.get_count("processing_layers"), 1)
+        self.assertEqual(self.observer.get_count("layer_started"), 1)
+        self.assertEqual(self.observer.get_count("layer_completed"), 1)
+
+        # External region connection and field calc happen once in batched path
+        self.assertEqual(self.observer.get_count("connecting_external_regions"), 1)
+        self.assertEqual(self.observer.get_count("calculating_fields"), 1)
+
+        # Completed event includes n_sources and n_freqs in batched path
+        self.assertEqual(self.observer.get_count("calculation_completed"), 1)
+        completed = self.observer.get_data("calculation_completed")
+        self.assertEqual(completed.get("n_sources"), 2)
+        self.assertEqual(completed.get("n_freqs"), len(self.lam0))
+
+    def test_observer_events_single_source(self):
+        """Test that observer events fire with correct metadata (single source)."""
+        # Solve
+        self.solver.solve(self.source)
         
         # Verify calculation started and completed events
         self.assertEqual(self.observer.get_count("calculation_starting"), 1)
@@ -104,10 +135,7 @@ class TestObserverPattern(unittest.TestCase):
         self.assertEqual(self.observer.get_count("layer_started"), 1)
         self.assertEqual(self.observer.get_count("layer_completed"), 1)
         
-        # Verify no frequency events were triggered in batch mode
-        self.assertEqual(self.observer.get_count("processing_frequencies"), 0)
-        self.assertEqual(self.observer.get_count("frequency_started"), 0)
-        self.assertEqual(self.observer.get_count("frequency_completed"), 0)
+        # Note: solver does not emit per-frequency events; don't assert on them.
     
     def test_multiple_observers(self):
         """Test that multiple observers all receive notifications."""
@@ -119,8 +147,8 @@ class TestObserverPattern(unittest.TestCase):
         self.solver.add_observer(observer2)
         self.solver.add_observer(observer3)
         
-        # Solve in batch mode
-        self.solver.solve(self.source, is_solve_batch=True)
+        # Solve
+        self.solver.solve(self.source)
         
         # Verify all observers received the same events
         self.assertEqual(
@@ -145,8 +173,8 @@ class TestObserverPattern(unittest.TestCase):
         # Remove the second observer
         self.solver.remove_observer(observer2)
         
-        # Solve in batch mode
-        self.solver.solve(self.source, is_solve_batch=True)
+        # Solve
+        self.solver.solve(self.source)
         
         # Verify the first observer received events but the second didn't
         self.assertGreater(self.observer.get_count("calculation_starting"), 0)

@@ -8,6 +8,8 @@
     * [thickness](#torchrdit.layers.Layer.thickness)
     * [material\_name](#torchrdit.layers.Layer.material_name)
     * [material\_name](#torchrdit.layers.Layer.material_name)
+    * [bg\_material](#torchrdit.layers.Layer.bg_material)
+    * [bg\_material](#torchrdit.layers.Layer.bg_material)
     * [is\_homogeneous](#torchrdit.layers.Layer.is_homogeneous)
     * [is\_dispersive](#torchrdit.layers.Layer.is_dispersive)
     * [is\_dispersive](#torchrdit.layers.Layer.is_dispersive)
@@ -279,6 +281,44 @@ Set the material name for this layer.
   
   Keywords:
   material, layer property, update material
+
+<a id="torchrdit.layers.Layer.bg_material"></a>
+
+#### bg\_material
+
+```python
+@property
+def bg_material() -> str
+```
+
+Get the background material name for patterned layers.
+
+**Returns**:
+
+- `str` - The name of the background material used in patterned layers,
+  or None if not set.
+  
+  Keywords:
+  background material, pattern material, patterned layer
+
+<a id="torchrdit.layers.Layer.bg_material"></a>
+
+#### bg\_material
+
+```python
+@bg_material.setter
+def bg_material(bg_material: str)
+```
+
+Set the background material name for patterned layers.
+
+**Arguments**:
+
+- `bg_material` _str_ - The name of the background material to use
+  where the mask is 0 (False).
+  
+  Keywords:
+  background material, pattern material, update material
 
 <a id="torchrdit.layers.Layer.is_homogeneous"></a>
 

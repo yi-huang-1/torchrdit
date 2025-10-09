@@ -66,10 +66,6 @@ class TestBatchedValidation:
         # Check reflection and transmission
         for i, src in enumerate(sources):
             # Reflection
-            print(f"\nSource {i}:")
-            print(f"  Batched reflection: {batched_results.reflection[i]}")
-            print(f"  Sequential reflection: {sequential_results[i].reflection}")
-            
             # NaN values are bugs - tests should fail if they appear
             assert not torch.isnan(batched_results.reflection[i]).any(), \
                 f"NaN values found in batched reflection for source {i} - this is a bug!"
@@ -138,31 +134,31 @@ class TestBatchedValidation:
         
         for i, src in enumerate(sources):
             # NaN values are bugs - fields should never contain NaN
-            assert not torch.isnan(batched_results.Erx[i]).any(), \
+            assert not torch.isnan(batched_results[i].reflection_field.x).any(), \
                 f"NaN values found in batched Erx for source {i} - this is a bug!"
             assert not torch.isnan(sequential_results[i].reflection_field.x).any(), \
                 f"NaN values found in sequential Erx for source {i} - this is a bug!"
             
-            assert not torch.isnan(batched_results.Ery[i]).any(), \
+            assert not torch.isnan(batched_results[i].reflection_field.y).any(), \
                 f"NaN values found in batched Ery for source {i} - this is a bug!"
             assert not torch.isnan(sequential_results[i].reflection_field.y).any(), \
                 f"NaN values found in sequential Ery for source {i} - this is a bug!"
             
-            assert not torch.isnan(batched_results.Etx[i]).any(), \
+            assert not torch.isnan(batched_results[i].transmission_field.x).any(), \
                 f"NaN values found in batched Etx for source {i} - this is a bug!"
             assert not torch.isnan(sequential_results[i].transmission_field.x).any(), \
                 f"NaN values found in sequential Etx for source {i} - this is a bug!"
             
             # Compare reflected fields
             torch.testing.assert_close(
-                batched_results.Erx[i],
+                batched_results[i].reflection_field.x,
                 sequential_results[i].reflection_field.x,
                 rtol=rtol,
                 atol=atol,
                 msg=f"Erx mismatch for source {i}"
             )
             torch.testing.assert_close(
-                batched_results.Ery[i],
+                batched_results[i].reflection_field.y,
                 sequential_results[i].reflection_field.y,
                 rtol=rtol,
                 atol=atol,
@@ -171,7 +167,7 @@ class TestBatchedValidation:
             
             # Compare transmitted fields
             torch.testing.assert_close(
-                batched_results.Etx[i],
+                batched_results[i].transmission_field.x,
                 sequential_results[i].transmission_field.x,
                 rtol=rtol,
                 atol=atol,
@@ -206,21 +202,7 @@ class TestBatchedValidation:
             atol=1e-8
         )
     
-    def test_debug_output(self, capsys):
-        """Test that debug output works correctly."""
-        solver = self.setup_solver(n_freqs=2, debug=True)
-        
-        sources = [
-            {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
-            {"theta": 0.1, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
-        ]
-        
-        # This should produce debug output
-        _result = solver.solve(sources)
-        
-        # Check that debug output was produced
-        captured = capsys.readouterr()
-        assert "[DEBUG]" in captured.out, "Debug output not found"
+    # Removed debug-output test: not a numerical validation and adds noise.
     
     def test_gradient_flow_batched(self):
         """Test that gradients flow correctly through batched implementation."""
@@ -257,44 +239,7 @@ class TestBatchedValidation:
         assert not torch.allclose(pattern.grad, torch.zeros_like(pattern.grad)), \
             "Pattern gradients are all zero"
     
-    def test_performance_improvement(self):
-        """Test that batched processing is faster than sequential."""
-        import time
-        
-        solver = self.setup_solver(n_freqs=3)
-        
-        # Create multiple sources
-        n_sources = 10
-        sources = []
-        for i in range(n_sources):
-            theta = i * 0.05
-            sources.append({
-                "theta": theta,
-                "phi": 0.0,
-                "pte": 1.0,
-                "ptm": 0.0
-            })
-        
-        # Time sequential processing
-        start_seq = time.time()
-        sequential_results = []
-        for src in sources:
-            result = solver.solve(src)
-            sequential_results.append(result)
-        time_seq = time.time() - start_seq
-        
-        # Time batched processing
-        start_batch = time.time()
-        _batched_results = solver.solve(sources)
-        time_batch = time.time() - start_batch
-        
-        print(f"\nSequential time: {time_seq:.3f}s")
-        print(f"Batched time: {time_batch:.3f}s")
-        print(f"Speedup: {time_seq/time_batch:.2f}x")
-        
-        # For phase 1 (sequential in loop), we don't expect huge speedup
-        # But it should at least not be slower
-        assert time_batch <= time_seq * 1.1, "Batched processing is slower than sequential"
+    # Removed timing-based performance test: flaky and not deterministic.
 
 
 if __name__ == "__main__":

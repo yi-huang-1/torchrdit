@@ -25,7 +25,7 @@ shape_gen = ShapeGenerator.from_solver(solver)
 
 # Generate shapes
 circle = shape_gen.generate_circle_mask(center=(0.0, 0.0), radius=0.3)
-rect = shape_gen.generate_rectangle_mask(width=0.4, height=0.2, angle=30)
+rect = shape_gen.generate_rectangle_mask(x_size=0.4, y_size=0.2, angle=30)
 
 # Combine shapes
 combined = shape_gen.combine_masks(circle, rect, operation='union')
@@ -253,8 +253,11 @@ soft_circle = sg.generate_circle_mask(center=(0.2, -0.3), radius=0.4, soft_edge=
 #### generate\_rectangle\_mask
 
 ```python
-def generate_rectangle_mask(
-        center=(0.0, 0.0), width=0.2, height=0.2, angle=0.0, soft_edge=0.001)
+def generate_rectangle_mask(center=(0.0, 0.0),
+                            x_size=0.2,
+                            y_size=0.2,
+                            angle=0.0,
+                            soft_edge=0.001)
 ```
 
 Generate a mask for a rectangle in Cartesian coordinates.
@@ -266,8 +269,8 @@ dimensions, and orientation. The mask can have hard or soft edges.
 
 - `center` _Tuple[float, float], optional_ - Center coordinates (x, y) of the rectangle.
   Defaults to (0.0, 0.0).
-- `width` _float, optional_ - Width of the rectangle. Defaults to 0.2.
-- `height` _float, optional_ - Height of the rectangle. Defaults to 0.2.
+- `x_size` _float, optional_ - Size of the rectangle along the X-axis. Defaults to 0.2.
+- `y_size` _float, optional_ - Size of the rectangle along the Y-axis. Defaults to 0.2.
 - `angle` _float, optional_ - Rotation angle in degrees. Defaults to 0.0.
 - `soft_edge` _float, optional_ - Width of the soft transition at the edge.
   Use 0 for a binary hard edge. Defaults to 0.001.
@@ -291,13 +294,13 @@ y = torch.linspace(-1, 1, 128)
 X, Y = torch.meshgrid(x, y, indexing='ij')
 sg = ShapeGenerator(X, Y, (128, 128))
 # Generate a rectangle mask
-rect = sg.generate_rectangle_mask(width=0.5, height=0.3, angle=45)
+rect = sg.generate_rectangle_mask(x_size=0.5, y_size=0.3, angle=45)
 # Generate a square mask
-square = sg.generate_rectangle_mask(width=0.4, height=0.4, angle=0)
+square = sg.generate_rectangle_mask(x_size=0.4, y_size=0.4, angle=0)
 ```
   
   Keywords:
-  rectangle, square, mask, binary mask, shape generation, photonics, rotation
+  rectangle, square, mask, binary mask, shape generation, photonics, rotation, x-axis, y-axis
 
 <a id="torchrdit.shapes.ShapeGenerator.generate_polygon_mask"></a>
 

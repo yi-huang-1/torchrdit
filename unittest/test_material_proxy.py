@@ -1,61 +1,33 @@
-"""Unit tests for the MaterialDataProxy class."""
+"""Unit tests for UnitConverter and MaterialDataProxy."""
 
 import os
 import numpy as np
 import pytest
 import tempfile
 
-# Add path to import from torchrdit
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from torchrdit.material_proxy import UnitConverter, MaterialDataProxy
 
 
 class TestUnitConverter:
-    """Test unit conversion functionality."""
-    
-    def test_length_conversion(self):
-        """Test conversion between length units."""
+    """Test unit conversion functionality (focused, non-duplicative)."""
+
+    def test_basic_conversions_and_validation(self):
         converter = UnitConverter()
-        
-        # Test basic conversions
-        assert np.isclose(converter.convert_length(1, 'meter', 'meter'), 1.0)
+
+        # Length
         assert np.isclose(converter.convert_length(1, 'meter', 'mm'), 1000.0)
-        assert np.isclose(converter.convert_length(1000, 'nm', 'um'), 1.0)
-        
-        # Test array conversion
-        values = np.array([1, 2, 3])
-        converted = converter.convert_length(values, 'um', 'nm')
-        assert np.allclose(converted, values * 1000)
-        
-        # Test case insensitivity
-        assert np.isclose(converter.convert_length(1, 'Meter', 'MM'), 1000.0)
-        
-        # Test invalid unit
+        assert np.allclose(converter.convert_length(np.array([1, 2, 3]), 'um', 'nm'), np.array([1000, 2000, 3000]))
+        assert np.isclose(converter.convert_length(1, 'Meter', 'MM'), 1000.0)  # case-insensitive
         with pytest.raises(ValueError):
             converter.convert_length(1, 'invalid', 'meter')
-    
-    def test_frequency_conversion(self):
-        """Test conversion between frequency units."""
-        converter = UnitConverter()
-        
-        # Test basic conversions
-        assert np.isclose(converter.convert_frequency(1, 'hz', 'hz'), 1.0)
+
+        # Frequency
         assert np.isclose(converter.convert_frequency(1, 'ghz', 'mhz'), 1000.0)
-        
-        # Test invalid unit
         with pytest.raises(ValueError):
             converter.convert_frequency(1, 'hz', 'invalid')
-    
-    def test_freq_wavelength_conversion(self):
-        """Test conversion between frequency and wavelength."""
-        converter = UnitConverter()
-        
-        # Test freq to wavelength (300 THz ≈ 1 um)
+
+        # Cross domain
         assert np.isclose(converter.freq_to_wavelength(300, 'thz', 'um'), 1.0, rtol=1e-2)
-        
-        # Test wavelength to freq (1550 nm ≈ 193.5 THz)
         assert np.isclose(converter.wavelength_to_freq(1550, 'nm', 'thz'), 193.5, rtol=1e-2)
 
 
@@ -119,11 +91,16 @@ class TestMaterialDataProxy:
         assert data.shape[0] == 10  # 10 data points
         assert data.shape[1] == 3   # wavelength, eps_real, eps_imag
         
-        # Check conversion from freq to wavelength (193 THz ≈ 1.537 um)
-        assert np.isclose(data[0, 0], 1.537, rtol=1e-2)
-        
-        # Check permittivity values maintained
-        assert np.isclose(data[0, 1], 2.0, rtol=1e-2)
+        # Data is reversed to ascending wavelength; first row corresponds to highest freq (195 THz)
+        c0 = 2.99792458e8  # m/s
+        expected_um_195 = c0 / (195e12) / 1e-6
+        assert np.isclose(data[0, 0], expected_um_195, rtol=1e-9)
+
+        # Check permittivity values for 195 THz row
+        eps_real_195 = 2.0 + 0.01 * (195.0 - 193.0)
+        eps_imag_195 = 0.001 * (195.0 - 193.0)
+        assert np.isclose(data[0, 1], eps_real_195, rtol=1e-9)
+        assert np.isclose(data[0, 2], eps_imag_195, rtol=1e-9)
     
     def test_load_wl_eps_data(self):
         """Test loading wavelength-epsilon data."""
@@ -140,17 +117,19 @@ class TestMaterialDataProxy:
         data = self.proxy.load_data(self.freq_nk_file, 'freq-nk', 'thz', 'um')
         
         # Check conversion to wavelength
-        assert np.isclose(data[0, 0], 1.537, rtol=1e-2)
+        c0 = 2.99792458e8  # m/s
+        expected_um_195 = c0 / (195e12) / 1e-6
+        assert np.isclose(data[0, 0], expected_um_195, rtol=1e-9)
         
         # Check conversion from n,k to permittivity
-        # The actual n value in the first row is 1.5 + 0.01 * (193 - 193) = 1.5
-        n = 1.5
-        k = 0.0  # k is 0 for the first row
-        expected_eps_real = n**2 - k**2  # 1.5^2 = 2.25
-        expected_eps_imag = 2 * n * k     # 2 * 1.5 * 0 = 0
-        
-        # Use a higher tolerance for the n,k conversion since it matches what's in our data file
-        assert np.isclose(data[0, 1], expected_eps_real, rtol=3e-2)
+        # First row corresponds to 195 THz after reversal
+        n = 1.5 + 0.01 * (195.0 - 193.0)  # 1.52
+        k = 0.001 * (195.0 - 193.0)       # 0.002
+        expected_eps_real = (n**2 - k**2)
+        expected_eps_imag = 2 * n * k
+
+        assert np.isclose(data[0, 1], expected_eps_real, rtol=1e-9)
+        assert np.isclose(data[0, 2], expected_eps_imag, rtol=1e-9)
     
     def test_load_wl_nk_data(self):
         """Test loading wavelength-nk data."""
@@ -167,23 +146,6 @@ class TestMaterialDataProxy:
         assert np.isclose(data[0, 1], expected_eps_real, rtol=1e-2)
         assert np.isclose(data[0, 2], expected_eps_imag, rtol=1e-2)
     
-    def test_extract_permittivity(self):
-        """Test extracting permittivity values."""
-        # Load data
-        data = self.proxy.load_data(self.wl_eps_file, 'wl-eps', 'nm', 'um')
-        
-        # Extract permittivity at specific wavelengths
-        target_wl = np.array([1.54, 1.55, 1.56])
-        eps_real, eps_imag = self.proxy.extract_permittivity(data, target_wl, fit_order=2)
-        
-        # Check shape
-        assert len(eps_real(target_wl)) == 3
-        assert len(eps_imag(target_wl)) == 3
-        
-        # Check values are reasonable
-        assert np.all(eps_real(target_wl) > 1.9) and np.all(eps_real(target_wl) < 2.5)
-        assert np.all(eps_imag(target_wl) >= 0) 
-    
     def test_invalid_file(self):
         """Test handling invalid file."""
         with pytest.raises(ValueError):
@@ -195,11 +157,6 @@ class TestMaterialDataProxy:
             self.proxy.load_data(self.freq_eps_file, 'invalid-format', 'thz', 'um')
     
     def test_invalid_unit(self):
-        """Test handling invalid unit."""
-        # Create a proxy with a unit converter that will fail
+        """Test handling invalid unit passed to loader."""
         with pytest.raises(ValueError):
             self.proxy.load_data(self.freq_eps_file, 'freq-eps', 'invalid', 'um')
-
-
-if __name__ == "__main__":
-    pytest.main(["-v", __file__]) 

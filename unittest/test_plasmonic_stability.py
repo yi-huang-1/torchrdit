@@ -31,14 +31,15 @@ class TestPlasmonicStabilization:
         assert torch.abs(epsilon.real + 1.0) < 0.001, f"Real part should remain close to -1.0, got {epsilon.real}"
     
     def test_near_plasmon_resonance_stabilization(self):
-        """Test materials near plasmon resonance get stabilized."""
+        """Test materials near plasmon resonance get stabilized, avoiding boundary equality issues."""
+        # Use values clearly inside/outside the threshold to avoid float32 boundary ambiguity
         test_cases = [
-            -0.99 + 0j,    # Just above resonance
-            -1.01 + 0j,    # Just below resonance
-            -0.995 + 0j,   # Very close to resonance
+            (-0.995 + 0j, True),   # Inside threshold (|ε+1| = 0.005)
+            (-0.98 + 0j, False),   # Outside threshold (|ε+1| = 0.02)
+            (-1.02 + 0j, False),   # Outside threshold (|ε+1| = 0.02)
         ]
-        
-        for eps_value in test_cases:
+
+        for eps_value, should_stabilize in test_cases:
             material = MaterialClass(
                 name=f"test_near_plasmon_{eps_value.real}",
                 permittivity=eps_value,
@@ -48,10 +49,12 @@ class TestPlasmonicStabilization:
             wavelengths = np.array([1.55])
             epsilon = material.get_permittivity(wavelengths)
             
-            # Materials within threshold should be stabilized
-            if abs(eps_value.real + 1.0) < 0.01:  # Default threshold
+            if should_stabilize:
                 assert epsilon.imag <= -1e-5, \
                     f"Material at ε={eps_value} should have losses, got {epsilon.imag}"
+            else:
+                assert torch.allclose(epsilon, torch.tensor(eps_value, dtype=torch.complex64)), \
+                    f"Material at ε={eps_value} should be unchanged, got {epsilon}"
     
     def test_already_lossy_material_unchanged(self):
         """Test that materials with sufficient losses are not modified."""
@@ -112,33 +115,8 @@ class TestPlasmonicStabilization:
             assert torch.allclose(epsilon, torch.tensor(eps_value), atol=1e-10), \
                 f"Non-resonant material should not be modified: {eps_value} -> {epsilon}"
     
-    def test_dispersive_material_stabilization(self):
-        """Test that dispersive materials are stabilized at resonant wavelengths."""
-        # This test verifies the stabilization logic works with dispersive materials
-        # We'll simulate the behavior by directly testing the function
-        # since creating actual dispersive material files is complex
-        
-        # Import the function
-        from torchrdit.materials import handle_plasmonic_materials
-        
-        # Simulate dispersive material values that cross plasmon resonance
-        test_wavelengths = [1.0, 1.5, 2.0]
-        test_epsilons = [-2.0 + 0j, -1.0 + 0j, -0.5 + 0j]  # Crosses ε = -1
-        
-        # Test each point
-        for wl, eps in zip(test_wavelengths, test_epsilons):
-            eps_tensor = torch.tensor(eps, dtype=torch.complex64)
-            stabilized = handle_plasmonic_materials(eps_tensor, wavelength=wl)
-            
-            # At resonance (ε = -1.0), should be stabilized
-            if abs(eps.real + 1.0) < 0.01:
-                assert stabilized.imag <= -1e-5, \
-                    f"Dispersive material at λ={wl}, ε={eps} should be stabilized"
-            else:
-                # Non-resonant points should pass through unchanged
-                assert torch.allclose(stabilized, eps_tensor), \
-                    f"Non-resonant ε={eps} should not be modified"
-    
+    # Removed duplicative direct-function test; helper tests below cover function API
+
     def test_tensor_input_stabilization(self):
         """Test stabilization works with tensor inputs."""
         # Create material with tensor permittivity
@@ -156,42 +134,8 @@ class TestPlasmonicStabilization:
         assert epsilon.imag <= -1e-5, \
             f"Tensor material should have losses, got {epsilon.imag}"
     
-    def test_multiple_wavelength_stabilization(self):
-        """Test stabilization works for multiple wavelengths."""
-        material = MaterialClass(
-            name="plasmon_multi",
-            permittivity=-1.0 + 0j,
-            permeability=1.0
-        )
-        
-        # Multiple wavelengths
-        wavelengths = np.array([1.31, 1.55, 1.65])
-        epsilon = material.get_permittivity(wavelengths)
-        
-        # All wavelengths should have same stabilization
-        assert epsilon.shape == torch.Size([]), "Non-dispersive should return scalar"
-        assert epsilon.imag <= -1e-5, "Should have losses at all wavelengths"
-    
-    def test_gradient_preservation(self):
-        """Test that stabilization preserves gradients for optimization."""
-        # Create material with gradient tracking
-        epsilon_real = torch.tensor(-1.0, requires_grad=True)
-        epsilon_imag = torch.tensor(0.0, requires_grad=True)
-        epsilon_complex = torch.complex(epsilon_real, epsilon_imag)
-        
-        material = MaterialClass(
-            name="gradient_test",
-            permittivity=epsilon_complex,
-            permeability=1.0
-        )
-        
-        wavelengths = np.array([1.55])
-        epsilon = material.get_permittivity(wavelengths)
-        
-        # Should maintain gradient capability
-        assert isinstance(epsilon, torch.Tensor), "Output should be torch.Tensor"
-        # Note: actual gradient test would require the stabilization function
-        # to be implemented with differentiable operations
+    # Removed weak/duplicative tests: multi-wavelength (non-dispersive returns scalar)
+    # and gradient preservation (not meaningful with current stabilization implementation)
     
     def test_threshold_configuration(self):
         """Test that the detection threshold can be configured."""

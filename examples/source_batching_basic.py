@@ -198,7 +198,7 @@ def example_polarization_analysis():
     # Create elliptical pattern
     shape_gen = ShapeGenerator.from_solver(solver)
     # Create an elongated pattern using a rectangle to simulate ellipse
-    mask = shape_gen.generate_rectangle_mask(center=(0, 0), width=0.3, height=0.5, angle=0)
+    mask = shape_gen.generate_rectangle_mask(center=(0, 0), x_size=0.3, y_size=0.5, angle=0)
     solver.update_er_with_mask(mask=mask, layer_index=1)
     
     solver.add_layer(material_name="air", thickness=0.5, is_homogeneous=True)

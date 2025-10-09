@@ -1,6 +1,8 @@
 # Table of Contents
 
 * [torchrdit.materials](#torchrdit.materials)
+  * [handle\_plasmonic\_materials](#torchrdit.materials.handle_plasmonic_materials)
+  * [stabilize\_epsilon\_batch](#torchrdit.materials.stabilize_epsilon_batch)
   * [MaterialClass](#torchrdit.materials.MaterialClass)
     * [\_\_init\_\_](#torchrdit.materials.MaterialClass.__init__)
     * [isdispersive\_er](#torchrdit.materials.MaterialClass.isdispersive_er)
@@ -37,6 +39,12 @@ of different material data formats and sources, including:
 - Direct permittivity/permeability specification
 - Refractive index and extinction coefficient (n, k) specification
 - Loading from data files with different formats (freq-eps, wl-eps, freq-nk, wl-nk)
+
+Plasmonic Material Handling:
+Materials near surface plasmon resonance (ε ≈ -1) are automatically stabilized
+by adding minimal physical losses (Im(ε) = -1e-5) to prevent matrix singularities.
+This represents realistic material damping that is always present in real metals.
+The stabilization is applied transparently during material property queries.
 
 Classes:
 MaterialClass: Main class for representing materials with their electromagnetic properties.
@@ -94,6 +102,63 @@ solver.update_trn_material("air")
   refractive index, extinction coefficient, material data, complex permittivity,
   electromagnetic properties, dielectric function, optical constants, wavelength-dependent
 
+<a id="torchrdit.materials.handle_plasmonic_materials"></a>
+
+#### handle\_plasmonic\_materials
+
+```python
+def handle_plasmonic_materials(epsilon: torch.Tensor,
+                               wavelength: Optional[float] = None,
+                               min_loss: float = 1e-5,
+                               threshold: float = 0.01) -> torch.Tensor
+```
+
+Add minimal physical damping near plasmon resonances.
+
+This function prevents matrix singularities that occur when the real part
+of permittivity approaches -1, which corresponds to a surface plasmon pole.
+The added losses represent realistic material damping that is always present
+in real metals.
+
+Uses negative imaginary convention where lossy materials have Im(ε) < 0.
+
+**Arguments**:
+
+- `epsilon` - Complex permittivity tensor
+- `wavelength` - Optional wavelength for adaptive damping (not implemented yet)
+- `min_loss` - Minimum loss value (positive, will be applied as negative)
+- `threshold` - Detection window around ε = -1
+  
+
+**Returns**:
+
+  Stabilized permittivity tensor
+
+<a id="torchrdit.materials.stabilize_epsilon_batch"></a>
+
+#### stabilize\_epsilon\_batch
+
+```python
+def stabilize_epsilon_batch(epsilon_tensor: torch.Tensor,
+                            wavelengths: Optional[torch.Tensor] = None,
+                            min_loss: float = 1e-5,
+                            threshold: float = 0.01) -> torch.Tensor
+```
+
+Vectorized version of plasmonic stabilization for batched operations.
+
+**Arguments**:
+
+- `epsilon_tensor` - Batch of complex permittivity values
+- `wavelengths` - Optional wavelengths for adaptive damping
+- `min_loss` - Minimum loss value (positive, will be applied as negative)
+- `threshold` - Detection window around ε = -1
+  
+
+**Returns**:
+
+  Stabilized permittivity tensor batch
+
 <a id="torchrdit.materials.MaterialClass"></a>
 
 ## MaterialClass Objects
@@ -113,6 +178,13 @@ MaterialClass uses a proxy pattern for handling material data loading and proces
 allowing it to support multiple data formats and unit systems. For dispersive
 materials, it can load data from files and perform polynomial fitting to interpolate
 property values at specific wavelengths needed for simulations.
+
+Automatic Plasmonic Stabilization:
+When materials have permittivity near the surface plasmon resonance condition
+(ε ≈ -1), the class automatically adds minimal physical losses to prevent
+numerical singularities. This is physically motivated as all real metals have
+some level of loss. The stabilization is applied transparently when accessing
+material properties through get_permittivity().
 
 **Attributes**:
 
@@ -178,7 +250,8 @@ def __init__(name: str = "material1",
              data_format: str = "freq-eps",
              data_unit: str = "thz",
              max_poly_fit_order: int = 10,
-             data_proxy: Optional[MaterialDataProxy] = None) -> None
+             data_proxy: Optional[MaterialDataProxy] = None,
+             stabilization_params: Optional[Dict[str, float]] = None) -> None
 ```
 
 Initialize a MaterialClass instance with electromagnetic properties.
@@ -212,6 +285,9 @@ are required to specify the data source and format.
   dispersion curves but may lead to overfitting.
 - `data_proxy` - Custom data proxy instance for handling material data loading.
   Uses the shared class-level proxy if None.
+- `stabilization_params` - Optional dictionary with plasmonic stabilization parameters:
+  - 'min_loss': Minimum loss value (default: 1e-5)
+  - 'threshold': Detection window around ε = -1 (default: 0.01)
   
 
 **Raises**:
@@ -347,7 +423,8 @@ def get_permittivity(wavelengths: np.ndarray,
 Get the material's permittivity at specified wavelengths.
 
 This is a standardized interface that handles both dispersive and
-non-dispersive materials.
+non-dispersive materials. Automatically stabilizes materials near
+plasmon resonance conditions (ε ≈ -1) to prevent matrix singularities.
 
 **Arguments**:
 
@@ -357,7 +434,7 @@ non-dispersive materials.
 
 **Returns**:
 
-  Permittivity tensor at the specified wavelengths
+  Permittivity tensor at the specified wavelengths, stabilized if needed
   
 
 **Raises**:

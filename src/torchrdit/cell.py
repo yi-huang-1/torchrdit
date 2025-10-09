@@ -19,7 +19,7 @@ Keywords:
     unit cell, geometry, shape generation, mask, material, layer, photonics
 """
 
-from typing import Callable, Tuple, Union, List, Any
+from typing import Callable, Tuple, Union, List, Any, TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -28,6 +28,9 @@ from .utils import tensor_params_check, create_material
 from .materials import MaterialClass
 from .constants import lengthunit_dict
 from .layers import LayerManager
+
+if TYPE_CHECKING:
+    from .layers import Layer
 
 # Function Type
 FuncType = Callable[..., Any]

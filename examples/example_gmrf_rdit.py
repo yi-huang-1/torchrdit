@@ -18,7 +18,7 @@ from torchrdit.solver import get_solver_builder
 from torchrdit.shapes import ShapeGenerator
 from torchrdit.utils import create_material
 from torchrdit.constants import Algorithm, Precision
-from torchrdit.viz import plot_layer
+from torchrdit.viz import plot_layer, plot_cross_section
 
 import matplotlib.pyplot as plt
 
@@ -135,6 +135,23 @@ plot_layer(dev1, layer_index=layer_index, func='real', fig_ax=axes, cmap='BuGn',
 script_dir = os.path.dirname(os.path.abspath(__file__))
 output_filename = os.path.join(script_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_layer_{layer_index}.png")
 plt.savefig(output_filename, dpi=300)
+plt.close(fig)
+
+# plot cross-sections of the layer stack structure
+# Create a figure with both XZ and YZ cross-sections
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+# XZ cross-section (y=0 slice) - shows hexagonal pattern structure across X direction
+plot_cross_section(dev1, plane='xz', slice_position=0.0, fig_ax=ax1, 
+                title='XZ Cross-Section (y=0)\nHexagonal GMRF Structure')
+
+# YZ cross-section (x=0 slice) - shows layer stack structure across Y direction  
+plot_cross_section(dev1, plane='yz', slice_position=0.0, fig_ax=ax2,
+                title='YZ Cross-Section (x=0)\nHexagonal GMRF Structure')
+
+plt.tight_layout()
+cross_section_filename = os.path.join(script_dir, f"{os.path.splitext(os.path.basename(__file__))[0]}_cross_sections.png")
+plt.savefig(cross_section_filename, dpi=300, bbox_inches='tight')
 plt.close(fig)
 
 data = dev1.solve(src1)

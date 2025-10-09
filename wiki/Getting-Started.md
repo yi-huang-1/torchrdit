@@ -83,9 +83,9 @@ source = device.add_source(
 results = device.solve(source) # SolverResults object
 
 # Extract the results
-print(f"Transmission: {results.transmission * 100:.2f}%")
-print(f"Reflection: {results.reflection * 100:.2f}%")
-                
+print(f"Transmission: {results.transmission.item() * 100:.2f}%")
+print(f"Reflection: {results.reflection.item() * 100:.2f}%")
+
 print("Phase of the transmission field x-component: ", torch.angle(results.transmission_field.x))
 print("Phase of the reflection field x-component: ", torch.angle(results.reflection_field.x))
 ```
