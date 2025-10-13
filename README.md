@@ -43,6 +43,32 @@ The EM algorithms used in this package are **Rigorous Diffraction Interface Theo
 
 ---
 
+## Fast Fourier Factorization
+
+TorchRDIT’s FFF implementation follows the tangent-field techniques popularized by fmmax and S4, but is written entirely in PyTorch (`torchrdit/src/torchrdit/vector.py`). When `is_use_FFF=True`, the solver automatically instantiates the tangent generator, yet you can also invoke it explicitly via `compute_tangent_field`:
+
+```python
+from torchrdit.vector import compute_tangent_field
+
+tx, ty = compute_tangent_field(
+    mask.float(),
+    XO=solver.XO,
+    YO=solver.YO,
+    lattice_t1=solver.lattice_t1,
+    lattice_t2=solver.lattice_t2,
+    kdim=tuple(int(k) for k in solver.kdim),
+    scheme="POL",  # POL, NORMAL, JONES, or JONES_DIRECT
+)
+```
+
+Choose between the four built-in schemes—`POL`, `NORMAL`, `JONES`, `JONES_DIRECT`—to match the field representation expected by your Fourier factorization workflow while keeping gradients intact.
+
+For background on the algorithmic formulation see:
+- M. F. Schubert and A. M. Hammond, "Fourier modal method for inverse design of metasurface-enhanced micro-LEDs," Opt. Express 31, 42945 (2023).
+- V. Liu and S. Fan, "S4 : A free electromagnetic solver for layered periodic structures," Computer Physics Communications 183, 2233–2244 (2012).
+
+---
+
 ## Installation
 
 You can install the package directly from [PyPI](https://pypi.org/project/torchrdit/):
