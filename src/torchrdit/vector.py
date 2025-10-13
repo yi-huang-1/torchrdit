@@ -990,17 +990,17 @@ class TangentFieldGenerator:
                 try:
                     delta = torch.linalg.solve(hessian, jac)
                 except (RuntimeError, torch.linalg.LinAlgError):
-                    regularized = hessian + 1e-8 * identity
+                    regularized = (hessian + 1e-8 * identity).clone().contiguous()
                     try:
                         delta = torch.linalg.solve(regularized, jac)
                     except (RuntimeError, torch.linalg.LinAlgError):
-                        solution = torch.linalg.lstsq(regularized, jac.unsqueeze(-1)).solution
-                        delta = solution.squeeze(-1)
+                        pseudo_inverse = torch.linalg.pinv(regularized, rcond=1e-12)
+                        delta = pseudo_inverse @ jac
 
                 if not torch.isfinite(delta).all():
-                    regularized = hessian + 1e-6 * identity
-                    solution = torch.linalg.lstsq(regularized, jac.unsqueeze(-1)).solution
-                    delta = solution.squeeze(-1)
+                    regularized = (hessian + 1e-6 * identity).clone().contiguous()
+                    pseudo_inverse = torch.linalg.pinv(regularized, rcond=1e-12)
+                    delta = pseudo_inverse @ jac
 
                 if not torch.isfinite(delta).all():
                     raise ConjugateGradientError("Dense fallback produced non-finite update.")
