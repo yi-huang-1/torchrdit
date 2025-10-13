@@ -553,7 +553,8 @@ builder.add_layer({
     "material": "SiO",
     "thickness": h1.item(),
     "is_homogeneous": False,
-    "is_optimize": True
+    "is_optimize": True,
+    "slice_count": 3,  # Optional: reuse a sub-slice scattering block three times
 })
 # Build the solver
 dev1 = builder.build()
@@ -572,7 +573,8 @@ dev1 = (get_solver_builder()
             "material": "SiO",
             "thickness": h1.item(),
             "is_homogeneous": False,
-            "is_optimize": True
+            "is_optimize": True,
+            "slice_count": 3,
         })
         .build())
 ```
@@ -589,6 +591,8 @@ def configure_gmrf_solver(builder):
 # Create the solver using the configuration function
 dev1 = create_solver_from_builder(configure_gmrf_solver)
 ```
+
+> **Tip:** Every `add_layer` call accepts an optional `slice_count` field. When greater than one, TorchRDIT computes the scattering response for a single sub-slice and reuses it `slice_count` times via the Redheffer product. Non-integer or non-positive inputs fall back to `1`, so existing configurations continue to work without changes.
 
 ### Structure Building
 
