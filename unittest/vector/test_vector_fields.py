@@ -183,6 +183,39 @@ def test_tangent_field_autograd(vector_module, base_solver, circle_mask):
     assert torch.isfinite(grad).all()
 
 
+def test_tangent_field_recovers_from_nonfinite_cg(monkeypatch, vector_module, base_solver, circle_mask):
+    """Force the conjugate-gradient solve to return NaNs and ensure the dense fallback kicks in."""
+
+    def _nan_update_solver(matvec, rhs, **kwargs):
+        del matvec, kwargs
+        return torch.full_like(rhs, float("nan"))
+
+    fallback_calls = {"count": 0}
+    original_solve = vector_module.torch.linalg.solve
+
+    def _counting_solve(*args, **kwargs):
+        fallback_calls["count"] += 1
+        return original_solve(*args, **kwargs)
+
+    monkeypatch.setattr(vector_module, "_solve_sym_pos_linear_system", _nan_update_solver)
+    monkeypatch.setattr(vector_module.torch.linalg, "solve", _counting_solve)
+
+    tx, ty = vector_module.compute_tangent_field(
+        mask=circle_mask,
+        XO=base_solver.XO,
+        YO=base_solver.YO,
+        lattice_t1=base_solver.lattice_t1,
+        lattice_t2=base_solver.lattice_t2,
+        kdim=tuple(base_solver.kdim),
+        scheme="POL",
+        steps=1,
+    )
+
+    assert torch.isfinite(tx).all()
+    assert torch.isfinite(ty).all()
+    assert fallback_calls["count"] >= 1
+
+
 def test_compute_gradient_recomputes_metric(vector_module, monkeypatch):
     lattice = vector_module.LatticeVectors(
         u=torch.tensor([0.7, 0.1], dtype=torch.float64),

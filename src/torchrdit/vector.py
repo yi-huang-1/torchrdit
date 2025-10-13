@@ -536,9 +536,13 @@ def _solve_sym_pos_linear_system(
     max_restarts = 5
     for _ in range(max_iter):
         Ap = matvec(p)
+        if not torch.isfinite(Ap).all():
+            raise ConjugateGradientError("Conjugate gradient produced non-finite matvec result.")
         if damping:
             Ap = Ap + damping * p
         denom = torch.dot(p, Ap)
+        if not torch.isfinite(denom):
+            raise ConjugateGradientError("Conjugate gradient produced non-finite curvature estimate.")
         if torch.abs(denom) < eps:
             if restarts < max_restarts:
                 p = r.clone()
@@ -558,6 +562,8 @@ def _solve_sym_pos_linear_system(
         beta = rs_new / rs_old
         p = r + beta * p
         rs_old = rs_new
+        if not torch.isfinite(x).all() or not torch.isfinite(r).all() or not torch.isfinite(p).all():
+            raise ConjugateGradientError("Conjugate gradient iterate became non-finite.")
     if not converged:
         residual = matvec(x) - rhs
         if damping:
@@ -972,6 +978,8 @@ class TangentFieldGenerator:
                     max_iter=max(jac.numel() * 2, 10),
                     damping=1e-6,
                 )
+                if not torch.isfinite(delta).all():
+                    raise ConjugateGradientError("Conjugate gradient produced non-finite update.")
             except ConjugateGradientError:
                 basis = torch.eye(jac.numel(), dtype=jac.dtype, device=jac.device)
                 hessian_cols = []
