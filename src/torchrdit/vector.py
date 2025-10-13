@@ -978,11 +978,24 @@ class TangentFieldGenerator:
                 for column in basis.split(1, dim=1):
                     hessian_cols.append(hessian_matvec(column.squeeze(1)))
                 hessian = torch.stack(hessian_cols, dim=1)
+                identity = torch.eye(hessian.shape[0], dtype=hessian.dtype, device=hessian.device)
                 try:
                     delta = torch.linalg.solve(hessian, jac)
                 except (RuntimeError, torch.linalg.LinAlgError):
-                    solution = torch.linalg.lstsq(hessian, jac.unsqueeze(-1)).solution
+                    regularized = hessian + 1e-8 * identity
+                    try:
+                        delta = torch.linalg.solve(regularized, jac)
+                    except (RuntimeError, torch.linalg.LinAlgError):
+                        solution = torch.linalg.lstsq(regularized, jac.unsqueeze(-1)).solution
+                        delta = solution.squeeze(-1)
+
+                if not torch.isfinite(delta).all():
+                    regularized = hessian + 1e-6 * identity
+                    solution = torch.linalg.lstsq(regularized, jac.unsqueeze(-1)).solution
                     delta = solution.squeeze(-1)
+
+                if not torch.isfinite(delta).all():
+                    raise ConjugateGradientError("Dense fallback produced non-finite update.")
             next_real = flat_real_current - delta
             if iteration < max(steps, 1) - 1:
                 flat_real_current = next_real.detach().requires_grad_(True)
