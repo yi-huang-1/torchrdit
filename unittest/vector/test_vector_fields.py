@@ -183,6 +183,119 @@ def test_tangent_field_autograd(vector_module, base_solver, circle_mask):
     assert torch.isfinite(grad).all()
 
 
+def test_compute_gradient_recomputes_metric(vector_module, monkeypatch):
+    lattice = vector_module.LatticeVectors(
+        u=torch.tensor([0.7, 0.1], dtype=torch.float64),
+        v=torch.tensor([-0.2, 0.9], dtype=torch.float64),
+    )
+    mask = torch.rand((12, 12), dtype=torch.float64)
+
+    call_count = 0
+    original_inv = vector_module.torch.linalg.inv
+
+    def _counting_inv(matrix: torch.Tensor) -> torch.Tensor:
+        nonlocal call_count
+        call_count += 1
+        return original_inv(matrix)
+
+    monkeypatch.setattr(vector_module.torch.linalg, "inv", _counting_inv)
+
+    for _ in range(3):
+        vector_module._compute_gradient(mask, lattice)
+
+    assert call_count == 3
+
+
+def test_fourier_penalty_weights_recomputed(vector_module, base_solver, circle_mask, monkeypatch):
+    call_count = {"value": 0}
+    original = vector_module._fourier_penalty_weights
+
+    def _counting_penalty(lattice, expansion):
+        call_count["value"] += 1
+        return original(lattice, expansion)
+
+    monkeypatch.setattr(vector_module, "_fourier_penalty_weights", _counting_penalty)
+
+    generator = vector_module.TangentFieldGenerator(
+        lattice_t1=base_solver.lattice_t1,
+        lattice_t2=base_solver.lattice_t2,
+        kdim=tuple(base_solver.kdim),
+        fourier_loss_weight=1e-2,
+        smoothness_loss_weight=1e-3,
+        steps=1,
+    )
+
+    generator.compute(
+        mask=circle_mask,
+        XO=base_solver.XO,
+        YO=base_solver.YO,
+        scheme="POL",
+    )
+
+    generator.compute(
+        mask=circle_mask,
+        XO=base_solver.XO,
+        YO=base_solver.YO,
+        scheme="POL",
+    )
+
+    assert call_count["value"] >= 2
+
+
+def test_tangent_field_does_not_call_dense_jacobian(vector_module, base_solver, circle_mask, monkeypatch):
+    def _boom(*args, **kwargs):
+        raise AssertionError("dense jacobian should not be invoked")
+
+    monkeypatch.setattr(vector_module.torch.autograd.functional, "jacobian", _boom)
+
+    tx, ty = vector_module.compute_tangent_field(
+        mask=circle_mask,
+        XO=base_solver.XO,
+        YO=base_solver.YO,
+        lattice_t1=base_solver.lattice_t1,
+        lattice_t2=base_solver.lattice_t2,
+        kdim=tuple(base_solver.kdim),
+        scheme="POL",
+        steps=1,
+    )
+
+    assert torch.isfinite(tx).all()
+    assert torch.isfinite(ty).all()
+
+
+def test_tangent_field_cg_fallback_uses_dense_solve(vector_module, base_solver, circle_mask, monkeypatch):
+    """If CG fails, the solver should fall back to the dense Hessian path."""
+    def _raise_convergence_failure(*args, **kwargs):  # noqa: WPS430
+        raise vector_module.ConjugateGradientError("forced failure")
+
+    monkeypatch.setattr(vector_module, "_solve_sym_pos_linear_system", _raise_convergence_failure)
+
+    solve_calls = {"count": 0}
+
+    original_solve = vector_module.torch.linalg.solve
+
+    def _tracking_solve(*args, **kwargs):
+        solve_calls["count"] += 1
+        return original_solve(*args, **kwargs)
+
+    monkeypatch.setattr(vector_module.torch.linalg, "solve", _tracking_solve)
+
+    tx, ty = vector_module.compute_tangent_field(
+        mask=circle_mask,
+        XO=base_solver.XO,
+        YO=base_solver.YO,
+        lattice_t1=base_solver.lattice_t1,
+        lattice_t2=base_solver.lattice_t2,
+        kdim=tuple(base_solver.kdim),
+        scheme="POL",
+        steps=1,
+    )
+
+    assert solve_calls["count"] >= 1
+    assert torch.isfinite(tx).all()
+    assert torch.isfinite(ty).all()
+
+
 def test_invalid_grid_shapes(vector_module, base_solver, circle_mask):
     with pytest.raises(ValueError):
         vector_module.compute_tangent_field(
@@ -265,29 +378,46 @@ def test_create_solver_passes_vector_parameters(monkeypatch):
 
     captured = {}
 
-    def fake_compute_tangent_field(
-        mask,
-        XO,
-        YO,
-        lattice_t1,
-        lattice_t2,
-        kdim,
-        *,
-        scheme,
-        fourier_loss_weight,
-        smoothness_loss_weight,
-        steps=1,
-    ):
-        captured["scheme"] = scheme
-        captured["fourier_loss_weight"] = fourier_loss_weight
-        captured["smoothness_loss_weight"] = smoothness_loss_weight
-        captured["steps"] = steps
-        dtype = torch.complex64 if mask.dtype == torch.float32 else torch.complex128
-        tx = torch.ones_like(mask, dtype=dtype)
-        ty = torch.ones_like(mask, dtype=dtype)
-        return tx, ty
+    class _ExpansionManagerShim:
+        def adapt_to(self, *, device, dtype):
+            captured["adapt_to"] = (device, dtype)
 
-    monkeypatch.setattr(vector_module, "compute_tangent_field", fake_compute_tangent_field)
+    class DummyGenerator:
+        def __init__(
+            self,
+            lattice_t1,
+            lattice_t2,
+            kdim,
+            *,
+            fourier_loss_weight,
+            smoothness_loss_weight,
+            steps,
+        ):
+            captured["init_fourier_loss_weight"] = fourier_loss_weight
+            captured["init_smoothness_loss_weight"] = smoothness_loss_weight
+            captured["init_steps"] = steps
+            self._expansion_manager = _ExpansionManagerShim()
+
+        def compute(
+            self,
+            mask,
+            XO,
+            YO,
+            *,
+            scheme,
+            fourier_loss_weight,
+            smoothness_loss_weight,
+            steps=1,
+        ):
+            captured["scheme"] = scheme
+            captured["fourier_loss_weight"] = fourier_loss_weight
+            captured["smoothness_loss_weight"] = smoothness_loss_weight
+            captured["steps"] = steps
+            dtype = torch.complex64 if mask.dtype == torch.float32 else torch.complex128
+            out = torch.ones_like(mask, dtype=dtype)
+            return out, out
+
+    monkeypatch.setattr(vector_module, "TangentFieldGenerator", DummyGenerator)
 
     solver = create_solver(
         algorithm=Algorithm.RCWA,
@@ -320,29 +450,46 @@ def test_builder_configures_vector_field_options(monkeypatch):
 
     captured = {}
 
-    def fake_compute_tangent_field(
-        mask,
-        XO,
-        YO,
-        lattice_t1,
-        lattice_t2,
-        kdim,
-        *,
-        scheme,
-        fourier_loss_weight,
-        smoothness_loss_weight,
-        steps=1,
-    ):
-        captured["scheme"] = scheme
-        captured["fourier_loss_weight"] = fourier_loss_weight
-        captured["smoothness_loss_weight"] = smoothness_loss_weight
-        captured["steps"] = steps
-        dtype = torch.complex64 if mask.dtype == torch.float32 else torch.complex128
-        tx = torch.ones_like(mask, dtype=dtype)
-        ty = torch.ones_like(mask, dtype=dtype)
-        return tx, ty
+    class _ExpansionManagerShim:
+        def adapt_to(self, *, device, dtype):
+            captured["adapt_to"] = (device, dtype)
 
-    monkeypatch.setattr(vector_module, "compute_tangent_field", fake_compute_tangent_field)
+    class DummyGenerator:
+        def __init__(
+            self,
+            lattice_t1,
+            lattice_t2,
+            kdim,
+            *,
+            fourier_loss_weight,
+            smoothness_loss_weight,
+            steps,
+        ):
+            captured["init_fourier_loss_weight"] = fourier_loss_weight
+            captured["init_smoothness_loss_weight"] = smoothness_loss_weight
+            captured["init_steps"] = steps
+            self._expansion_manager = _ExpansionManagerShim()
+
+        def compute(
+            self,
+            mask,
+            XO,
+            YO,
+            *,
+            scheme,
+            fourier_loss_weight,
+            smoothness_loss_weight,
+            steps=1,
+        ):
+            captured["scheme"] = scheme
+            captured["fourier_loss_weight"] = fourier_loss_weight
+            captured["smoothness_loss_weight"] = smoothness_loss_weight
+            captured["steps"] = steps
+            dtype = torch.complex64 if mask.dtype == torch.float32 else torch.complex128
+            out = torch.ones_like(mask, dtype=dtype)
+            return out, out
+
+    monkeypatch.setattr(vector_module, "TangentFieldGenerator", DummyGenerator)
 
     builder = (
         SolverBuilder()

@@ -107,7 +107,7 @@ Keywords:
 
 import os
 import time
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -898,6 +898,21 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         self.fff_vector_steps = int(fff_vector_steps)
         if self.fff_vector_steps < 1:
             raise ValueError("fff_vector_steps must be a positive integer")
+
+        # Cache for tangent-field generators keyed by lattice/device/hyper-parameters.
+        self._vector_generator_cache: Dict[
+            Tuple[
+                Tuple[int, int],
+                Tuple[float, ...],
+                Tuple[float, ...],
+                str,
+                torch.dtype,
+                float,
+                float,
+                int,
+            ],
+            Any,
+        ] = {}
 
         # Set the solving algorithm strategy
         self._algorithm = algorithm
@@ -2740,10 +2755,79 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         )
 
 
+    def _vector_generator_cache_key(
+        self,
+        *,
+        device: Union[str, torch.device],
+        dtype: torch.dtype,
+        fourier_loss_weight: float,
+        smoothness_loss_weight: float,
+        steps: int,
+    ) -> Tuple[
+        Tuple[int, int],
+        Tuple[float, ...],
+        Tuple[float, ...],
+        str,
+        torch.dtype,
+        float,
+        float,
+        int,
+    ]:
+        lattice_t1_vals = tuple(
+            float(x) for x in self.lattice_t1.detach().cpu().view(-1).tolist()
+        )
+        lattice_t2_vals = tuple(
+            float(x) for x in self.lattice_t2.detach().cpu().view(-1).tolist()
+        )
+        device_str = str(torch.device(device))
+        return (
+            tuple(int(k) for k in self.kdim),
+            lattice_t1_vals,
+            lattice_t2_vals,
+            device_str,
+            dtype,
+            float(fourier_loss_weight),
+            float(smoothness_loss_weight),
+            int(steps),
+        )
+
+    def _get_tangent_field_generator(
+        self,
+        *,
+        device: Union[str, torch.device],
+        dtype: torch.dtype,
+        fourier_loss_weight: float,
+        smoothness_loss_weight: float,
+        steps: int,
+    ):
+        key = self._vector_generator_cache_key(
+            device=device,
+            dtype=dtype,
+            fourier_loss_weight=fourier_loss_weight,
+            smoothness_loss_weight=smoothness_loss_weight,
+            steps=steps,
+        )
+        generator = self._vector_generator_cache.get(key)
+        device_obj = torch.device(device)
+
+        if generator is None:
+            from . import vector as vector_module  # Local import to avoid circular deps
+
+            generator = vector_module.TangentFieldGenerator(
+                lattice_t1=self.lattice_t1.to(device=device_obj, dtype=dtype),
+                lattice_t2=self.lattice_t2.to(device=device_obj, dtype=dtype),
+                kdim=tuple(int(k) for k in self.kdim),
+                fourier_loss_weight=fourier_loss_weight,
+                smoothness_loss_weight=smoothness_loss_weight,
+                steps=steps,
+            )
+            self._vector_generator_cache[key] = generator
+        else:
+            generator._expansion_manager.adapt_to(device=device_obj, dtype=dtype)
+        return generator
+
     def _calculate_vector_field(self, mask: torch.Tensor, *, layer_index: Optional[int] = None):
         """Generate Fourier-factorization P-matrix components via tangent field."""
-        from . import vector as vector_module  # Local import to avoid circular deps
-
         debug_enabled = getattr(self, "debug_fff", False)
         if not debug_enabled:
             env_flag = os.getenv("TORCHRDIT_DEBUG_FFF")
@@ -2751,15 +2835,15 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 debug_enabled = env_flag.strip().lower() not in {"0", "false", "off"}
         start_time = time.perf_counter() if debug_enabled else None
 
-        if mask.dim() > 2:
-            mask_2d = mask.squeeze()
+        squeezed_mask = mask.squeeze()
+        if squeezed_mask.dim() == 2:
+            batched_mask = squeezed_mask.unsqueeze(0)
+        elif squeezed_mask.dim() == 3:
+            batched_mask = squeezed_mask
         else:
-            mask_2d = mask
+            raise ValueError(f"Expected mask to squeeze to 2D or 3D, got shape {mask.shape}")
 
-        if mask_2d.dim() != 2:
-            raise ValueError(f"Expected 2D mask for vector field generation, got shape {mask.shape}")
-
-        mask_2d = mask_2d.to(self.tfloat).to(self.device)
+        batched_mask = batched_mask.to(self.tfloat).to(self.device)
 
         scheme = getattr(self, "fff_vector_scheme", getattr(self, "vector_field_scheme", "POL"))
         fourier_loss_weight = getattr(self, "fff_fourier_weight", getattr(self, "vector_fourier_loss_weight", 1e-2))
@@ -2768,32 +2852,66 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         )
         steps = getattr(self, "fff_vector_steps", getattr(self, "vector_field_steps", 1))
 
-        tx, ty = vector_module.compute_tangent_field(
-            mask=mask_2d,
-            XO=self.XO,
-            YO=self.YO,
-            lattice_t1=self.lattice_t1,
-            lattice_t2=self.lattice_t2,
-            kdim=tuple(self.kdim),
-            scheme=scheme,
+        generator = self._get_tangent_field_generator(
+            device=batched_mask.device,
+            dtype=batched_mask.dtype,
             fourier_loss_weight=fourier_loss_weight,
             smoothness_loss_weight=smoothness_loss_weight,
             steps=steps,
         )
 
-        denom = torch.clamp(torch.abs(tx) ** 2 + torch.abs(ty) ** 2, min=1e-12)
+        tx_components: List[torch.Tensor] = []
+        ty_components: List[torch.Tensor] = []
+        for mask_sample in batched_mask:
+            tx_sample, ty_sample = generator.compute(
+                mask=mask_sample,
+                XO=self.XO,
+                YO=self.YO,
+                scheme=scheme,
+                fourier_loss_weight=fourier_loss_weight,
+                smoothness_loss_weight=smoothness_loss_weight,
+                steps=steps,
+            )
+            tx_components.append(tx_sample)
+            ty_components.append(ty_sample)
+
+        tx_stack = torch.stack(tx_components, dim=0)
+        ty_stack = torch.stack(ty_components, dim=0)
+
+        if tx_stack.shape[0] == 1:
+            tx = tx_stack[0]
+            ty = ty_stack[0]
+        else:
+            tx = tx_stack
+            ty = ty_stack
+
+        tx = tx.to(self.tcomplex)
+        ty = ty.to(self.tcomplex)
+        tx_conj = torch.conj(tx)
+        ty_conj = torch.conj(ty)
+
+        tx_mag_sq = (tx_conj * tx).real
+        ty_mag_sq = (ty_conj * ty).real
+        denom = torch.clamp(tx_mag_sq + ty_mag_sq, min=1e-12)
+        inv_denom = denom.reciprocal()
+        inv_denom_complex = inv_denom.to(dtype=self.tcomplex)
+
+        weight_xx = (tx_mag_sq * inv_denom).to(dtype=self.tcomplex)
+        weight_yy = (ty_mag_sq * inv_denom).to(dtype=self.tcomplex)
+        weight_xy = (tx * ty_conj) * inv_denom_complex
+        weight_yx = torch.conj(weight_xy)
 
         toeplitz_xx = self.layer_manager._gen_toeplitz2d(
-            (torch.abs(tx) ** 2 / denom).to(self.tcomplex), nharmonic_1=self.kdim[0], nharmonic_2=self.kdim[1], method="FFT"
+            weight_xx, nharmonic_1=self.kdim[0], nharmonic_2=self.kdim[1], method="FFT"
         )
         toeplitz_yy = self.layer_manager._gen_toeplitz2d(
-            (torch.abs(ty) ** 2 / denom).to(self.tcomplex), nharmonic_1=self.kdim[0], nharmonic_2=self.kdim[1], method="FFT"
+            weight_yy, nharmonic_1=self.kdim[0], nharmonic_2=self.kdim[1], method="FFT"
         )
         toeplitz_xy = self.layer_manager._gen_toeplitz2d(
-            (tx * torch.conj(ty) / denom).to(self.tcomplex), nharmonic_1=self.kdim[0], nharmonic_2=self.kdim[1], method="FFT"
+            weight_xy, nharmonic_1=self.kdim[0], nharmonic_2=self.kdim[1], method="FFT"
         )
         toeplitz_yx = self.layer_manager._gen_toeplitz2d(
-            (torch.conj(tx) * ty / denom).to(self.tcomplex), nharmonic_1=self.kdim[0], nharmonic_2=self.kdim[1], method="FFT"
+            weight_yx, nharmonic_1=self.kdim[0], nharmonic_2=self.kdim[1], method="FFT"
         )
 
         if debug_enabled:
@@ -2811,8 +2929,6 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
     def get_vector_components(self, layer_index: int):
         if self.layer_manager.layers[layer_index].mask_format is not None:
-            from . import vector as vector_module  # noqa: WPS433
-
             mask = self.layer_manager.layers[layer_index].mask_format.squeeze()
             if mask.dim() != 2:
                 mask = mask.to(self.tfloat).to(self.device).squeeze()
@@ -2828,13 +2944,18 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             )
             steps = getattr(self, "fff_vector_steps", getattr(self, "vector_field_steps", 1))
 
-            tx, ty = vector_module.compute_tangent_field(
+            generator = self._get_tangent_field_generator(
+                device=mask.device,
+                dtype=mask.dtype,
+                fourier_loss_weight=fourier_loss_weight,
+                smoothness_loss_weight=smoothness_loss_weight,
+                steps=steps,
+            )
+
+            tx, ty = generator.compute(
                 mask=mask,
                 XO=self.XO,
                 YO=self.YO,
-                lattice_t1=self.lattice_t1,
-                lattice_t2=self.lattice_t2,
-                kdim=tuple(self.kdim),
                 scheme=scheme,
                 fourier_loss_weight=fourier_loss_weight,
                 smoothness_loss_weight=smoothness_loss_weight,

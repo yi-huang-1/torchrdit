@@ -69,6 +69,29 @@ class LatticeVectors:
             v=self.v.to(device=device or self.v.device, dtype=dtype or self.v.dtype),
         )
 
+    def normalized_basis(
+        self,
+        *,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> torch.Tensor:
+        """Return normalized basis vectors on the requested device/dtype."""
+        raw_basis = torch.stack([self.u, self.v], dim=-1)
+        area = torch.abs(_cross_product(self.u, self.v))
+        normalized = raw_basis / torch.sqrt(area)[..., None, None]
+        return normalized.to(device=device or self.u.device, dtype=dtype or self.u.dtype)
+
+    def inverse_metric(
+        self,
+        *,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> torch.Tensor:
+        """Return the inverse lattice metric on the requested device/dtype."""
+        basis = self.normalized_basis(device=device, dtype=dtype)
+        metric = basis.transpose(-1, -2) @ basis
+        return torch.linalg.inv(metric)
+
 
 @dataclass
 class Expansion:
@@ -143,6 +166,13 @@ class FourierExpansionManager:
             shape=shape,
             axis=axis,
             centered_coordinates=centered_coordinates,
+        )
+
+    def fourier_penalty_weights(self) -> torch.Tensor:
+        """Return Fourier penalty weights on the current device/dtype."""
+        return _fourier_penalty_weights(
+            self._lattice_vectors,
+            self._expansion,
         )
 
 
@@ -417,21 +447,33 @@ def _periodic_forward_difference(field: torch.Tensor, axis: int) -> torch.Tensor
     return diff * field.shape[axis]
 
 
-def _transform_gradient(partial_grad: torch.Tensor, basis_vectors: torch.Tensor) -> torch.Tensor:
+def _transform_gradient(
+    partial_grad: torch.Tensor,
+    basis_vectors: torch.Tensor,
+    *,
+    inverse_metric: torch.Tensor | None = None,
+) -> torch.Tensor:
     """Apply the coordinate transform defined by the basis vectors."""
     basis = basis_vectors.to(partial_grad.dtype)
-    metric = basis.transpose(-1, -2) @ basis
-    inverse_metric = torch.linalg.inv(metric)
+    if inverse_metric is None:
+        metric = basis.transpose(-1, -2) @ basis
+        inverse_metric = torch.linalg.inv(metric)
+    else:
+        inverse_metric = inverse_metric.to(partial_grad.dtype)
     return partial_grad @ inverse_metric @ basis.transpose(-1, -2)
 
 
-def _scalar_field_forward_difference_gradient(field: torch.Tensor, basis_vectors: torch.Tensor) -> torch.Tensor:
+def _scalar_field_forward_difference_gradient(
+    field: torch.Tensor,
+    basis_vectors: torch.Tensor,
+    inverse_metric: torch.Tensor,
+) -> torch.Tensor:
     """Return the scalar-field gradient using periodic differences."""
     dimension = basis_vectors.shape[-1]
     axes = range(field.ndim - dimension, field.ndim)
     diffs = [_periodic_forward_difference(field, axis=ax) for ax in axes]
     partial_grad = torch.stack(diffs, dim=-1)
-    return _transform_gradient(partial_grad, basis_vectors)
+    return _transform_gradient(partial_grad, basis_vectors, inverse_metric=inverse_metric)
 
 
 def _vector_field_forward_difference_gradient(
@@ -439,15 +481,17 @@ def _vector_field_forward_difference_gradient(
     primitive_lattice_vectors: LatticeVectors,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Compute gradients for both vector components."""
-    basis_vectors = torch.stack(
-        [primitive_lattice_vectors.u, primitive_lattice_vectors.v],
-        dim=-1,
+    basis_vectors = primitive_lattice_vectors.normalized_basis(
+        device=field.device,
+        dtype=field.dtype,
     )
-    area = torch.abs(_cross_product(primitive_lattice_vectors.u, primitive_lattice_vectors.v))
-    basis_vectors = basis_vectors / torch.sqrt(area)[..., None, None]
+    inverse_metric = primitive_lattice_vectors.inverse_metric(
+        device=field.device,
+        dtype=field.dtype,
+    )
     return (
-        _scalar_field_forward_difference_gradient(field[..., 0], basis_vectors),
-        _scalar_field_forward_difference_gradient(field[..., 1], basis_vectors),
+        _scalar_field_forward_difference_gradient(field[..., 0], basis_vectors, inverse_metric),
+        _scalar_field_forward_difference_gradient(field[..., 1], basis_vectors, inverse_metric),
     )
 
 
@@ -461,21 +505,88 @@ def _smoothness_loss(
     return stacked.mean()
 
 
+class ConjugateGradientError(RuntimeError):
+    """Raised when the conjugate-gradient solver fails to converge."""
+
+
+def _solve_sym_pos_linear_system(
+    matvec: Callable[[torch.Tensor], torch.Tensor],
+    rhs: torch.Tensor,
+    *,
+    tol: float | None = None,
+    max_iter: int | None = None,
+    damping: float = 0.0,
+) -> torch.Tensor:
+    """Solve ``A x = rhs`` using conjugate gradients with matvec callback."""
+    if tol is None:
+        tol = float(rhs.norm()) * 1e-6
+    if max_iter is None:
+        max_iter = max(int(rhs.shape[0]), 10)
+    damping = float(damping)
+
+    x = torch.zeros_like(rhs)
+    r = rhs.clone()
+    p = r.clone()
+    rs_old = torch.dot(r, r)
+    if rs_old.sqrt() <= tol:
+        return x
+
+    eps = torch.finfo(rhs.dtype).eps
+    converged = False
+    restarts = 0
+    max_restarts = 5
+    for _ in range(max_iter):
+        Ap = matvec(p)
+        if damping:
+            Ap = Ap + damping * p
+        denom = torch.dot(p, Ap)
+        if torch.abs(denom) < eps:
+            if restarts < max_restarts:
+                p = r.clone()
+                restarts += 1
+                continue
+            if rs_old <= tol * tol:
+                converged = True
+                break
+            raise ConjugateGradientError("Conjugate gradient encountered near-zero curvature.")
+        alpha = rs_old / denom
+        x = x + alpha * p
+        r = r - alpha * Ap
+        rs_new = torch.dot(r, r)
+        if rs_new.sqrt() <= tol:
+            converged = True
+            break
+        beta = rs_new / rs_old
+        p = r + beta * p
+        rs_old = rs_new
+    if not converged:
+        residual = matvec(x) - rhs
+        if damping:
+            residual = residual + damping * x
+        if residual.norm() > tol:
+            raise ConjugateGradientError(
+                f"Conjugate gradient failed to converge within {max_iter} iterations."
+            )
+    return x
+
+
 def _compute_gradient(
     arr: torch.Tensor,
     primitive_lattice_vectors: LatticeVectors,
 ) -> torch.Tensor:
     """Return gradients for the indicator mask."""
-    basis_vectors = torch.stack(
-        [primitive_lattice_vectors.u, primitive_lattice_vectors.v],
-        dim=-1,
+    basis_vectors = primitive_lattice_vectors.normalized_basis(
+        device=arr.device,
+        dtype=arr.dtype,
     )
-    area = torch.abs(_cross_product(primitive_lattice_vectors.u, primitive_lattice_vectors.v))
-    basis_vectors = basis_vectors / torch.sqrt(area)[..., None, None]
+    inverse_metric = primitive_lattice_vectors.inverse_metric(
+        device=arr.device,
+        dtype=arr.dtype,
+    )
     grad_u = (torch.roll(arr, shifts=-1, dims=-2) - torch.roll(arr, shifts=1, dims=-2)) * (arr.shape[-2] / 2.0)
     grad_v = (torch.roll(arr, shifts=-1, dims=-1) - torch.roll(arr, shifts=1, dims=-1)) * (arr.shape[-1] / 2.0)
     partial_grad = torch.stack([grad_u, grad_v], dim=-1)
-    return _transform_gradient(partial_grad, basis_vectors)
+    return _transform_gradient(partial_grad, basis_vectors, inverse_metric=inverse_metric)
 
 
 def _alignment_loss(
@@ -509,21 +620,39 @@ def _transverse_wavevectors(
 
 def _fourier_loss(
     fourier_field: torch.Tensor,
-    expansion: Expansion,
-    primitive_lattice_vectors: LatticeVectors,
+    fourier_penalty_weights: torch.Tensor,
 ) -> torch.Tensor:
     """Compute the Fourier-domain penalty proportional to |k_t|^2."""
-    transverse_wavevectors = _transverse_wavevectors(primitive_lattice_vectors, expansion)
-    basis_vectors = torch.stack([primitive_lattice_vectors.u, primitive_lattice_vectors.v], dim=-1)
+    weights = fourier_penalty_weights.to(
+        dtype=torch.abs(fourier_field).dtype,
+        device=fourier_field.device,
+    )
+    return torch.sum(torch.abs(fourier_field) ** 2 * weights)
+
+
+def _fourier_penalty_weights(
+    primitive_lattice_vectors: LatticeVectors,
+    expansion: Expansion,
+) -> torch.Tensor:
+    """Precompute transverse |k_t|^2 weights for the Fourier loss."""
+    transverse_wavevectors = _transverse_wavevectors(
+        primitive_lattice_vectors,
+        expansion,
+    )
+    basis_vectors = torch.stack(
+        [primitive_lattice_vectors.u, primitive_lattice_vectors.v],
+        dim=-1,
+    )
     area = torch.abs(torch.linalg.det(basis_vectors))
-    kt = torch.linalg.norm(transverse_wavevectors, dim=-1) * torch.sqrt(area)
-    return torch.sum(torch.abs(fourier_field) ** 2 * kt[:, None] ** 2)
+    kt_squared = torch.linalg.norm(transverse_wavevectors, dim=-1) ** 2 * area
+    return kt_squared.unsqueeze(-1)
 
 
 def _field_loss(
     fourier_field: torch.Tensor,
     expansion: Expansion,
     primitive_lattice_vectors: LatticeVectors,
+    fourier_penalty_weights: torch.Tensor,
     target_field: torch.Tensor,
     elementwise_alignment_loss_weight: torch.Tensor,
     fourier_loss_weight: float,
@@ -540,7 +669,10 @@ def _field_loss(
     )
     loss = _alignment_loss(field, target_field, elementwise_alignment_loss_weight)
     if fourier_loss_weight > 0:
-        loss = loss + fourier_loss_weight * _fourier_loss(fourier_field, expansion, primitive_lattice_vectors)
+        loss = loss + fourier_loss_weight * _fourier_loss(
+            fourier_field,
+            fourier_penalty_weights,
+        )
     if smoothness_loss_weight > 0:
         loss = loss + smoothness_loss_weight * _smoothness_loss(field, primitive_lattice_vectors)
     return loss.real
@@ -560,12 +692,17 @@ def _field_loss_value_jac_and_hessian(
     flat_real: torch.Tensor,
     expansion: Expansion,
     primitive_lattice_vectors: LatticeVectors,
+    fourier_penalty_weights: torch.Tensor,
     target_field: torch.Tensor,
     elementwise_alignment_loss_weight: torch.Tensor,
     fourier_loss_weight: float,
     smoothness_loss_weight: float,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Evaluate loss, Jacobian, and Hessian for the Newton solve."""
+) -> Tuple[
+    torch.Tensor,
+    torch.Tensor,
+    Callable[[torch.Tensor], torch.Tensor],
+]:
+    """Evaluate loss, gradient, and Hessian-vector product callback."""
     field_shape = (expansion.num_terms, 2)
 
     def loss_from_real(real_vec: torch.Tensor) -> torch.Tensor:
@@ -575,6 +712,7 @@ def _field_loss_value_jac_and_hessian(
             fourier_field,
             expansion=expansion,
             primitive_lattice_vectors=primitive_lattice_vectors,
+            fourier_penalty_weights=fourier_penalty_weights,
             target_field=target_field,
             elementwise_alignment_loss_weight=elementwise_alignment_loss_weight,
             fourier_loss_weight=fourier_loss_weight,
@@ -584,11 +722,11 @@ def _field_loss_value_jac_and_hessian(
     loss_value = loss_from_real(flat_real)
     jac = torch.autograd.grad(loss_value, flat_real, create_graph=True)[0]
 
-    def grad_fn(vec: torch.Tensor) -> torch.Tensor:
-        return torch.autograd.grad(loss_from_real(vec), vec, create_graph=True)[0]
+    def hessian_matvec(vec: torch.Tensor) -> torch.Tensor:
+        _, hvp = torch.autograd.functional.hvp(loss_from_real, flat_real, vec)
+        return hvp
 
-    hessian = torch.autograd.functional.jacobian(grad_fn, flat_real)
-    return loss_value, jac, hessian
+    return loss_value, jac, hessian_matvec
 
 
 class TangentFieldGenerator:
@@ -634,6 +772,11 @@ class TangentFieldGenerator:
         steps: int | None = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute tangent fields for the requested scheme."""
+        # `_calculate_vector_field` in `solver.py` squeezes the mask the solver stores
+        # (possibly batched as `(N, H, W)` for dispersive stacks or vectorized inverse-
+        # design loops) and feeds each slice into this method, which always expects a
+        # single 2D mask. Keeping the contract here simple avoids pushing batch logic
+        # into the tangent generator while letting the solver reuse the cached instance.
         self._validate_inputs(mask, XO, YO)
         self._ensure_device_dtype(mask)
 
@@ -765,6 +908,7 @@ class TangentFieldGenerator:
         """Execute the Newton solve for a tangent field."""
         expansion = self.expansion
         primitive_lattice_vectors = self.lattice_vectors
+        fourier_penalty_weights = self._expansion_manager.fourier_penalty_weights()
 
         fourier_loss_weight = fourier_loss_weight / expansion.num_terms
         smoothness_loss_weight = smoothness_loss_weight / expansion.num_terms
@@ -798,17 +942,48 @@ class TangentFieldGenerator:
         flat_real = _complex_to_real(fourier_field.reshape(-1))
         flat_real_current = flat_real.clone().detach().requires_grad_(True)
 
+        # Rather than forming the dense Hessian (which scales quadratically in the
+        # number of harmonics), we solve each Newton step with a conjugate-gradient
+        # loop that only queries Hessian–vector products. Those products are obtained
+        # via autograd's `hvp`, keeping both memory usage and runtime manageable for
+        # the large grids used when `is_use_fff=True`.
         for iteration in range(max(steps, 1)):
-            _, jac, hessian = _field_loss_value_jac_and_hessian(
+            (
+                _,
+                jac,
+                hessian_matvec,
+            ) = _field_loss_value_jac_and_hessian(
                 flat_real_current,
                 expansion=expansion,
                 primitive_lattice_vectors=primitive_lattice_vectors,
+                fourier_penalty_weights=fourier_penalty_weights,
                 target_field=target_field,
                 elementwise_alignment_loss_weight=elementwise_alignment_weight,
                 fourier_loss_weight=fourier_loss_weight,
                 smoothness_loss_weight=smoothness_loss_weight,
             )
-            delta = torch.linalg.solve(hessian, jac)
+            try:
+                delta = _solve_sym_pos_linear_system(
+                    hessian_matvec,
+                    jac,
+                    tol=max(
+                        float(jac.norm()) * 1e-8,
+                        torch.finfo(jac.dtype).eps,
+                    ),
+                    max_iter=max(jac.numel() * 2, 10),
+                    damping=1e-6,
+                )
+            except ConjugateGradientError:
+                basis = torch.eye(jac.numel(), dtype=jac.dtype, device=jac.device)
+                hessian_cols = []
+                for column in basis.split(1, dim=1):
+                    hessian_cols.append(hessian_matvec(column.squeeze(1)))
+                hessian = torch.stack(hessian_cols, dim=1)
+                try:
+                    delta = torch.linalg.solve(hessian, jac)
+                except (RuntimeError, torch.linalg.LinAlgError):
+                    solution = torch.linalg.lstsq(hessian, jac.unsqueeze(-1)).solution
+                    delta = solution.squeeze(-1)
             next_real = flat_real_current - delta
             if iteration < max(steps, 1) - 1:
                 flat_real_current = next_real.detach().requires_grad_(True)

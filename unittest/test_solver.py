@@ -162,6 +162,148 @@ def test_solver_fff_vector_field_matches_generator():
     assert torch.allclose(p_yx, expected_n_yx, atol=5e-4, rtol=5e-4)
 
 
+def test_calculate_vector_field_reuses_generator(monkeypatch):
+    """Ensure `_calculate_vector_field` reuses a cached tangent-field generator."""
+    mat_air = create_material(name="Air", permittivity=1.0)
+    mat_sin = create_material(name="SiN", permittivity=(2.0) ** 2)
+
+    dev = create_solver(
+        algorithm=Algorithm.RCWA,
+        precision=Precision.DOUBLE,
+        rdim=[32, 32],
+        kdim=[5, 5],
+        lam0=np.array([1.55]),
+        is_use_FFF=True,
+    )
+    dev.update_ref_material(ref_material=mat_air)
+    dev.update_trn_material(trn_material=mat_air)
+    dev.add_layer(material_name=mat_sin, thickness=torch.tensor(0.35, dtype=torch.float64), is_homogeneous=False)
+
+    mask = torch.rand((32, 32), dtype=dev.tfloat, device=dev.device)
+
+    from torchrdit import vector as vector_module  # noqa: WPS433
+
+    instantiations = 0
+    real_generator_cls = vector_module.TangentFieldGenerator
+
+    class CountingGenerator(real_generator_cls):
+        def __init__(self, *args, **kwargs):
+            nonlocal instantiations
+            instantiations += 1
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(vector_module, "TangentFieldGenerator", CountingGenerator)
+
+    dev._calculate_vector_field(mask=mask)
+    dev._calculate_vector_field(mask=mask)
+
+    assert instantiations == 1
+
+
+def test_calculate_vector_field_reuses_toeplitz_inputs(monkeypatch):
+    """`_calculate_vector_field` should avoid redundant Toeplitz builds."""
+    mat_air = create_material(name="Air", permittivity=1.0)
+    mat_sin = create_material(name="SiN", permittivity=(2.0) ** 2)
+
+    dev = create_solver(
+        algorithm=Algorithm.RCWA,
+        precision=Precision.DOUBLE,
+        rdim=[32, 32],
+        kdim=[5, 5],
+        lam0=np.array([1.55]),
+        is_use_FFF=True,
+    )
+    dev.update_ref_material(ref_material=mat_air)
+    dev.update_trn_material(trn_material=mat_air)
+    dev.add_layer(material_name=mat_sin, thickness=torch.tensor(0.35, dtype=torch.float64), is_homogeneous=False)
+
+    mask = torch.rand((32, 32), dtype=dev.tfloat, device=dev.device)
+
+    call_sequence = []
+    original_toeplitz = dev.layer_manager._gen_toeplitz2d
+
+    def _counting_toeplitz(field, *args, **kwargs):
+        call_sequence.append(field)
+        return original_toeplitz(field, *args, **kwargs)
+
+    monkeypatch.setattr(dev.layer_manager, "_gen_toeplitz2d", _counting_toeplitz)
+
+    dev._calculate_vector_field(mask=mask)
+
+    assert len(call_sequence) == 4
+    assert torch.allclose(call_sequence[3], torch.conj(call_sequence[2]))
+
+
+def test_calculate_vector_field_reuses_toeplitz_inputs_unit_batch(monkeypatch):
+    """Toeplitz simplification should also hold for singleton-batch masks."""
+    mat_air = create_material(name="Air", permittivity=1.0)
+    mat_sin = create_material(name="SiN", permittivity=(2.0) ** 2)
+
+    dev = create_solver(
+        algorithm=Algorithm.RCWA,
+        precision=Precision.DOUBLE,
+        rdim=[32, 32],
+        kdim=[5, 5],
+        lam0=np.array([1.55]),
+        is_use_FFF=True,
+    )
+    dev.update_ref_material(ref_material=mat_air)
+    dev.update_trn_material(trn_material=mat_air)
+    dev.add_layer(material_name=mat_sin, thickness=torch.tensor(0.35, dtype=torch.float64), is_homogeneous=False)
+
+    mask = torch.rand((32, 32), dtype=dev.tfloat, device=dev.device).unsqueeze(0)
+
+    call_sequence = []
+    original_toeplitz = dev.layer_manager._gen_toeplitz2d
+
+    def _counting_toeplitz(field, *args, **kwargs):
+        call_sequence.append(field)
+        return original_toeplitz(field, *args, **kwargs)
+
+    monkeypatch.setattr(dev.layer_manager, "_gen_toeplitz2d", _counting_toeplitz)
+
+    dev._calculate_vector_field(mask=mask)
+
+    assert len(call_sequence) == 4
+    assert torch.allclose(call_sequence[3], torch.conj(call_sequence[2]))
+
+
+def test_calculate_vector_field_reuses_toeplitz_inputs_multi_batch(monkeypatch):
+    """Toeplitz simplification should extend to batched masks."""
+    mat_air = create_material(name="Air", permittivity=1.0)
+    mat_sin = create_material(name="SiN", permittivity=(2.0) ** 2)
+
+    dev = create_solver(
+        algorithm=Algorithm.RCWA,
+        precision=Precision.DOUBLE,
+        rdim=[32, 32],
+        kdim=[5, 5],
+        lam0=np.array([1.55]),
+        is_use_FFF=True,
+    )
+    dev.update_ref_material(ref_material=mat_air)
+    dev.update_trn_material(trn_material=mat_air)
+    dev.add_layer(material_name=mat_sin, thickness=torch.tensor(0.35, dtype=torch.float64), is_homogeneous=False)
+
+    batch_size = 3
+    mask = torch.rand((batch_size, 32, 32), dtype=dev.tfloat, device=dev.device)
+
+    call_sequence = []
+    original_toeplitz = dev.layer_manager._gen_toeplitz2d
+
+    def _counting_toeplitz(field, *args, **kwargs):
+        call_sequence.append(field)
+        return original_toeplitz(field, *args, **kwargs)
+
+    monkeypatch.setattr(dev.layer_manager, "_gen_toeplitz2d", _counting_toeplitz)
+
+    dev._calculate_vector_field(mask=mask)
+
+    assert len(call_sequence) == 4
+    assert call_sequence[0].shape[0] == batch_size
+    assert torch.allclose(call_sequence[3], torch.conj(call_sequence[2]))
+
+
 def test_solver_get_vector_components_matches_generator():
     """`get_vector_components` should reproduce tangent generator results."""
     mat_air = create_material(name="Air", permittivity=1.0)
