@@ -345,6 +345,126 @@ def test_solver_get_vector_components_matches_generator():
     assert torch.allclose(solver_ty, expected_ty.to(solver_ty.dtype), atol=1e-6, rtol=1e-6)
 
 
+def _build_basic_solver(rdim=32, kdim=3):
+    dev = create_solver(
+        algorithm=Algorithm.RCWA,
+        precision=Precision.DOUBLE,
+        rdim=[rdim, rdim],
+        kdim=[kdim, kdim],
+        lam0=np.array([1.55]),
+        lengthunit="um",
+        is_use_FFF=False,
+    )
+    mat_air = create_material(name="Air", permittivity=1.0)
+    mat_sin = create_material(name="SiN", permittivity=(2.0) ** 2)
+    dev.update_ref_material(ref_material=mat_air)
+    dev.update_trn_material(trn_material=mat_air)
+    return dev, mat_air, mat_sin
+
+
+def test_layer_slicing_matches_manual_stack():
+    """Sliced layers should match manually duplicated stacks."""
+    slice_count = 3
+    total_thickness = torch.tensor(0.36, dtype=torch.float64)
+
+    dev_sliced, mat_air, mat_sin = _build_basic_solver()
+    dev_manual, _, _ = _build_basic_solver()
+
+    mask = torch.zeros(dev_sliced.rdim, dtype=dev_sliced.tfloat)
+    mask[8:24, 8:24] = 1.0
+
+    dev_sliced.add_layer(
+        material_name=mat_sin,
+        thickness=total_thickness.clone(),
+        is_homogeneous=False,
+        slice_count=slice_count,
+    )
+    dev_sliced.add_layer(material_name=mat_air, thickness=torch.tensor(0.1, dtype=torch.float64), is_homogeneous=True)
+    dev_sliced.update_er_with_mask(mask=mask, layer_index=0, method="FFT")
+    assert getattr(dev_sliced.layer_manager.layers[0], "slice_count") == slice_count
+
+    per_slice_thickness = total_thickness / slice_count
+    for idx in range(slice_count):
+        dev_manual.add_layer(
+            material_name=mat_sin,
+            thickness=per_slice_thickness.clone(),
+            is_homogeneous=False,
+        )
+        dev_manual.update_er_with_mask(mask=mask, layer_index=idx, method="FFT")
+    dev_manual.add_layer(material_name=mat_air, thickness=torch.tensor(0.1, dtype=torch.float64), is_homogeneous=True)
+
+    src_sliced = dev_sliced.add_source(theta=0.0, phi=0.0, pte=1.0, ptm=0.0)
+    src_manual = dev_manual.add_source(theta=0.0, phi=0.0, pte=1.0, ptm=0.0)
+
+    result_sliced = dev_sliced.solve(src_sliced, is_use_FFF=False)
+    result_manual = dev_manual.solve(src_manual, is_use_FFF=False)
+
+    torch.testing.assert_close(result_sliced.transmission, result_manual.transmission, atol=1e-6, rtol=1e-4)
+    torch.testing.assert_close(result_sliced.reflection, result_manual.reflection, atol=1e-6, rtol=1e-4)
+
+
+def test_layer_slicing_preserves_gradients():
+    """Repeated sub-slice multiplication must preserve autograd connectivity."""
+    slice_count = 2
+    total_thickness = torch.tensor(0.24, dtype=torch.float64)
+
+    dev, mat_air, mat_sin = _build_basic_solver()
+
+    mask = torch.rand(dev.rdim, dtype=dev.tfloat)
+    mask.requires_grad_(True)
+
+    dev.add_layer(
+        material_name=mat_sin,
+        thickness=total_thickness,
+        is_homogeneous=False,
+        slice_count=slice_count,
+    )
+    dev.update_er_with_mask(mask=mask, layer_index=0, method="FFT")
+
+    src = dev.add_source(theta=0.0, phi=0.0, pte=1.0, ptm=0.0)
+    result = dev.solve(src, is_use_FFF=False)
+    loss = result.transmission.sum()
+    loss.backward()
+
+    assert mask.grad is not None
+    assert torch.all(torch.isfinite(mask.grad))
+
+
+def test_layer_slice_count_survives_replace_to_grating():
+    """update_er_with_mask should keep the configured slice_count even after conversion to grating."""
+    slice_count = 5
+    dev, mat_air, mat_sin = _build_basic_solver()
+    dev.add_layer(
+        material_name=mat_sin,
+        thickness=torch.tensor(0.18, dtype=torch.float64),
+        is_homogeneous=True,
+        slice_count=slice_count,
+    )
+
+    mask = torch.ones(dev.rdim, dtype=dev.tfloat)
+    dev.update_er_with_mask(mask=mask, layer_index=0, method="FFT")
+
+    assert dev.layer_manager.layers[0].slice_count == slice_count
+
+
+def test_replace_layer_preserves_slice_count():
+    """LayerManager replacements should retain slice_count metadata."""
+    slice_count = 3
+    dev, _, mat_sin = _build_basic_solver()
+    dev.add_layer(
+        material_name=mat_sin,
+        thickness=torch.tensor(0.12, dtype=torch.float64),
+        is_homogeneous=False,
+        slice_count=slice_count,
+    )
+
+    dev.layer_manager.replace_layer_to_homogeneous(layer_index=0)
+    assert dev.layer_manager.layers[0].slice_count == slice_count
+
+    dev.layer_manager.replace_layer_to_grating(layer_index=0)
+    assert dev.layer_manager.layers[0].slice_count == slice_count
+
+
 @pytest.mark.parametrize(
     "algorithm, precision, expected_dtype",
     [

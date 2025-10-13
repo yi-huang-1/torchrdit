@@ -103,11 +103,14 @@ def _add_layers(
         is_homogeneous = layer.get("is_homogeneous", True)
         is_optimize = layer.get("is_optimize", False)
 
+        slice_count = layer.get("slice_count", 1)
+
         solver.add_layer(
             material_name=materials[material_name],
             thickness=thickness,
             is_homogeneous=is_homogeneous,
             is_optimize=is_optimize,
+            slice_count=slice_count,
         )
 
 

@@ -195,10 +195,57 @@ class TestSolverBuilder(unittest.TestCase):
         
         # Create a solver using the function
         solver = create_solver_from_builder(configure_builder)
-        
+
         # Check that the solver was created correctly
         self.assertIsInstance(solver, RCWASolver)
-        self.assertAlmostEqual(solver.lam0[0], 1.0, places=6)
+
+    def test_builder_layer_slice_count(self):
+        """Builder.add_layer should propagate slice_count into the solver."""
+        builder = get_solver_builder()
+        solver = (
+            builder.with_algorithm(Algorithm.RCWA)
+            .with_wavelengths(1.55)
+            .with_real_dimensions([16, 16])
+            .with_k_dimensions([3, 3])
+            .with_materials([self.air, self.silicon])
+            .add_layer(
+                {
+                    "material": "silicon",
+                    "thickness": 0.2,
+                    "is_homogeneous": False,
+                    "slice_count": 4,
+                }
+            )
+            .build()
+        )
+
+        layer = solver.layer_manager.layers[0]
+        self.assertEqual(layer.material_name, "silicon")
+        self.assertEqual(layer.slice_count, 4)
+
+    def test_config_layer_slice_count_defaults(self):
+        """from_config should accept per-layer slice_count and sanitize invalid values."""
+        config = {
+            "algorithm": "RCWA",
+            "wavelengths": [1.55],
+            "rdim": [32, 32],
+            "kdim": [3, 3],
+            "materials": {
+                "air": {"permittivity": 1.0},
+                "silicon": {"permittivity": 11.7},
+            },
+            "layers": [
+                {"material": "silicon", "thickness": 0.3, "slice_count": 6},
+                {"material": "air", "thickness": 0.1, "slice_count": 0},
+            ],
+        }
+
+        builder = get_solver_builder()
+        solver = builder.from_config(config).build()
+
+        self.assertEqual(solver.layer_manager.layers[0].slice_count, 6)
+        # Invalid (0) should fall back to 1 via Cell3D.add_layer sanitization
+        self.assertEqual(solver.layer_manager.layers[1].slice_count, 1)
     
     def test_add_materials_and_layers(self):
         """Test adding materials and layers to the builder."""

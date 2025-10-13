@@ -1428,6 +1428,15 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             print(f"[DEBUG] mat_kx_diag shape: {matrices_batched['mat_kx_diag'].shape}")
 
         layer = self.layer_manager.layers[n_layer]
+        slice_count = getattr(layer, "slice_count", 1)
+        if isinstance(layer.thickness, torch.Tensor):
+            layer_thickness_tensor = layer.thickness.to(self.device)
+        else:
+            layer_thickness_tensor = torch.tensor(
+                layer.thickness, dtype=self.tfloat, device=self.device
+            )
+        layer_thickness_complex = layer_thickness_tensor.to(self.tcomplex)
+        slice_thickness = layer_thickness_complex / slice_count
         smat_layer = {}
 
         # Handle non-homogeneous layers
@@ -1512,9 +1521,6 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                     ]
                 )
 
-            # Get layer thickness
-            layer_thickness = self.layer_manager.layers[n_layer].thickness.to(self.device).to(self.tcomplex)
-
             # Vectorized non-homogeneous layer processing
             # Both RCWA and R-DIT algorithms support batch dimensions in the first axis
 
@@ -1535,7 +1541,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
                 # Process all (source, frequency) combinations in parallel
                 smat_layer = self._solve_nonhomo_layer(
-                    layer_thickness=layer_thickness,
+                    layer_thickness=slice_thickness,
                     p_mat_i=p_mat_i_flat,
                     q_mat_i=q_mat_i_flat,
                     mat_w0=mat_w0_flat,
@@ -1551,7 +1557,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             else:
                 # Single source case - keep original logic
                 smat_layer = self._solve_nonhomo_layer(
-                    layer_thickness=layer_thickness,
+                    layer_thickness=slice_thickness,
                     p_mat_i=p_mat_i[0],  # Shape: (n_freqs, 2*kdim², 2*kdim²)
                     q_mat_i=q_mat_i[0],  # Shape: (n_freqs, 2*kdim², 2*kdim²)
                     mat_w0=matrices_batched["mat_w0"][0],
@@ -1748,7 +1754,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 -1j
                 * mat_kz_i
                 * k_0_expanded
-                * self.layer_manager.layers[n_layer].thickness.to(self.device).to(self.tcomplex)
+                * slice_thickness
             )
 
             # Create diagonal matrix - concatenate along last dimension
@@ -1782,6 +1788,13 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             smat_layer["S12"] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tsolve(mat_a_i, mat_b_i))
             smat_layer["S21"] = smat_layer["S12"]
             smat_layer["S22"] = smat_layer["S11"]
+
+        if slice_count > 1:
+            smat_slice = {key: value for key, value in smat_layer.items()}
+            smat_combined = smat_slice
+            for _ in range(slice_count - 1):
+                smat_combined = redhstar(smat_combined, smat_slice, tcomplex=self.tcomplex)
+            smat_layer = smat_combined
 
         # Exit adapter: remove batch dimension if input was single source
         if is_single_source:
