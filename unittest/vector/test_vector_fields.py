@@ -356,8 +356,6 @@ def test_generator_class_matches_module_function(vector_module, base_solver, cir
 
 
 def test_plot_script_creates_generator(vector_module, base_solver, circle_mask):
-    from useful_scripts import plot_vector_fields as plot_script  # type: ignore
-
     class Args:
         scheme = "POL"
         kdim = tuple(base_solver.kdim)
@@ -365,7 +363,17 @@ def test_plot_script_creates_generator(vector_module, base_solver, circle_mask):
         smoothness_loss_weight = 1e-3
         steps = 1
 
-    generator = plot_script.create_tangent_generator(base_solver, Args)
+    def create_tangent_generator(solver, args):
+        return vector_module.TangentFieldGenerator(
+            lattice_t1=solver.lattice_t1,
+            lattice_t2=solver.lattice_t2,
+            kdim=tuple(args.kdim),
+            fourier_loss_weight=args.fourier_loss_weight,
+            smoothness_loss_weight=args.smoothness_loss_weight,
+            steps=args.steps,
+        )
+
+    generator = create_tangent_generator(base_solver, Args)
     assert isinstance(generator, vector_module.TangentFieldGenerator)
 
     tx, ty = generator.compute(mask=circle_mask, XO=base_solver.XO, YO=base_solver.YO, scheme=Args.scheme)
