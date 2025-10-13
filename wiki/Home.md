@@ -30,6 +30,7 @@ Welcome to the `TorchRDIT` documentation. `TorchRDIT` is an advanced software pa
 - [Results Module](Results) - Structured data containers for simulation results
 - [Shapes Module](Shapes) - Shape generation for photonic structures
 - [Solver Module](Solver) - Core solver functionality
+- [Vector Module](Vector) - Tangent vector field generation
 - [Utils](Utils) - Utility functions
 - [Visualization](Visualization) - Tools for visualizing results
 
@@ -42,12 +43,17 @@ TorchRDIT now includes industry-standard GDS file format support:
 - Batch processing for multiple designs
 - See the [GDS](GDS) page for details
 
-## New in v0.1.22: Source Batching
+## New in v0.1.27: Unified Interface & Field APIs
 
-TorchRDIT now supports efficient batched processing of multiple sources:
-- Process multiple incident angles simultaneously
-- 3-6x performance improvement for parameter sweeps
-- Full gradient support for multi-condition optimization
+TorchRDIT v0.1.27 introduces major improvements:
+- **Unified SolverResults**: Single class handles both single and batched sources
+
+## New in v0.1.22-v0.1.26: Source Batching & GDS Support
+
+Recent features include:
+- **Source Batching**: Process multiple incident angles simultaneously (3-6x speedup)
+- **GDS Integration**: Industry-standard file format support for fabrication
+- **Numerical Stability**: Enhanced protection for edge cases
 - See the [Source Batching](SourceBatching) page for details
 
 ## Examples

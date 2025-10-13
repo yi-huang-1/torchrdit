@@ -1,9 +1,10 @@
 """
-Test suite for tensor-level batched matrix operations.
+Tests for tensor-level batched matrix setup in the solver.
 
-This test file validates that batched matrix operations (identity matrices, 
-matrix multiplications) properly handle the source dimension and maintain 
-mathematical correctness.
+These tests exercise the solver's own batched matrix setup via
+`_initialize_k_vectors` and `_setup_common_matrices` to ensure batched results
+match sequential results and shapes are correct. They avoid re-implementing
+matrix logic in the test and do not test generic PyTorch behavior.
 """
 
 import sys
@@ -46,256 +47,70 @@ class TestBatchedMatrices:
 
         return solver
 
-    def test_batched_identity_matrix_creation(self):
-        """Test creation of batched identity matrices."""
-        n_sources = 4
-        n_freqs = 3
-        n_harmonics = 5
-        device = "cpu"
-        dtype = torch.complex64
-        
-        # Method 1: Create once and expand
-        eye = torch.eye(n_harmonics, device=device, dtype=dtype)
-        eye_batched = eye.unsqueeze(0).unsqueeze(0).expand(n_sources, n_freqs, -1, -1)
-        
-        # Verify shape
-        assert eye_batched.shape == (n_sources, n_freqs, n_harmonics, n_harmonics)
-        
-        # Verify it's still an identity matrix for each source and frequency
-        for i in range(n_sources):
-            for j in range(n_freqs):
-                torch.testing.assert_close(eye_batched[i, j], eye, rtol=1e-6, atol=1e-8)
-                
-        # Method 2: Using broadcasting directly
-        eye_broadcast = torch.eye(n_harmonics, device=device, dtype=dtype)[None, None, :, :]
-        
-        # Should work with broadcasting
-        test_tensor = torch.randn(n_sources, n_freqs, n_harmonics, n_harmonics, dtype=dtype)
-        result = eye_broadcast + test_tensor
-        assert result.shape == (n_sources, n_freqs, n_harmonics, n_harmonics)
+    def _compute_matrices_sequential(self, solver, sources):
+        """Compute matrices per source using solver sequential path."""
+        mats = []
+        for src in sources:
+            solver._pre_solve(src)
+            kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
+            matrices = solver._setup_common_matrices(kx_0, ky_0, kz_ref_0, kz_trn_0)
+            mats.append(matrices)
+        return mats
 
-    def test_batched_matrix_multiplication(self):
-        """Test batched matrix multiplication with source dimension."""
-        n_sources = 3
-        n_freqs = 2
-        n_harmonics = 4
-        device = "cpu"
-        dtype = torch.complex64
-        
-        # Create test matrices with shape (n_sources, n_freqs, n_harmonics, n_harmonics)
-        A = torch.randn(n_sources, n_freqs, n_harmonics, n_harmonics, dtype=dtype, device=device)
-        B = torch.randn(n_sources, n_freqs, n_harmonics, n_harmonics, dtype=dtype, device=device)
-        
-        # Test @ operator
-        C = A @ B
-        assert C.shape == (n_sources, n_freqs, n_harmonics, n_harmonics)
-        
-        # Verify correctness by checking one element
-        for i in range(n_sources):
-            for j in range(n_freqs):
-                # NaN values are bugs - matrix results should never contain NaN
-                assert not torch.isnan(C[i, j]).any(), \
-                    f"NaN values found in matrix multiplication result at [{i}, {j}] - this is a bug!"
-                
-                expected = A[i, j] @ B[i, j]
-                assert not torch.isnan(expected).any(), \
-                    f"NaN values found in expected matrix result at [{i}, {j}] - this is a bug!"
-                
-                torch.testing.assert_close(C[i, j], expected, rtol=1e-5, atol=1e-6)
-
-    def test_batched_diagonal_matrix_operations(self):
-        """Test operations with diagonal matrices in batched setting."""
-        solver = self.setup_solver(n_freqs=2, kdim=(3, 3))
-        n_sources = 4
-        n_harmonics_squared = solver.kdim[0] * solver.kdim[1]
-        
-        # Create batched diagonal values
-        # Shape: (n_sources, n_freqs, n_harmonics_squared)
-        diag_values = torch.randn(n_sources, solver.n_freqs, n_harmonics_squared, 
-                                  dtype=solver.tcomplex, device=solver.device)
-        
-        # Convert to diagonal matrices
-        # Method 1: Using torch.diag_embed
-        diag_matrices = torch.diag_embed(diag_values)
-        assert diag_matrices.shape == (n_sources, solver.n_freqs, n_harmonics_squared, n_harmonics_squared)
-        
-        # Verify diagonal property
-        for i in range(n_sources):
-            for j in range(solver.n_freqs):
-                # Check off-diagonal elements are zero
-                mask = torch.eye(n_harmonics_squared, dtype=torch.bool, device=solver.device)
-                off_diag = diag_matrices[i, j][~mask]
-                assert torch.allclose(off_diag, torch.zeros_like(off_diag))
-                
-                # Check diagonal elements match
-                diag_extracted = torch.diagonal(diag_matrices[i, j])
-                torch.testing.assert_close(diag_extracted, diag_values[i, j], rtol=1e-6, atol=1e-8)
-
-    def test_batched_k_vector_to_matrix_transformation(self):
-        """Test transformation of k-vectors to diagonal matrices with batching."""
+    def test_setup_common_matrices_single_matches_batched(self):
+        """Single-source matrices equal the first slice of batched matrices."""
         solver = self.setup_solver(n_freqs=3, kdim=(5, 5))
-        n_sources = 3
-        
-        # Create batched k-vectors
-        # Shape: (n_sources, n_freqs, kdim[0], kdim[1])
-        kx_0 = torch.randn(n_sources, solver.n_freqs, solver.kdim[0], solver.kdim[1], 
-                          dtype=solver.tcomplex, device=solver.device)
-        ky_0 = torch.randn(n_sources, solver.n_freqs, solver.kdim[0], solver.kdim[1], 
-                          dtype=solver.tcomplex, device=solver.device)
-        
-        # Transform to diagonal matrices (flatten spatial dimensions)
-        # Current solver approach: transpose then flatten
-        mat_kx = kx_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
-        mat_ky = ky_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
-        
-        # Verify shape
-        n_harmonics_squared = solver.kdim[0] * solver.kdim[1]
-        assert mat_kx.shape == (n_sources, solver.n_freqs, n_harmonics_squared)
-        assert mat_ky.shape == (n_sources, solver.n_freqs, n_harmonics_squared)
-        
-        # Convert to diagonal matrices for use in matrix operations
-        mat_kx_diag = torch.diag_embed(mat_kx)
-        mat_ky_diag = torch.diag_embed(mat_ky)
-        
-        assert mat_kx_diag.shape == (n_sources, solver.n_freqs, n_harmonics_squared, n_harmonics_squared)
-        assert mat_ky_diag.shape == (n_sources, solver.n_freqs, n_harmonics_squared, n_harmonics_squared)
+        source = {"theta": 0.1, "phi": 0.2, "pte": 1.0, "ptm": 0.0}
 
-    def test_batched_matrix_inverse(self):
-        """Test batched matrix inverse operations."""
-        n_sources = 2
-        n_freqs = 3
-        n_harmonics = 4
-        device = "cpu"
-        dtype = torch.complex64
-        
-        # Create invertible matrices
-        A = torch.randn(n_sources, n_freqs, n_harmonics, n_harmonics, dtype=dtype, device=device)
-        # Make sure they're invertible by adding diagonal dominance
-        eye = torch.eye(n_harmonics, dtype=dtype, device=device)
-        A = A + 3 * eye[None, None, :, :]
-        
-        # Compute inverse
-        A_inv = torch.linalg.inv(A)
-        
-        # Verify A @ A_inv = I
-        identity = A @ A_inv
-        expected_identity = eye[None, None, :, :].expand(n_sources, n_freqs, -1, -1)
-        
-        torch.testing.assert_close(identity, expected_identity, rtol=1e-5, atol=1e-6)
+        # Sequential
+        solver._pre_solve(source)
+        kx_s, ky_s, kz_ref_s, kz_trn_s = solver._initialize_k_vectors()
+        mats_single = solver._setup_common_matrices(kx_s, ky_s, kz_ref_s, kz_trn_s)
 
-    def test_batched_matrix_solve(self):
-        """Test batched linear system solving."""
-        n_sources = 3
-        n_freqs = 2
-        n_harmonics = 5
-        device = "cpu"
-        dtype = torch.complex64
-        
-        # Create system A @ x = b
-        A = torch.randn(n_sources, n_freqs, n_harmonics, n_harmonics, dtype=dtype, device=device)
-        # Make A well-conditioned
-        eye = torch.eye(n_harmonics, dtype=dtype, device=device)
-        A = A + 3 * eye[None, None, :, :]
-        
-        b = torch.randn(n_sources, n_freqs, n_harmonics, 1, dtype=dtype, device=device)
-        
-        # Solve using torch.linalg.solve
-        x = torch.linalg.solve(A, b)
-        
-        # Verify solution
-        b_reconstructed = A @ x
-        torch.testing.assert_close(b_reconstructed, b, rtol=1e-5, atol=1e-6)
+        # Batched with single source
+        solver._pre_solve([source])
+        kx_b, ky_b, kz_ref_b, kz_trn_b = solver._initialize_k_vectors()
+        mats_batched = solver._setup_common_matrices(kx_b, ky_b, kz_ref_b, kz_trn_b)
 
-    def test_memory_efficiency_large_batch(self):
-        """Test memory efficiency with large batch sizes."""
-        n_sources = 32  # Large batch
-        n_freqs = 10
-        n_harmonics = 25  # 5x5 grid
-        device = "cpu"
-        dtype = torch.complex64
-        
-        # Create identity matrix efficiently
-        eye = torch.eye(n_harmonics, device=device, dtype=dtype)
-        
-        # Method 1: Expand (memory efficient - no copy)
-        eye_expanded = eye.unsqueeze(0).unsqueeze(0).expand(n_sources, n_freqs, -1, -1)
-        
-        # Method 2: Repeat (creates copies - less memory efficient)
-        eye_repeated = eye.unsqueeze(0).unsqueeze(0).repeat(n_sources, n_freqs, 1, 1)
-        
-        # Both should give same result
-        torch.testing.assert_close(eye_expanded, eye_repeated)
-        
-        # Verify broadcasting works without creating full tensor
-        test_diag = torch.randn(n_sources, n_freqs, n_harmonics, dtype=dtype, device=device)
-        # This should work efficiently with broadcasting
-        result = eye[None, None, :, :] * test_diag[:, :, :, None]
-        assert result.shape == (n_sources, n_freqs, n_harmonics, n_harmonics)
+        # Compare a subset of key matrices
+        keys = [
+            "mat_kx", "mat_ky", "mat_kz_ref", "mat_kz_trn",
+            "mat_kx_kx", "mat_ky_ky", "mat_kx_ky", "mat_ky_kx",
+            "mat_w0", "mat_v0",
+        ]
+        for k in keys:
+            torch.testing.assert_close(mats_batched[k][0], mats_single[k], rtol=1e-5, atol=1e-6)
 
-    def test_batched_matrix_operations_with_solver_dimensions(self):
-        """Test matrix operations using actual solver dimensions and setup."""
-        solver = self.setup_solver(n_freqs=3, kdim=(7, 7))
-        n_sources = 5
-        
-        # Initialize solver to get mesh grids
-        source = {"theta": 0.1, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
-        solver.src = source
-        solver._pre_solve()
-        
-        n_harmonics_squared = solver.kdim[0] * solver.kdim[1]
-        
-        # Create batched identity matrices as would be needed in solver
-        ident_mat_k = torch.eye(n_harmonics_squared, dtype=solver.tcomplex, device=solver.device)
-        ident_mat_k2 = torch.eye(2 * n_harmonics_squared, dtype=solver.tcomplex, device=solver.device)
-        
-        # For batched operation, we can broadcast these
-        # Shape for operations: (n_sources, n_freqs, size, size)
-        
-        # Test a typical solver operation pattern
-        # Create some test diagonal matrices
-        test_diag = torch.randn(n_sources, solver.n_freqs, n_harmonics_squared, 
-                               dtype=solver.tcomplex, device=solver.device)
-        test_mat_diag = torch.diag_embed(test_diag)
-        
-        # Typical operation: I - D where D is diagonal
-        result = ident_mat_k[None, None, :, :] - test_mat_diag
-        assert result.shape == (n_sources, solver.n_freqs, n_harmonics_squared, n_harmonics_squared)
-        
-        # Verify the operation
+    def test_setup_common_matrices_multi_sources_consistency(self):
+        """Batched matrices match sequential per-source results for multiple sources."""
+        solver = self.setup_solver(n_freqs=4, kdim=(3, 3))
+        sources = [
+            {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
+            {"theta": np.pi/6, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
+            {"theta": np.pi/4, "phi": np.pi/4, "pte": 0.5, "ptm": 0.5},
+            {"theta": np.pi/3, "phi": np.pi/2, "pte": 0.0, "ptm": 1.0},
+        ]
+
+        mats_seq = self._compute_matrices_sequential(solver, sources)
+
+        solver._pre_solve(sources)
+        kx_b, ky_b, kz_ref_b, kz_trn_b = solver._initialize_k_vectors()
+        mats_b = solver._setup_common_matrices(kx_b, ky_b, kz_ref_b, kz_trn_b)
+
+        # Sanity: shapes
+        n_sources = len(sources)
+        n_freqs = solver.n_freqs
+        n_harm = solver.kdim[0] * solver.kdim[1]
+        assert mats_b["mat_kx"].shape == (n_sources, n_freqs, n_harm)
+        assert mats_b["mat_w0"].shape == (n_sources, n_freqs, 2 * n_harm, 2 * n_harm)
+
+        # No NaNs and per-source equality
         for i in range(n_sources):
-            for j in range(solver.n_freqs):
-                expected = ident_mat_k - torch.diag(test_diag[i, j])
-                torch.testing.assert_close(result[i, j], expected, rtol=1e-6, atol=1e-8)
-
-    def test_gradient_flow_through_matrix_operations(self):
-        """Test that gradients flow correctly through batched matrix operations."""
-        n_sources = 2
-        n_freqs = 2
-        n_harmonics = 3
-        device = "cpu"
-        dtype = torch.float32  # Use float for gradient computation
-        
-        # Create matrices with gradients
-        A = torch.randn(n_sources, n_freqs, n_harmonics, n_harmonics, 
-                       dtype=dtype, device=device, requires_grad=True)
-        B = torch.randn(n_sources, n_freqs, n_harmonics, n_harmonics, 
-                       dtype=dtype, device=device, requires_grad=True)
-        
-        # Perform operations
-        C = A @ B
-        D = C + torch.eye(n_harmonics, dtype=dtype, device=device)[None, None, :, :]
-        
-        # Compute loss
-        loss = D.sum()
-        loss.backward()
-        
-        # Check gradients exist
-        assert A.grad is not None, "Gradient should flow to A"
-        assert B.grad is not None, "Gradient should flow to B"
-        
-        # Gradients should have same shape as inputs
-        assert A.grad.shape == A.shape
-        assert B.grad.shape == B.shape
+            for k, v_seq in mats_seq[i].items():
+                v_b = mats_b[k][i]
+                assert not torch.isnan(v_b).any(), f"NaN in batched matrix {k} for source {i}"
+                assert not torch.isnan(v_seq).any(), f"NaN in sequential matrix {k} for source {i}"
+                torch.testing.assert_close(v_b, v_seq, rtol=1e-5, atol=1e-6)
 
 
 if __name__ == "__main__":

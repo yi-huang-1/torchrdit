@@ -4,7 +4,7 @@ import numpy as np
 
 from torchrdit.solver import create_solver
 from torchrdit.constants import (
-    Algorithm, Precision, EPS_0, MU_0, C_0, ETA_0, Q_E,
+    Algorithm, Precision, EPS_0, MU_0, C_0, ETA_0,
     frequnit_dict, lengthunit_dict
 )
 
@@ -24,20 +24,11 @@ class TestConstantsDocExamples(unittest.TestCase):
     """
     
     def test_physical_constants_example(self):
-        """Test the example of using physical constants."""
-        # Example from module docstring
-        # Calculate the refractive index from relative permittivity
-        epsilon_r = 2.25  # SiO2
-        n = (epsilon_r)**0.5
-        
-        # Verify the calculation
-        self.assertAlmostEqual(n, 1.5, places=6)
-        
-        # Additional verification of constants
+        """Verify relationships among published physical constants."""
         # Speed of light calculation from EPS_0 and MU_0
         c_calculated = 1 / np.sqrt(EPS_0 * MU_0)
         self.assertAlmostEqual(c_calculated, C_0, places=6)
-        
+
         # Vacuum impedance calculation from MU_0 and EPS_0
         eta_calculated = np.sqrt(MU_0 / EPS_0)
         self.assertAlmostEqual(eta_calculated, ETA_0, places=6)
@@ -56,7 +47,7 @@ class TestConstantsDocExamples(unittest.TestCase):
         # Frequency conversion: THz to Hz
         freq_thz = 193.5  # Common optical frequency
         freq_hz = freq_thz * frequnit_dict['thz']
-        self.assertEqual(freq_hz, 193.5e12)
+        self.assertAlmostEqual(freq_hz, 193.5e12, places=6)
         
         # Length conversion: μm to nm
         length_um = 2.0
@@ -108,10 +99,7 @@ class TestConstantsDocExamples(unittest.TestCase):
         # Verify precision settings affect the solver's data types
         self.assertEqual(single_prec_solver.tfloat, torch.float32)
         self.assertEqual(double_prec_solver.tfloat, torch.float64)
-        
-        # The precision affects internal tensor dtype - verify the statement
-        self.assertEqual(torch.float32, torch.float32)  # Single precision
-        self.assertEqual(torch.float64, torch.float64)  # Double precision
+
 
 
 if __name__ == '__main__':

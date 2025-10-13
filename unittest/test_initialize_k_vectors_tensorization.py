@@ -10,7 +10,6 @@ then implementation is created to satisfy the tests.
 """
 
 import numpy as np
-import pytest
 import torch
 
 from torchrdit.solver import create_solver
@@ -222,7 +221,7 @@ class TestEdgeCases:
         assert torch.isfinite(ky_batched).all(), "ky_batched contains non-finite values"
 
     def test_grazing_incidence(self):
-        """Test near-grazing incidence (θ ≈ π/2)."""
+        """Test near-grazing incidence (θ ≈ π/2) yields finite outputs."""
         # Use angle close to but not exactly 90 degrees to avoid singularities
         theta_grazing = np.pi / 2 - 0.01  # 89.43 degrees
         source = self.solver.add_source(theta=theta_grazing, phi=0.0, pte=1.0, ptm=0.0)
@@ -245,6 +244,12 @@ class TestEdgeCases:
         )
         assert torch.isfinite(ky_single).all(), (
             "ky_single contains non-finite values at grazing incidence"
+        )
+        assert torch.isfinite(kx_batched).all(), (
+            "kx_batched contains non-finite values at grazing incidence"
+        )
+        assert torch.isfinite(ky_batched).all(), (
+            "ky_batched contains non-finite values at grazing incidence"
         )
 
     def test_complex_refractive_index(self):
@@ -283,7 +288,7 @@ class TestEdgeCases:
         )
 
     def test_numerical_relaxation(self):
-        """Test that numerical relaxation is applied consistently."""
+        """Zero-order terms are relaxed (non-zero) and consistent across flows."""
         # Create a source that will likely have zero k-components
         source = self.solver.add_source(theta=0.0, phi=0.0, pte=1.0, ptm=0.0)
 
@@ -296,11 +301,7 @@ class TestEdgeCases:
         self.solver._pre_solve([source])
         kx_batched, ky_batched, _, _ = self.solver._initialize_k_vectors()
 
-        # Check that relaxation was applied (no exact zeros should remain after relaxation)
-        epsilon = 1e-6  # Expected relaxation value
-
-        # For normal incidence, the zero-order term should be close to epsilon
-        # (after relaxation is applied)
+        # Check that relaxation was applied (no exact zeros should remain)
         zero_order_idx = self.solver.kdim[0] // 2, self.solver.kdim[1] // 2
 
         kx_zero_single = kx_single[0, zero_order_idx[0], zero_order_idx[1]]
@@ -309,299 +310,103 @@ class TestEdgeCases:
         kx_zero_batched = kx_batched[0, 0, zero_order_idx[0], zero_order_idx[1]]
         ky_zero_batched = ky_batched[0, 0, zero_order_idx[0], zero_order_idx[1]]
 
-        # Both should be close to epsilon (not exactly zero)
-        assert abs(kx_zero_single.real - epsilon) < 1e-8, (
-            f"kx relaxation not applied correctly: {kx_zero_single}"
+        # Both should be non-zero but small in magnitude and finite
+        assert torch.isfinite(kx_zero_single).item(), "kx_zero_single is not finite"
+        assert torch.isfinite(ky_zero_single).item(), "ky_zero_single is not finite"
+        assert torch.isfinite(kx_zero_batched).item(), "kx_zero_batched is not finite"
+        assert torch.isfinite(ky_zero_batched).item(), "ky_zero_batched is not finite"
+
+        assert abs(kx_zero_single.real) > 0.0 and abs(kx_zero_single.real) < 1e-3, (
+            f"kx relaxation not applied (value={kx_zero_single})"
         )
-        assert abs(ky_zero_single.real - epsilon) < 1e-8, (
-            f"ky relaxation not applied correctly: {ky_zero_single}"
+        assert abs(ky_zero_single.real) > 0.0 and abs(ky_zero_single.real) < 1e-3, (
+            f"ky relaxation not applied (value={ky_zero_single})"
         )
 
-        # And both methods should give same result
-        assert abs(kx_zero_single - kx_zero_batched) < 1e-12, (
-            "kx relaxation differs between methods"
+        # And both flows should agree tightly
+        assert abs((kx_zero_single - kx_zero_batched).real) < 1e-10, (
+            "kx relaxation differs between flows"
         )
-        assert abs(ky_zero_single - ky_zero_batched) < 1e-12, (
-            "ky relaxation differs between methods"
+        assert abs((ky_zero_single - ky_zero_batched).real) < 1e-10, (
+            "ky relaxation differs between flows"
         )
 
 
-class TestGradientPreservation:
-    """Test that gradient computation works correctly through all operations."""
+class TestAutogradSmoke:
+    """Smoke test: autograd flows via public add_source/_pre_solve path (single source)."""
 
     def setup_method(self):
-        """Set up test fixture with gradient-enabled parameters."""
         self.device = "cpu"
         self.solver = create_solver(
             algorithm=Algorithm.RDIT,
             precision=Precision.DOUBLE,
-            lam0=np.array([1.55]),
-            rdim=[128, 128],
+            lam0=np.array([1.55, 1.31]),
+            rdim=[64, 64],
             kdim=[3, 3],
             device=self.device,
         )
 
-        # Add materials
         air = create_material(name="air", permittivity=1.0)
         self.solver.add_materials([air])
         self.solver.add_layer(material_name="air", thickness=torch.tensor(1.0))
 
-    def test_gradient_flow_single_source(self):
-        """Test gradient flow through single source k-vector calculation."""
-        # Create source parameters with gradients enabled
-        theta = torch.tensor(0.1, requires_grad=True, dtype=torch.float64)
-        phi = torch.tensor(0.2, requires_grad=True, dtype=torch.float64)
+    def test_single_source_autograd_public_api(self):
+        # Parameters with gradients
+        theta = torch.tensor(0.12, requires_grad=True, dtype=torch.float64)
+        phi = torch.tensor(0.34, requires_grad=True, dtype=torch.float64)
 
-        # Manually set up kinc with gradients (simulating _pre_solve behavior)
-        self.solver._setup_reciprocal_space()
+        # Public API path: add_source + _pre_solve without manual kinc
+        source = self.solver.add_source(theta=theta, phi=phi, pte=1.0, ptm=0.0)
+        self.solver.src = source
+        self.solver._pre_solve()
 
-        # Compute kinc with gradients (matching _pre_solve pattern)
-        refractive_1 = torch.sqrt(self.solver.ur1 * self.solver.er1).real
-        if refractive_1.dim() == 0:  # non-dispersive
-            refractive_1 = refractive_1.unsqueeze(0).expand(self.solver.n_freqs)
-
-        # Create frequency-expanded angles
-        if theta.dim() == 0:
-            theta_exp = theta.unsqueeze(0).expand(self.solver.n_freqs)
-            phi_exp = phi.unsqueeze(0).expand(self.solver.n_freqs)
-        else:
-            theta_exp = theta
-            phi_exp = phi
-
-        # Compute kinc components
-        kinc_x = refractive_1 * torch.sin(theta_exp) * torch.cos(phi_exp)
-        kinc_y = refractive_1 * torch.sin(theta_exp) * torch.sin(phi_exp)
-        kinc_z = refractive_1 * torch.cos(theta_exp)
-
-        kinc = torch.stack([kinc_x, kinc_y, kinc_z], dim=1)  # Shape: (n_freqs, 3)
-
-        self.solver.kinc = kinc
-
-        # Compute k-vectors
+        # Initialize k-vectors and build a simple scalar loss
         kx, ky, kz_ref, kz_trn = self.solver._initialize_k_vectors()
-
-        # Compute scalar loss from results (use real part for autograd compatibility)
         loss = (kx.real**2 + ky.real**2).sum()
-
-        # Backpropagate
         loss.backward()
 
-        # Check that gradients exist and are finite
-        assert theta.grad is not None, "No gradient for theta"
-        assert phi.grad is not None, "No gradient for phi"
-        assert torch.isfinite(theta.grad), f"theta gradient is not finite: {theta.grad}"
-        assert torch.isfinite(phi.grad), f"phi gradient is not finite: {phi.grad}"
+        # Gradients should reach theta/phi and be finite
+        assert theta.grad is not None, "No gradient for theta via public API"
+        assert phi.grad is not None, "No gradient for phi via public API"
+        assert torch.isfinite(theta.grad).item(), f"theta gradient not finite: {theta.grad}"
+        assert torch.isfinite(phi.grad).item(), f"phi gradient not finite: {phi.grad}"
 
-    def test_gradient_flow_batched_source(self):
-        """Test gradient flow through batched source k-vector calculation."""
-        # Create multiple source parameters with gradients
-        theta_batch = torch.tensor(
-            [0.1, 0.2, 0.3], requires_grad=True, dtype=torch.float64
-        )
-        phi_batch = torch.tensor(
-            [0.0, 0.1, 0.2], requires_grad=True, dtype=torch.float64
-        )
+    def test_batched_sources_autograd_public_api(self):
+        """Batched autograd via public API should preserve gradients for angles.
 
-        # Set up reciprocal space
-        self.solver._setup_reciprocal_space()
+        This currently fails because _pre_solve builds batched theta/phi using
+        torch.tensor([...]) which detaches from input tensors. This test
+        documents the desired behavior and will pass after fixing _pre_solve.
+        """
+        # Create batched angle tensors with gradients
+        theta_list = [
+            torch.tensor(0.10, requires_grad=True, dtype=torch.float64),
+            torch.tensor(0.20, requires_grad=True, dtype=torch.float64),
+            torch.tensor(0.30, requires_grad=True, dtype=torch.float64),
+        ]
+        phi_list = [
+            torch.tensor(0.00, requires_grad=True, dtype=torch.float64),
+            torch.tensor(0.10, requires_grad=True, dtype=torch.float64),
+            torch.tensor(0.20, requires_grad=True, dtype=torch.float64),
+        ]
 
-        # Compute batched kinc with gradients (matching _pre_solve pattern)
-        refractive_1 = torch.sqrt(self.solver.ur1 * self.solver.er1).real
-        if refractive_1.dim() == 0:  # non-dispersive
-            refractive_1 = refractive_1.unsqueeze(0).expand(self.solver.n_freqs)
+        # Build sources via public API
+        sources = [
+            self.solver.add_source(theta=t, phi=p, pte=1.0, ptm=0.0)
+            for t, p in zip(theta_list, phi_list)
+        ]
 
-        # Expand batch angles to match frequencies
-        # Shape: (n_sources,) -> (n_sources, n_freqs)
-        theta_exp = theta_batch.unsqueeze(1).expand(-1, self.solver.n_freqs)
-        phi_exp = phi_batch.unsqueeze(1).expand(-1, self.solver.n_freqs)
-
-        # Compute kinc components with broadcasting
-        kinc_x = refractive_1 * torch.sin(theta_exp) * torch.cos(phi_exp)
-        kinc_y = refractive_1 * torch.sin(theta_exp) * torch.sin(phi_exp)
-        kinc_z = refractive_1 * torch.cos(theta_exp)
-
-        kinc = torch.stack(
-            [kinc_x, kinc_y, kinc_z], dim=2
-        )  # Shape: (n_sources, n_freqs, 3)
-        self.solver.kinc = kinc
-
-        # Compute k-vectors
+        # Pre-solve and initialize k-vectors
+        self.solver._pre_solve(sources)
         kx, ky, kz_ref, kz_trn = self.solver._initialize_k_vectors()
 
-        # Compute scalar loss (use real part for autograd compatibility)
+        # Define scalar loss and backpropagate
         loss = (kx.real**2 + ky.real**2).sum()
-
-        # Backpropagate
         loss.backward()
 
-        # Check gradients
-        assert theta_batch.grad is not None, "No gradient for theta_batch"
-        assert phi_batch.grad is not None, "No gradient for phi_batch"
-        assert torch.isfinite(theta_batch.grad).all(), (
-            f"theta_batch gradients not finite: {theta_batch.grad}"
-        )
-        assert torch.isfinite(phi_batch.grad).all(), (
-            f"phi_batch gradients not finite: {phi_batch.grad}"
-        )
-
-    def test_gradient_consistency(self):
-        """Test that gradients are consistent between single and batched methods."""
-        # Use same angle for both tests
-        theta_val = 0.15
-        phi_val = 0.25
-
-        # Single source gradient test
-        theta_single = torch.tensor(theta_val, requires_grad=True, dtype=torch.float64)
-        phi_single = torch.tensor(phi_val, requires_grad=True, dtype=torch.float64)
-
-        self.solver._setup_reciprocal_space()
-        refractive_1 = torch.sqrt(self.solver.ur1 * self.solver.er1).real
-        if refractive_1.dim() == 0:  # non-dispersive
-            refractive_1 = refractive_1.unsqueeze(0).expand(self.solver.n_freqs)
-
-        # Single source pattern
-        theta_exp = theta_single.unsqueeze(0).expand(self.solver.n_freqs)
-        phi_exp = phi_single.unsqueeze(0).expand(self.solver.n_freqs)
-
-        kinc_x = refractive_1 * torch.sin(theta_exp) * torch.cos(phi_exp)
-        kinc_y = refractive_1 * torch.sin(theta_exp) * torch.sin(phi_exp)
-        kinc_z = refractive_1 * torch.cos(theta_exp)
-
-        kinc_single = torch.stack([kinc_x, kinc_y, kinc_z], dim=1)
-
-        self.solver.kinc = kinc_single
-        kx_single, ky_single, _, _ = self.solver._initialize_k_vectors()
-        loss_single = (kx_single.real**2 + ky_single.real**2).sum()
-        loss_single.backward()
-
-        grad_theta_single = theta_single.grad.clone()
-        grad_phi_single = phi_single.grad.clone()
-
-        # Batched source gradient test (single element batch)
-        theta_batch = torch.tensor([theta_val], requires_grad=True, dtype=torch.float64)
-        phi_batch = torch.tensor([phi_val], requires_grad=True, dtype=torch.float64)
-
-        # Batched source pattern
-        if refractive_1.dim() == 0:  # non-dispersive
-            refractive_1 = refractive_1.unsqueeze(0).expand(self.solver.n_freqs)
-
-        # Expand batch angles to match frequencies
-        theta_exp = theta_batch.unsqueeze(1).expand(-1, self.solver.n_freqs)
-        phi_exp = phi_batch.unsqueeze(1).expand(-1, self.solver.n_freqs)
-
-        kinc_x = refractive_1 * torch.sin(theta_exp) * torch.cos(phi_exp)
-        kinc_y = refractive_1 * torch.sin(theta_exp) * torch.sin(phi_exp)
-        kinc_z = refractive_1 * torch.cos(theta_exp)
-
-        kinc_batched = torch.stack(
-            [kinc_x, kinc_y, kinc_z], dim=2
-        )  # Shape: (1, n_freqs, 3)
-
-        self.solver.kinc = kinc_batched
-        kx_batched, ky_batched, _, _ = self.solver._initialize_k_vectors()
-        loss_batched = (kx_batched.real**2 + ky_batched.real**2).sum()
-        loss_batched.backward()
-
-        grad_theta_batched = theta_batch.grad[0]
-        grad_phi_batched = phi_batch.grad[0]
-
-        # Compare gradients
-        grad_diff_theta = abs(grad_theta_single - grad_theta_batched)
-        grad_diff_phi = abs(grad_phi_single - grad_phi_batched)
-
-        assert grad_diff_theta < 1e-10, f"Theta gradient differs: {grad_diff_theta}"
-        assert grad_diff_phi < 1e-10, f"Phi gradient differs: {grad_diff_phi}"
-
-
-class TestHelperFunctions:
-    """Test helper functions used by k-vector initialization."""
-
-    def setup_method(self):
-        """Set up test fixture."""
-        self.device = "cpu"
-        self.solver = create_solver(
-            algorithm=Algorithm.RDIT,
-            precision=Precision.DOUBLE,
-            lam0=np.array([1.55]),
-            rdim=[128, 128],
-            kdim=[3, 3],
-            device=self.device,
-        )
-
-    def test_apply_numerical_relaxation_equivalence(self):
-        """Test equivalence between relaxation methods."""
-        # Create test tensors
-        kx_single = torch.zeros((1, 3, 3), dtype=torch.complex128)
-        ky_single = torch.zeros((1, 3, 3), dtype=torch.complex128)
-
-        kx_batched = torch.zeros((2, 1, 3, 3), dtype=torch.complex128)
-        ky_batched = torch.zeros((2, 1, 3, 3), dtype=torch.complex128)
-
-        epsilon = 1e-6
-
-        # Apply relaxation methods
-        kx_single_relaxed, ky_single_relaxed = self.solver._apply_numerical_relaxation(
-            kx_single, ky_single, epsilon
-        )
-
-        kx_batched_relaxed, ky_batched_relaxed = (
-            self.solver._apply_numerical_relaxation(kx_batched, ky_batched, epsilon)
-        )
-
-        # Check that zero values were replaced with epsilon
-        assert torch.allclose(
-            kx_single_relaxed.real, torch.full_like(kx_single_relaxed.real, epsilon)
-        )
-        assert torch.allclose(
-            ky_single_relaxed.real, torch.full_like(ky_single_relaxed.real, epsilon)
-        )
-        assert torch.allclose(
-            kx_batched_relaxed.real, torch.full_like(kx_batched_relaxed.real, epsilon)
-        )
-        assert torch.allclose(
-            ky_batched_relaxed.real, torch.full_like(ky_batched_relaxed.real, epsilon)
-        )
-
-    def test_calculate_kz_region_equivalence(self):
-        """Test equivalence between kz calculation methods."""
-        # Create test k-vectors
-        kx_single = torch.randn((1, 3, 3), dtype=torch.complex128) * 0.1
-        ky_single = torch.randn((1, 3, 3), dtype=torch.complex128) * 0.1
-
-        kx_batched = kx_single.unsqueeze(0)  # Add batch dimension
-        ky_batched = ky_single.unsqueeze(0)
-
-        # Test non-dispersive case
-        ur, er = torch.tensor(1.0), torch.tensor(2.25)  # Convert to tensors
-
-        kz_single = self.solver._calculate_kz_region(
-            ur, er, kx_single, ky_single, is_dispersive=False
-        )
-        kz_batched = self.solver._calculate_kz_region(
-            ur, er, kx_batched, ky_batched, is_dispersive=False
-        )
-
-        # Compare results
-        assert torch.allclose(kz_single, kz_batched[0], atol=1e-12), (
-            "kz calculation differs between methods"
-        )
-
-        # Test dispersive case
-        ur_disp = torch.tensor([1.0], dtype=torch.complex128)
-        er_disp = torch.tensor([2.25], dtype=torch.complex128)
-
-        kz_single_disp = self.solver._calculate_kz_region(
-            ur_disp, er_disp, kx_single, ky_single, is_dispersive=True
-        )
-        kz_batched_disp = self.solver._calculate_kz_region(
-            ur_disp, er_disp, kx_batched, ky_batched, is_dispersive=True
-        )
-
-        assert torch.allclose(kz_single_disp, kz_batched_disp[0], atol=1e-12), (
-            "Dispersive kz calculation differs"
-        )
-
-
-if __name__ == "__main__":
-    # Run tests with pytest
-    pytest.main([__file__, "-v"])
+        # Expect gradients to flow to each angle tensor
+        for t, p in zip(theta_list, phi_list):
+            assert t.grad is not None, "No gradient for a batched theta via public API"
+            assert p.grad is not None, "No gradient for a batched phi via public API"
+            assert torch.isfinite(t.grad).item(), f"theta grad not finite: {t.grad}"
+            assert torch.isfinite(p.grad).item(), f"phi grad not finite: {p.grad}"

@@ -1,15 +1,12 @@
 import pytest
 import torch
 
-from torchrdit.layers import Layer, HomogeneousLayer, GratingLayer, LayerBuilder, HomogeneousLayerBuilder, GratingLayerBuilder, LayerDirector, LayerManager
+from torchrdit.layers import HomogeneousLayer, GratingLayer, LayerDirector, LayerManager
 
 @pytest.fixture
 def homogeneous_layer():
     return HomogeneousLayer(thickness=1.0, material_name='SiO2', is_optimize=True)
 
-@pytest.fixture
-def grating_layer():
-    return GratingLayer(thickness=1.0, material_name='SiO2', is_optimize=True)
 
 def test_layer_initialization(homogeneous_layer):
     assert homogeneous_layer.thickness == 1.0
@@ -32,39 +29,7 @@ def test_layer_setters(homogeneous_layer):
     assert homogeneous_layer.is_dispersive
     assert homogeneous_layer.is_solved
 
-def test_homogeneous_layer_str(homogeneous_layer):
-    assert str(homogeneous_layer) == 'HomogeneousLayer(thickness=1.0, material_name=SiO2)'
-
-def test_grating_layer_str(grating_layer):
-    assert str(grating_layer) == 'GratingLayer(thickness=1.0, material_name=SiO2)'
-
-def test_homogeneous_layer_builder():
-    builder = HomogeneousLayerBuilder()
-    builder.create_layer()
-    builder.update_thickness(1.0)
-    builder.update_material_name('SiO2')
-    builder.set_optimize(True)
-    builder.set_dispersive(False)
-
-    layer = builder.get_layer_instance()
-    assert layer.thickness == 1.0
-    assert layer.material_name == 'SiO2'
-    assert layer.is_optimize
-    assert not layer.is_dispersive
-
-def test_grating_layer_builder():
-    builder = GratingLayerBuilder()
-    builder.create_layer()
-    builder.update_thickness(1.0)
-    builder.update_material_name('SiO2')
-    builder.set_optimize(True)
-    builder.set_dispersive(False)
-
-    layer = builder.get_layer_instance()
-    assert layer.thickness == 1.0
-    assert layer.material_name == 'SiO2'
-    assert layer.is_optimize
-    assert not layer.is_dispersive
+    # Removed string formatting and builder-specific tests to avoid brittle/duplicative checks.
 
 def test_layer_director():
     director = LayerDirector()

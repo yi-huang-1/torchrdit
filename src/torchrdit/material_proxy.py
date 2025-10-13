@@ -581,37 +581,79 @@ class MaterialDataProxy:
             # Fall back to linear interpolation for sparse data
             def interp_real(x):
                 return np.interp(x, wl_data, eps_real)
+
             def interp_imag(x):
                 return np.interp(x, wl_data, eps_imag)
+
             return interp_real, interp_imag
 
         # Use Akima1DInterpolator for smooth interpolation
         try:
             from scipy.interpolate import Akima1DInterpolator
-            
+
             # Create Akima interpolators
             akima_real = Akima1DInterpolator(wl_data, eps_real)
             akima_imag = Akima1DInterpolator(wl_data, eps_imag)
-            
-            return akima_real, akima_imag
-            
+
+            def _safe(callable_interp, x_ref, y_ref):
+                def _f(x):
+                    y = callable_interp(x)
+                    if not np.all(np.isfinite(y)):
+                        return np.interp(x, x_ref, y_ref)
+                    return y
+                return _f
+
+            return _safe(akima_real, wl_data, eps_real), _safe(akima_imag, wl_data, eps_imag)
+
         except ImportError:
-            # Fall back to polynomial fitting if scipy is not available
+            # Fall back to a robust method if scipy is not available
             warnings.warn(
                 "scipy.interpolate.Akima1DInterpolator not available. "
-                "Falling back to polynomial fitting. "
-                "Install scipy for better interpolation quality.",
-                UserWarning
+                "Falling back to a robust polynomial/linear interpolation.",
+                UserWarning,
             )
-            
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", Warning)
-                np.seterr(all="ignore")
 
-                coef_real = np.polyfit(wl_data, eps_real, fit_order)
-                coef_imag = np.polyfit(wl_data, eps_imag, fit_order)
+            # Prefer low-order polynomial; clamp degree to avoid ill-conditioning
+            n = len(wl_data)
+            # If we somehow reach here with very few points, use linear
+            if n < 5:
+                def interp_real(x):
+                    return np.interp(x, wl_data, eps_real)
 
-            poly_real = np.poly1d(coef_real)
-            poly_imag = np.poly1d(coef_imag)
+                def interp_imag(x):
+                    return np.interp(x, wl_data, eps_imag)
 
-            return poly_real, poly_imag
+                return interp_real, interp_imag
+
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", Warning)
+                    np.seterr(all="ignore")
+                    deg = max(1, min(fit_order, n - 2, 5))
+                    coef_real = np.polyfit(wl_data, eps_real, deg)
+                    coef_imag = np.polyfit(wl_data, eps_imag, deg)
+
+                if not (np.all(np.isfinite(coef_real)) and np.all(np.isfinite(coef_imag))):
+                    raise RuntimeError("Non-finite polynomial coefficients")
+
+                poly_real = np.poly1d(coef_real)
+                poly_imag = np.poly1d(coef_imag)
+
+                def _safe(callable_interp, x_ref, y_ref):
+                    def _f(x):
+                        y = callable_interp(x)
+                        if not np.all(np.isfinite(y)):
+                            return np.interp(x, x_ref, y_ref)
+                        return y
+                    return _f
+
+                return _safe(poly_real, wl_data, eps_real), _safe(poly_imag, wl_data, eps_imag)
+            except Exception:
+                # Final fallback to piecewise-linear interpolation
+                def interp_real(x):
+                    return np.interp(x, wl_data, eps_real)
+
+                def interp_imag(x):
+                    return np.interp(x, wl_data, eps_imag)
+
+                return interp_real, interp_imag

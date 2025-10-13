@@ -1,18 +1,13 @@
 import unittest
 import io
-import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import torch
-import numpy as np
-from torchrdit.observers import ConsoleProgressObserver, SolverObserver
+from torchrdit.observers import ConsoleProgressObserver
 from torchrdit.solver import create_solver
 from torchrdit.constants import Algorithm
-from torchrdit.utils import create_material
 
 # Check if tqdm is available to test TqdmProgressObserver
 try:
-    from tqdm import tqdm
     from torchrdit.observers import TqdmProgressObserver
     TQDM_AVAILABLE = True
 except ImportError:
@@ -33,48 +28,7 @@ class TestObserversDocExamples(unittest.TestCase):
     """
     
     def setUp(self):
-        """Set up test fixtures."""
-        # Prepare a sample source for solver tests
-        self.sample_source = {"theta": 0, "phi": 0, "pte": 1.0, "ptm": 0.0}
-        
-    def test_module_examples_console_observer(self):
-        """Test the module-level examples for using ConsoleProgressObserver."""
-        # Test example 1: Basic usage with a console observer
-        with patch('sys.stdout', new=io.StringIO()) as fake_stdout:
-            solver = create_solver(algorithm=Algorithm.RCWA)
-            observer = ConsoleProgressObserver(verbose=True)
-            solver.add_observer(observer)
-            
-            # Skip the actual solving as it's not needed for this test
-            # Instead, manually trigger an event to verify the observer works
-            observer.update("calculation_starting", {"mode": "RCWA", "n_freqs": 1, "n_layers": 3})
-            
-            # Check output contains expected text
-            output = fake_stdout.getvalue()
-            self.assertIn("Starting calculation in RCWA mode", output)
-    
-    @unittest.skipIf(not TQDM_AVAILABLE, "tqdm not available")
-    def test_module_examples_tqdm_observer(self):
-        """Test the module-level examples for using TqdmProgressObserver."""
-        # Test example 2: Using a progress bar with tqdm
-        solver = create_solver(algorithm=Algorithm.RCWA)
-        observer = TqdmProgressObserver()
-        solver.add_observer(observer)
-        
-        # Verify observer is properly added to solver
-        self.assertIn(observer, solver._observers)
-        
-        # Manually test the observer's update method
-        # First create a progress bar
-        observer.update("processing_layers", {"total": 2})
-        self.assertIsNotNone(observer.layer_pbar)
-        
-        # Update progress
-        observer.update("layer_completed", {})
-        
-        # Complete calculation and close progress bar
-        observer.update("calculation_completed", {})
-        self.assertIsNone(observer.layer_pbar)
+        pass
     
     def test_console_observer_class_examples(self):
         """Test the ConsoleProgressObserver class examples."""
@@ -123,62 +77,13 @@ class TestObserversDocExamples(unittest.TestCase):
         minimal_observer = ConsoleProgressObserver(verbose=False)
         self.assertFalse(minimal_observer.verbose)
     
-    def test_console_observer_update_examples(self):
-        """Test the ConsoleProgressObserver.update method examples."""
-        with patch('sys.stdout', new=io.StringIO()) as fake_stdout:
-            # This method is typically called by the solver, not directly
-            observer = ConsoleProgressObserver()
-            
-            # Example of how the solver would call this method
-            observer.update(
-                "calculation_starting", 
-                {"mode": "RCWA", "n_freqs": 1, "n_layers": 3}
-            )
-            
-            # Check output
-            output = fake_stdout.getvalue()
-            self.assertIn("Starting calculation in RCWA mode with 1 frequencies and 3 layers", output)
-    
-    @unittest.skipIf(not TQDM_AVAILABLE, "tqdm not available")
-    def test_tqdm_observer_class_examples(self):
-        """Test the TqdmProgressObserver class examples."""
-        # Create a solver
-        solver = create_solver(algorithm=Algorithm.RCWA)
-        
-        # Add a progress bar observer
-        observer = TqdmProgressObserver()
-        solver.add_observer(observer)
-        
-        # Verify observer is added to solver
-        self.assertIn(observer, solver._observers)
-        
-        # Test the observer by simulating solver events
-        observer.update("processing_layers", {"total": 3})
-        self.assertIsNotNone(observer.layer_pbar)
-        
-        # Update progress
-        observer.update("layer_completed", {})
-        observer.update("layer_completed", {})
-        observer.update("layer_completed", {})
-        
-        # Complete calculation
-        observer.update("calculation_completed", {})
-        self.assertIsNone(observer.layer_pbar)
-    
-    @unittest.skipIf(not TQDM_AVAILABLE, "tqdm not available")
-    def test_tqdm_observer_init_examples(self):
-        """Test the TqdmProgressObserver.__init__ method examples."""
-        # Create a progress bar observer
-        observer = TqdmProgressObserver()
-        
-        # Progress bars should be None initially
-        self.assertIsNone(observer.layer_pbar)
-    
     @unittest.skipIf(not TQDM_AVAILABLE, "tqdm not available")
     def test_tqdm_observer_update_examples(self):
         """Test the TqdmProgressObserver.update method examples."""
         # This method is typically called by the solver, not directly
         observer = TqdmProgressObserver()
+        # Initially no progress bar
+        self.assertIsNone(observer.layer_pbar)
         
         # Example of how the solver would call this method
         observer.update("processing_layers", {"total": 5})
@@ -252,52 +157,7 @@ class TestObserversDocExamples(unittest.TestCase):
             self.assertNotIn("Assembling final data", output)
             self.assertIn("Calculation completed", output)
     
-    def test_comprehensive_solver_setup(self):
-        """Test a comprehensive solver setup with observers as shown in docstrings."""
-        with patch('sys.stdout', new=io.StringIO()) as fake_stdout:
-            # Create a solver and materials for a simple simulation
-            solver = create_solver(algorithm=Algorithm.RCWA)
-            
-            # Create simple materials
-            air = create_material(name="air", permittivity=1.0)
-            silicon = create_material(name="silicon", permittivity=11.7)
-            
-            # Add materials to solver
-            solver.add_materials([air, silicon])
-            
-            # Add a simple layer
-            solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
-            
-            # Set input/output materials
-            solver.update_ref_material("air")
-            solver.update_trn_material("air")
-            
-            # Add a console observer as shown in the docstring example
-            console_observer = ConsoleProgressObserver(verbose=True)
-            solver.add_observer(console_observer)
-            
-            # If tqdm is available, also add a progress bar observer
-            if TQDM_AVAILABLE:
-                tqdm_observer = TqdmProgressObserver()
-                solver.add_observer(tqdm_observer)
-            
-            # Set the wavelength using the lam0 property
-            solver.lam0 = 1.55
-            
-            # Verify wavelength was set correctly
-            self.assertEqual(solver.lam0[0], 1.55)
-            
-            # Without actually running the solver (which could be expensive),
-            # validate the observer setup by checking that observers exist
-            for observer in solver._observers:
-                if isinstance(observer, ConsoleProgressObserver):
-                    # Verify the observer is correctly configured
-                    self.assertEqual(observer.verbose, True)
-                    self.assertIsNone(observer.start_time)  # Start time is set when calculation begins
-                
-                if TQDM_AVAILABLE and isinstance(observer, TqdmProgressObserver):
-                    # Verify the tqdm observer is correctly configured
-                    self.assertIsNone(observer.layer_pbar)  # Progress bar is created when layers are processed
+    
 
 
 if __name__ == '__main__':

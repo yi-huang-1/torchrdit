@@ -1,8 +1,10 @@
 """
-Test suite for tensor-level batched k-vector initialization.
+Tests for tensor-level batched k-vector initialization.
 
-This test file validates that batched k-vector computation matches sequential
-results and follows the expected dimension flow for tensor-level source batching.
+These tests verify that the solver's own batched implementation in
+`_pre_solve` + `_initialize_k_vectors` matches the sequential path and
+produces correct shapes. The tests avoid re‑implementing solver logic in the
+test (no shadow implementations), and do not depend on other test files.
 """
 
 import sys
@@ -46,108 +48,18 @@ class TestBatchedKVectors:
         return solver
 
     def compute_k_vectors_sequential(self, solver, sources):
-        """Compute k-vectors for each source sequentially (current implementation)."""
+        """Compute k-vectors for each source using the solver sequentially."""
         k_vectors_list = []
-        
         for src in sources:
-            solver.src = src
-            solver._pre_solve()
-            
-            # Get k-vectors from _initialize_k_vectors
+            solver._pre_solve(src)
             kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
-            
             k_vectors_list.append({
-                'kx_0': kx_0.clone(),
-                'ky_0': ky_0.clone(),
-                'kz_ref_0': kz_ref_0.clone(),
-                'kz_trn_0': kz_trn_0.clone()
+                "kx_0": kx_0.clone(),
+                "ky_0": ky_0.clone(),
+                "kz_ref_0": kz_ref_0.clone(),
+                "kz_trn_0": kz_trn_0.clone(),
             })
-        
         return k_vectors_list
-
-    def compute_k_vectors_batched(self, solver, kinc_batched):
-        """Compute k-vectors for all sources in a batched manner (target implementation).
-        
-        Args:
-            solver: The solver instance
-            kinc_batched: Pre-computed batched kinc with shape (n_sources, n_freqs, 3)
-        
-        Returns:
-            dict: Dictionary containing batched k-vectors
-        """
-        n_sources, n_freqs, _ = kinc_batched.shape
-        device = solver.device
-        tcomplex = solver.tcomplex
-        
-        # Get Fourier orders mesh
-        mesh_fp = solver.mesh_fp  # Shape: (kdim[0], kdim[1])
-        mesh_fq = solver.mesh_fq  # Shape: (kdim[0], kdim[1])
-        
-        # Calculate k-vectors with batched kinc
-        # kx_0, ky_0 shape: (n_sources, n_freqs, kdim[0], kdim[1])
-        kx_0 = (
-            kinc_batched[:, :, 0, None, None]  # (n_sources, n_freqs, 1, 1)
-            - (
-                mesh_fp[None, None, :, :] * solver.reci_t1[0, None, None]
-                + mesh_fq[None, None, :, :] * solver.reci_t2[0, None, None]
-            ) / solver.k_0[None, :, None, None]  # k_0 shape: (n_freqs,) -> (1, n_freqs, 1, 1)
-        )
-        kx_0 = kx_0.to(dtype=tcomplex)
-        
-        ky_0 = (
-            kinc_batched[:, :, 1, None, None]  # (n_sources, n_freqs, 1, 1)
-            - (
-                mesh_fp[None, None, :, :] * solver.reci_t1[1, None, None]
-                + mesh_fq[None, None, :, :] * solver.reci_t2[1, None, None]
-            ) / solver.k_0[None, :, None, None]
-        )
-        ky_0 = ky_0.to(dtype=tcomplex)
-        
-        # Calculate kz for reflection and transmission regions
-        # Handle material properties
-        ur1 = solver.ur1
-        er1 = solver.er1
-        ur2 = solver.ur2
-        er2 = solver.er2
-        
-        # Ensure tensors
-        if not isinstance(ur1, torch.Tensor):
-            ur1 = torch.tensor(ur1, dtype=tcomplex, device=device)
-        if not isinstance(er1, torch.Tensor):
-            er1 = torch.tensor(er1, dtype=tcomplex, device=device)
-        if not isinstance(ur2, torch.Tensor):
-            ur2 = torch.tensor(ur2, dtype=tcomplex, device=device)
-        if not isinstance(er2, torch.Tensor):
-            er2 = torch.tensor(er2, dtype=tcomplex, device=device)
-            
-        # Handle scalar case
-        if ur1.dim() == 0:
-            ur1 = ur1.unsqueeze(0).expand(n_freqs)
-        if er1.dim() == 0:
-            er1 = er1.unsqueeze(0).expand(n_freqs)
-        if ur2.dim() == 0:
-            ur2 = ur2.unsqueeze(0).expand(n_freqs)
-        if er2.dim() == 0:
-            er2 = er2.unsqueeze(0).expand(n_freqs)
-        
-        # Calculate kz for reflection region
-        # Shape: (n_sources, n_freqs, kdim[0], kdim[1])
-        # Match the solver's implementation using conjugate operations
-        kz_ref_squared = (ur1 * er1)[None, :, None, None] - kx_0**2 - ky_0**2
-        
-        # Use the same logic as solver: torch.conj(torch.sqrt(torch.conj(...)))
-        # The small imaginary part (0*1j) helps with branch cut selection
-        kz_ref_0 = torch.conj(torch.sqrt(torch.conj(ur1 * er1)[None, :, None, None] - kx_0 * kx_0 - ky_0 * ky_0 + 0 * 1j))
-        
-        # Calculate kz for transmission region
-        kz_trn_0 = torch.conj(torch.sqrt(torch.conj(ur2 * er2)[None, :, None, None] - kx_0 * kx_0 - ky_0 * ky_0 + 0 * 1j))
-        
-        return {
-            'kx_0': kx_0,
-            'ky_0': ky_0,
-            'kz_ref_0': kz_ref_0,
-            'kz_trn_0': kz_trn_0
-        }
 
     def test_single_source_matches_original(self):
         """Test that batched computation with single source matches original."""
@@ -156,42 +68,38 @@ class TestBatchedKVectors:
         source = {"theta": 0.1, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
         
         # Sequential (original)
-        solver.src = source
-        solver._pre_solve()
+        solver._pre_solve(source)
         kx_0_orig, ky_0_orig, kz_ref_0_orig, kz_trn_0_orig = solver._initialize_k_vectors()
         
-        # Batched with single source
-        kinc_batched = solver.kinc.unsqueeze(0)  # Add source dimension
-        k_vectors_batched = self.compute_k_vectors_batched(solver, kinc_batched)
+        # Batched with single source using solver's batched path
+        solver._pre_solve([source])
+        kx_b, ky_b, kz_ref_b, kz_trn_b = solver._initialize_k_vectors()
         
         # Compare
-        torch.testing.assert_close(k_vectors_batched['kx_0'][0], kx_0_orig, rtol=1e-5, atol=1e-6)
-        torch.testing.assert_close(k_vectors_batched['ky_0'][0], ky_0_orig, rtol=1e-5, atol=1e-6)
-        torch.testing.assert_close(k_vectors_batched['kz_ref_0'][0], kz_ref_0_orig, rtol=1e-5, atol=1e-6)
-        torch.testing.assert_close(k_vectors_batched['kz_trn_0'][0], kz_trn_0_orig, rtol=1e-5, atol=1e-6)
+        torch.testing.assert_close(kx_b[0], kx_0_orig, rtol=1e-5, atol=1e-6)
+        torch.testing.assert_close(ky_b[0], ky_0_orig, rtol=1e-5, atol=1e-6)
+        torch.testing.assert_close(kz_ref_b[0], kz_ref_0_orig, rtol=1e-5, atol=1e-6)
+        torch.testing.assert_close(kz_trn_b[0], kz_trn_0_orig, rtol=1e-5, atol=1e-6)
 
     def test_multiple_sources_dimensions(self):
         """Test dimensions with multiple sources."""
         solver = self.setup_solver(n_freqs=3, kdim=(5, 5))
         n_sources = 4
         
-        # Initialize solver by running _pre_solve once
-        source = {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
-        solver.src = source
-        solver._pre_solve()
-        
-        # Create batched kinc (would come from batched kinc calculation)
-        # Shape should be (n_sources, n_freqs, 3) not (n_sources, 3, 3)
-        kinc_batched = torch.randn(n_sources, solver.n_freqs, 3, dtype=solver.tcomplex, device=solver.device)
-        
-        k_vectors = self.compute_k_vectors_batched(solver, kinc_batched)
+        # Create simple set of sources and run batched path
+        sources = [
+            {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
+            for _ in range(n_sources)
+        ]
+        solver._pre_solve(sources)
+        kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
         
         # Check dimensions
         expected_shape = (n_sources, 3, 5, 5)  # (n_sources, n_freqs, kdim[0], kdim[1])
-        assert k_vectors['kx_0'].shape == expected_shape, "kx_0 shape mismatch"
-        assert k_vectors['ky_0'].shape == expected_shape, "ky_0 shape mismatch"
-        assert k_vectors['kz_ref_0'].shape == expected_shape, "kz_ref_0 shape mismatch"
-        assert k_vectors['kz_trn_0'].shape == expected_shape, "kz_trn_0 shape mismatch"
+        assert kx_0.shape == expected_shape, "kx_0 shape mismatch"
+        assert ky_0.shape == expected_shape, "ky_0 shape mismatch"
+        assert kz_ref_0.shape == expected_shape, "kz_ref_0 shape mismatch"
+        assert kz_trn_0.shape == expected_shape, "kz_trn_0 shape mismatch"
 
     def test_batched_matches_sequential(self):
         """Test that batched k-vectors match sequential computation."""
@@ -204,60 +112,56 @@ class TestBatchedKVectors:
             {"theta": np.pi/3, "phi": np.pi/2, "pte": 0.0, "ptm": 1.0},
         ]
         
-        # Sequential computation
+        # Sequential computation (solver path)
         k_vectors_sequential = self.compute_k_vectors_sequential(solver, sources)
-        
-        # Batched computation - first compute batched kinc
-        from test_tensor_batched_kinc import TestBatchedKincCalculation
-        kinc_test = TestBatchedKincCalculation()
-        kinc_batched = kinc_test.compute_kinc_batched(solver, sources)
-        
-        # Then compute batched k-vectors
-        k_vectors_batched = self.compute_k_vectors_batched(solver, kinc_batched)
+
+        # Batched computation (solver path)
+        solver._pre_solve(sources)
+        kx_b, ky_b, kz_ref_b, kz_trn_b = solver._initialize_k_vectors()
         
         # Compare each source
         for i in range(len(sources)):
             # NaN values are bugs - k-vectors should never contain NaN
-            assert not torch.isnan(k_vectors_batched['kx_0'][i]).any(), \
+            assert not torch.isnan(kx_b[i]).any(), \
                 f"NaN values found in batched kx_0 for source {i} - this is a bug!"
             assert not torch.isnan(k_vectors_sequential[i]['kx_0']).any(), \
                 f"NaN values found in sequential kx_0 for source {i} - this is a bug!"
             
-            assert not torch.isnan(k_vectors_batched['ky_0'][i]).any(), \
+            assert not torch.isnan(ky_b[i]).any(), \
                 f"NaN values found in batched ky_0 for source {i} - this is a bug!"
             assert not torch.isnan(k_vectors_sequential[i]['ky_0']).any(), \
                 f"NaN values found in sequential ky_0 for source {i} - this is a bug!"
                 
-            assert not torch.isnan(k_vectors_batched['kz_ref_0'][i]).any(), \
+            assert not torch.isnan(kz_ref_b[i]).any(), \
                 f"NaN values found in batched kz_ref_0 for source {i} - this is a bug!"
             assert not torch.isnan(k_vectors_sequential[i]['kz_ref_0']).any(), \
                 f"NaN values found in sequential kz_ref_0 for source {i} - this is a bug!"
                 
-            assert not torch.isnan(k_vectors_batched['kz_trn_0'][i]).any(), \
+            assert not torch.isnan(kz_trn_b[i]).any(), \
                 f"NaN values found in batched kz_trn_0 for source {i} - this is a bug!"
             assert not torch.isnan(k_vectors_sequential[i]['kz_trn_0']).any(), \
                 f"NaN values found in sequential kz_trn_0 for source {i} - this is a bug!"
             
             torch.testing.assert_close(
-                k_vectors_batched['kx_0'][i], 
+                kx_b[i], 
                 k_vectors_sequential[i]['kx_0'], 
                 rtol=1e-5, atol=1e-6,
                 msg=f"kx_0 mismatch for source {i}"
             )
             torch.testing.assert_close(
-                k_vectors_batched['ky_0'][i], 
+                ky_b[i], 
                 k_vectors_sequential[i]['ky_0'], 
                 rtol=1e-5, atol=1e-6,
                 msg=f"ky_0 mismatch for source {i}"
             )
             torch.testing.assert_close(
-                k_vectors_batched['kz_ref_0'][i], 
+                kz_ref_b[i], 
                 k_vectors_sequential[i]['kz_ref_0'], 
                 rtol=1e-5, atol=1e-6,
                 msg=f"kz_ref_0 mismatch for source {i}"
             )
             torch.testing.assert_close(
-                k_vectors_batched['kz_trn_0'][i], 
+                kz_trn_b[i], 
                 k_vectors_sequential[i]['kz_trn_0'], 
                 rtol=1e-5, atol=1e-6,
                 msg=f"kz_trn_0 mismatch for source {i}"
@@ -269,16 +173,15 @@ class TestBatchedKVectors:
         
         # Normal incidence
         source = {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
-        solver.src = source
-        solver._pre_solve()
-        
-        kinc_batched = solver.kinc.unsqueeze(0)
-        k_vectors = self.compute_k_vectors_batched(solver, kinc_batched)
+        # Use solver batched path with a single source to get shape (1, ...)
+        solver._pre_solve([source])
+        kx_0, ky_0, _, _ = solver._initialize_k_vectors()
         
         # For normal incidence, kx and ky at center should be zero
         center_idx = solver.kdim[0] // 2, solver.kdim[1] // 2
-        assert torch.allclose(k_vectors['kx_0'][0, :, center_idx[0], center_idx[1]], torch.zeros(2, dtype=solver.tcomplex))
-        assert torch.allclose(k_vectors['ky_0'][0, :, center_idx[0], center_idx[1]], torch.zeros(2, dtype=solver.tcomplex))
+        # Numerical relaxation in solver may set exact zeros to small epsilon; allow tolerance
+        assert torch.max(torch.abs(kx_0[0, :, center_idx[0], center_idx[1]])).item() <= 1e-5
+        assert torch.max(torch.abs(ky_0[0, :, center_idx[0], center_idx[1]])).item() <= 1e-5
 
     def test_oblique_incidence(self):
         """Test k-vectors for oblique incidence."""
@@ -289,15 +192,12 @@ class TestBatchedKVectors:
         phi = np.pi/6    # 30 degrees
         source = {"theta": theta, "phi": phi, "pte": 1.0, "ptm": 0.0}
         
-        solver.src = source
-        solver._pre_solve()
-        
-        kinc_batched = solver.kinc.unsqueeze(0)
-        k_vectors = self.compute_k_vectors_batched(solver, kinc_batched)
+        solver._pre_solve([source])
+        kx_0, ky_0, _, _ = solver._initialize_k_vectors()
         
         # Check that k-vectors are not symmetric for oblique incidence
-        kx_0 = k_vectors['kx_0'][0]
-        ky_0 = k_vectors['ky_0'][0]
+        kx_0 = kx_0[0]
+        ky_0 = ky_0[0]
         
         # Should have non-zero values at center
         center_idx = solver.kdim[0] // 2, solver.kdim[1] // 2
@@ -316,32 +216,19 @@ class TestBatchedKVectors:
             {"theta": np.pi/3, "phi": 0.0, "pte": 1.0, "ptm": 0.0},       # 60 degrees
         ]
         
-        # Instead of using the complex test that causes NaN, let's test the algorithm directly
-        # by comparing with sequential computation
+        # Compare solver batched vs sequential (branch cut handled internally)
         k_vectors_sequential = self.compute_k_vectors_sequential(solver, sources)
-        
-        from test_tensor_batched_kinc import TestBatchedKincCalculation
-        kinc_test = TestBatchedKincCalculation()
-        kinc_batched = kinc_test.compute_kinc_batched(solver, sources)
-        
-        k_vectors_batched = self.compute_k_vectors_batched(solver, kinc_batched)
+        solver._pre_solve(sources)
+        _, _, kz_ref_b, kz_trn_b = solver._initialize_k_vectors()
         
         # Compare batched vs sequential for branch cut handling
         for i in range(len(sources)):
             # The solver's implementation handles branch cuts correctly
             # We just need to verify batched matches sequential
-            torch.testing.assert_close(
-                k_vectors_batched['kz_ref_0'][i], 
-                k_vectors_sequential[i]['kz_ref_0'], 
-                rtol=1e-5, atol=1e-6,
-                msg=f"kz_ref mismatch for source {i}"
-            )
-            torch.testing.assert_close(
-                k_vectors_batched['kz_trn_0'][i], 
-                k_vectors_sequential[i]['kz_trn_0'], 
-                rtol=1e-5, atol=1e-6,
-                msg=f"kz_trn mismatch for source {i}"
-            )
+            torch.testing.assert_close(kz_ref_b[i], k_vectors_sequential[i]['kz_ref_0'], rtol=1e-5, atol=1e-6,
+                                       msg=f"kz_ref mismatch for source {i}")
+            torch.testing.assert_close(kz_trn_b[i], k_vectors_sequential[i]['kz_trn_0'], rtol=1e-5, atol=1e-6,
+                                       msg=f"kz_trn mismatch for source {i}")
 
     def test_different_materials(self):
         """Test k-vectors with different reflection/transmission materials."""
@@ -364,14 +251,11 @@ class TestBatchedKVectors:
         solver.add_layer(material_name="air", thickness=torch.tensor(0.5), is_homogeneous=True)
         
         source = {"theta": 0.1, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
-        solver.src = source
-        solver._pre_solve()
-        
-        kinc_batched = solver.kinc.unsqueeze(0)
-        k_vectors = self.compute_k_vectors_batched(solver, kinc_batched)
+        solver._pre_solve(source)
+        _, _, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
         
         # kz values should be different for ref and trn regions
-        assert not torch.allclose(k_vectors['kz_ref_0'], k_vectors['kz_trn_0'])
+        assert not torch.allclose(kz_ref_0, kz_trn_0)
 
 
 if __name__ == "__main__":

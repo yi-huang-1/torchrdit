@@ -1,17 +1,15 @@
 """
-Test suite for tensorizing _calculate_polarization_batched and unifying polarization logic.
+Unit tests for unified polarization tensorization logic.
 
-This test suite ensures mathematical equivalence between the embedded single-source
-polarization logic in _calculate_fields_and_efficiencies and the separate
-_calculate_polarization_batched method. Following TDD principles, these tests are
-written before the implementation to verify correctness.
+Scope:
+- Verify mathematical equivalence between single-source and batched paths
+- Cover representative angles (normal/oblique) and polarizations (TE/TM/mixed/circular)
+- Exercise multi-source batching vs sequential processing
+- Include edge angles (near-0 and grazing) for numerical robustness
 
-Key areas tested:
-- Mathematical equivalence between single and batched implementations
-- Edge cases (normal incidence, extreme angles, circular polarization)
-- Gradient preservation for optimization workflows
-- Delta function indexing consistency
-- Performance characteristics
+Notes:
+- Tests intentionally avoid self-referential comparisons (same function vs itself)
+  that do not validate distinct code paths.
 """
 
 import torch
@@ -66,17 +64,7 @@ class TestPolarizationTensorization:
         # Use the unified method with sources argument for batched
         return solver._calculate_polarization(sources)
 
-    def _extract_unified_polarization_data(self, solver, sources_or_source):
-        """Extract polarization data using unified _calculate_polarization method."""
-        if isinstance(sources_or_source, list):
-            # Batched case
-            solver._pre_solve(sources_or_source)
-            return solver._calculate_polarization(sources_or_source)
-        else:
-            # Single case
-            solver.src = sources_or_source
-            solver._pre_solve()
-            return solver._calculate_polarization()
+    # Removed unified helper (was only used for self-comparisons of the same method).
 
     def test_single_vs_batched_normal_incidence(self, setup_solver):
         """Test mathematical equivalence for normal incidence (θ≈0)."""
@@ -127,11 +115,7 @@ class TestPolarizationTensorization:
             f"esrc mismatch for normal incidence: max diff = {max_diff_esrc}"
         )
 
-        print("✓ Normal incidence test passed:")
-        print(f"  ate max diff: {max_diff_ate:.2e}")
-        print(f"  atm max diff: {max_diff_atm:.2e}")
-        print(f"  pol_vec max diff: {max_diff_pol:.2e}")
-        print(f"  esrc max diff: {max_diff_esrc:.2e}")
+        # No printouts in unit tests; assertions above suffice.
 
     def test_single_vs_batched_oblique_incidence(self, setup_solver):
         """Test mathematical equivalence for oblique incidence angles."""
@@ -167,7 +151,7 @@ class TestPolarizationTensorization:
                         f"{key} mismatch for θ={angle_deg}°, φ={phi_deg}°: max diff = {max_diff}"
                     )
 
-                print(f"✓ Oblique incidence θ={angle_deg}°, φ={phi_deg}° test passed")
+                # Assertions above ensure correctness across angles and azimuths.
 
     def test_edge_cases(self, setup_solver):
         """Test extreme angles and special cases."""
@@ -212,7 +196,7 @@ class TestPolarizationTensorization:
             assert torch.all(torch.isfinite(single_val)), f"NaN/Inf in single {key}"
             assert torch.all(torch.isfinite(batched_val)), f"NaN/Inf in batched {key}"
 
-        print("✓ Edge cases test passed")
+        # Assertions above ensure numerical stability at edge angles.
 
     def test_polarization_combinations(self, setup_solver):
         """Test various polarization combinations including circular polarization."""
@@ -245,105 +229,11 @@ class TestPolarizationTensorization:
                     f"{key} mismatch for {description}: max diff = {max_diff}"
                 )
 
-            print(f"✓ Polarization test passed: {description}")
-
-    def test_multi_frequency_scenarios(self, setup_solver):
-        """Test behavior with multiple wavelengths."""
-        solver = setup_solver
-
-        # Verify solver has multiple frequencies
-        assert solver.n_freqs > 1, "Test requires multiple frequencies"
-
-        # Test with scalar theta/phi (same angle for all frequencies)
-        source_scalar = solver.add_source(
-            theta=45 * np.pi / 180, phi=0, pte=1.0, ptm=0.0
-        )
-
-        single_data = self._extract_single_polarization_data(solver, source_scalar)
-        batched_data = self._extract_batched_polarization_data(solver, [source_scalar])
-
-        for key in ["ate", "atm", "pol_vec", "esrc"]:
-            single_val = single_data[key]
-            batched_val = batched_data[key][0]
-
-            # Check shapes
-            assert single_val.shape == batched_val.shape, (
-                f"{key} shape mismatch: single {single_val.shape} vs batched {batched_val.shape}"
-            )
-
-            # Check values
-            max_diff = torch.abs(single_val - batched_val).max().item()
-            assert torch.allclose(single_val, batched_val, atol=1e-6, rtol=1e-5), (
-                f"{key} mismatch for multi-frequency: max diff = {max_diff}"
-            )
-
-        # Test with array theta/phi (different angle per frequency) - FUTURE ENHANCEMENT
-        # This test is included for when we implement array support in the unified version
-
-        print("✓ Multi-frequency test passed")
-
-    def test_gradient_preservation(self, setup_solver):
-        """Test that gradient flow is preserved through polarization calculations."""
-        solver = setup_solver
-
-        # Note: Current implementation doesn't directly support gradients through
-        # theta/phi parameters in _calculate_polarization_batched, but we can test
-        # that the function doesn't break gradient flow when gradients are present
-
-        # Create a source
-        source = solver.add_source(theta=30 * np.pi / 180, phi=0, pte=1.0, ptm=0.0)
-
-        # Test that both methods can be called without breaking autograd
-        try:
-            single_data = self._extract_single_polarization_data(solver, source)
-            batched_data = self._extract_batched_polarization_data(solver, [source])
-
-            # Verify outputs are identical (gradient preservation test will come later)
-            for key in ["ate", "atm", "pol_vec", "esrc"]:
-                single_val = single_data[key]
-                batched_val = batched_data[key][0]
-
-                assert torch.allclose(single_val, batched_val, atol=1e-6), (
-                    f"{key} mismatch in gradient preservation test"
-                )
-
-        except RuntimeError as e:
-            pytest.fail(f"Gradient computation failed: {e}")
-
-        print("✓ Gradient preservation test passed (basic compatibility verified)")
-
-    def test_delta_function_indexing_consistency(self, setup_solver):
-        """Test that delta function indexing is consistent between implementations."""
-        solver = setup_solver
-
-        # This test specifically checks the delta function creation inconsistency
-        # identified in the analysis:
-        # - Batched: delta[:, :, n_harmonics_squared // 2] = 1.0
-        # - Single: delta[:, (kdim[1] // 2) * kdim[0] + (kdim[0] // 2)] = 1
-
-        source = solver.add_source(theta=30 * np.pi / 180, phi=0, pte=1.0, ptm=0.0)
-
-        single_data = self._extract_single_polarization_data(solver, source)
-        batched_data = self._extract_batched_polarization_data(solver, [source])
-
-        # Focus specifically on esrc comparison
-        esrc_single = single_data["esrc"]
-        esrc_batched = batched_data["esrc"][0]
-
-        max_diff = torch.abs(esrc_single - esrc_batched).max().item()
-
-        if max_diff > 1e-6:
-            print("WARNING: Delta function indexing inconsistency detected!")
-            print(f"esrc max difference: {max_diff:.2e}")
-            print("This confirms the need to unify delta function creation.")
-
-            # For now, we'll allow this test to highlight the issue
-            # When we fix the implementation, this test should pass with strict tolerance
-            pytest.xfail(
-                "Known issue: Delta function indexing differs between implementations"
-            )
-        else:
-            print("✓ Delta function indexing consistency test passed")
+            # Ensures various polarization states are handled consistently.
+    # Removed tests that were self-referential or redundant:
+    # - Multi-frequency equality: already covered implicitly since solver has >1 wavelengths
+    # - Gradient preservation: current implementation does not preserve autograd for pte/ptm
+    # - Delta indexing: unified path uses a single implementation; no distinct behavior to compare
 
     def test_multiple_sources_sequential_equivalence(self, setup_solver):
         """Verify batched processing matches sequential processing."""
@@ -383,102 +273,86 @@ class TestPolarizationTensorization:
                     f"Source {i} {key} mismatch: max diff = {max_diff}"
                 )
 
-            print(f"✓ Source {i} sequential equivalence verified")
+            # Ensures batched path matches sequential evaluation per-source.
 
-    def test_performance_characteristics(self, setup_solver):
-        """Basic performance characteristics test (not optimization, just functionality)."""
+    def test_gradients_wrt_pte_ptm(self, setup_solver):
+        """Gradients should flow from esrc back to complex pte/ptm amplitudes."""
         solver = setup_solver
 
-        # Test with increasing batch sizes to ensure scalability
-        batch_sizes = [1, 4, 8]
+        # Single source with complex amplitudes requiring grad
+        pte = torch.tensor(0.7 + 0.2j, dtype=solver.tcomplex, requires_grad=True)
+        ptm = torch.tensor(0.3 - 0.5j, dtype=solver.tcomplex, requires_grad=True)
+        source = solver.add_source(theta=0.5, phi=0.25, pte=pte, ptm=ptm)
 
-        for batch_size in batch_sizes:
-            # Create sources
-            sources = [
-                solver.add_source(theta=(i * 15) * np.pi / 180, phi=0, pte=1.0, ptm=0.0)
-                for i in range(batch_size)
-            ]
-
-            try:
-                # Test that batched processing works
-                batched_data = self._extract_batched_polarization_data(solver, sources)
-
-                # Verify output shapes
-                for key in ["ate", "atm", "pol_vec", "esrc"]:
-                    output = batched_data[key]
-                    expected_shape_0 = batch_size
-                    assert output.shape[0] == expected_shape_0, (
-                        f"Batch size {batch_size}: {key} shape[0] = {output.shape[0]}, expected {expected_shape_0}"
-                    )
-
-                print(f"✓ Performance test passed for batch size {batch_size}")
-
-            except Exception as e:
-                pytest.fail(f"Batch size {batch_size} failed: {e}")
-
-    def test_unified_method_equivalence(self, setup_solver):
-        """Test the unified _calculate_polarization() method against both single and batched."""
-        solver = setup_solver
-
-        # Test with single source
-        source = solver.add_source(
-            theta=30 * np.pi / 180, phi=45 * np.pi / 180, pte=1.0, ptm=0.5j
-        )
-
-        # Get data from all three methods
         single_data = self._extract_single_polarization_data(solver, source)
-        batched_data = self._extract_batched_polarization_data(solver, [source])
-        unified_single_data = self._extract_unified_polarization_data(solver, source)
-        unified_batched_data = self._extract_unified_polarization_data(solver, [source])
+        esrc = single_data["esrc"]
 
-        # Compare unified single vs dedicated single
-        for key in ["ate", "atm", "pol_vec", "esrc"]:
-            single_val = single_data[key]
-            unified_single_val = unified_single_data[key]
+        loss = (esrc.abs() ** 2).sum()
+        loss.backward()
 
-            max_diff = torch.abs(single_val - unified_single_val).max().item()
-            assert torch.allclose(
-                single_val, unified_single_val, atol=1e-6, rtol=1e-5
-            ), (
-                f"Unified single vs dedicated single {key} mismatch: max diff = {max_diff}"
-            )
+        assert pte.grad is not None and torch.isfinite(pte.grad.real) and torch.isfinite(pte.grad.imag)
+        assert ptm.grad is not None and torch.isfinite(ptm.grad.real) and torch.isfinite(ptm.grad.imag)
 
-        # Compare unified batched vs dedicated batched
-        for key in ["ate", "atm", "pol_vec", "esrc"]:
-            batched_val = batched_data[key][0]
-            unified_batched_val = unified_batched_data[key][0]
-
-            max_diff = torch.abs(batched_val - unified_batched_val).max().item()
-            assert torch.allclose(
-                batched_val, unified_batched_val, atol=1e-6, rtol=1e-5
-            ), (
-                f"Unified batched vs dedicated batched {key} mismatch: max diff = {max_diff}"
-            )
-
-        # Test with multiple sources
+        # Batched case with two sources
+        pte_b = [
+            torch.tensor(1.0 + 0.0j, dtype=solver.tcomplex, requires_grad=True),
+            torch.tensor(0.6 - 0.4j, dtype=solver.tcomplex, requires_grad=True),
+        ]
+        ptm_b = [
+            torch.tensor(0.2 + 0.8j, dtype=solver.tcomplex, requires_grad=True),
+            torch.tensor(0.4 + 0.1j, dtype=solver.tcomplex, requires_grad=True),
+        ]
         sources = [
-            solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0),
-            solver.add_source(theta=45 * np.pi / 180, phi=0, pte=0.0, ptm=1.0),
-            solver.add_source(
-                theta=60 * np.pi / 180, phi=30 * np.pi / 180, pte=0.7071, ptm=0.7071j
-            ),
+            solver.add_source(theta=0.4, phi=0.1, pte=pte_b[0], ptm=ptm_b[0]),
+            solver.add_source(theta=0.9, phi=0.6, pte=pte_b[1], ptm=ptm_b[1]),
         ]
 
-        dedicated_batched_data = self._extract_batched_polarization_data(
-            solver, sources
-        )
-        unified_batched_data = self._extract_unified_polarization_data(solver, sources)
+        batched_data = self._extract_batched_polarization_data(solver, sources)
+        loss_b = (batched_data["esrc"].abs() ** 2).sum()
+        loss_b.backward()
 
-        for key in ["ate", "atm", "pol_vec", "esrc"]:
-            dedicated_val = dedicated_batched_data[key]
-            unified_val = unified_batched_data[key]
+        for v in pte_b + ptm_b:
+            assert v.grad is not None
+            assert torch.isfinite(v.grad.real) and torch.isfinite(v.grad.imag)
 
-            max_diff = torch.abs(dedicated_val - unified_val).max().item()
-            assert torch.allclose(dedicated_val, unified_val, atol=1e-6, rtol=1e-5), (
-                f"Multi-source unified vs dedicated {key} mismatch: max diff = {max_diff}"
-            )
+    def test_gradients_wrt_angles_theta_phi(self, setup_solver):
+        """Gradients should flow from esrc back to theta/phi via kinc and polarization."""
+        solver = setup_solver
 
-        print("✓ Unified method equivalence test passed")
+        # Use oblique angles to avoid normal-incidence special-case branch
+        theta = torch.tensor(0.7, dtype=solver.tfloat, requires_grad=True)
+        phi = torch.tensor(0.3, dtype=solver.tfloat, requires_grad=True)
+        source = solver.add_source(theta=theta, phi=phi, pte=1.0, ptm=0.5j)
+
+        # Single-source path
+        single_data = self._extract_single_polarization_data(solver, source)
+        loss = (single_data["esrc"].abs() ** 2).sum()
+        loss.backward()
+
+        assert theta.grad is not None and torch.isfinite(theta.grad)
+        assert phi.grad is not None and torch.isfinite(phi.grad)
+
+        # Batched path with two independent angle variables
+        theta_b = [
+            torch.tensor(0.5, dtype=solver.tfloat, requires_grad=True),
+            torch.tensor(1.0, dtype=solver.tfloat, requires_grad=True),
+        ]
+        phi_b = [
+            torch.tensor(0.2, dtype=solver.tfloat, requires_grad=True),
+            torch.tensor(0.8, dtype=solver.tfloat, requires_grad=True),
+        ]
+        sources = [
+            solver.add_source(theta=theta_b[0], phi=phi_b[0], pte=0.8, ptm=0.2),
+            solver.add_source(theta=theta_b[1], phi=phi_b[1], pte=0.6, ptm=0.4j),
+        ]
+
+        batched_data = self._extract_batched_polarization_data(solver, sources)
+        loss_b = (batched_data["esrc"].abs() ** 2).sum()
+        loss_b.backward()
+
+        for v in theta_b + phi_b:
+            assert v.grad is not None and torch.isfinite(v.grad)
+    # Removed self-comparison of unified method vs itself; provides no signal.
 
 
 if __name__ == "__main__":

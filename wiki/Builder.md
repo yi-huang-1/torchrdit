@@ -17,6 +17,7 @@
     * [with\_ref\_material](#torchrdit.builder.SolverBuilder.with_ref_material)
     * [with\_lattice\_vectors](#torchrdit.builder.SolverBuilder.with_lattice_vectors)
     * [with\_fff](#torchrdit.builder.SolverBuilder.with_fff)
+    * [with\_fff\_vector\_options](#torchrdit.builder.SolverBuilder.with_fff_vector_options)
     * [with\_device](#torchrdit.builder.SolverBuilder.with_device)
     * [with\_rdit\_order](#torchrdit.builder.SolverBuilder.with_rdit_order)
     * [add\_layer](#torchrdit.builder.SolverBuilder.add_layer)
@@ -597,6 +598,40 @@ builder = SolverBuilder().with_fff(False)
   
   Keywords:
   Fast Fourier Factorization, FFF, convergence, numerical stability
+
+<a id="torchrdit.builder.SolverBuilder.with_fff_vector_options"></a>
+
+#### with\_fff\_vector\_options
+
+```python
+def with_fff_vector_options(*,
+                            scheme: Optional[str] = None,
+                            fourier_weight: Optional[float] = None,
+                            smoothness_weight: Optional[float] = None,
+                            steps: Optional[int] = None) -> "SolverBuilder"
+```
+
+Configure tangent vector field generation behaviour.
+
+**Arguments**:
+
+- `scheme` - Tangent field scheme (e.g., ``'POL'``, ``'NORMAL'``).
+- `fourier_weight` - Weight for the Fourier-domain loss term.
+- `smoothness_weight` - Weight for the spatial smoothness penalty.
+- `steps` - Number of Newton iterations for tangent field refinement.
+  
+
+**Returns**:
+
+- `SolverBuilder` - The builder instance for method chaining.
+  
+
+**Raises**:
+
+- `ValueError` - If ``steps`` is provided and less than 1.
+  
+  Keywords:
+  tangent field, normal vector method, Fourier factorization, options
 
 <a id="torchrdit.builder.SolverBuilder.with_device"></a>
 

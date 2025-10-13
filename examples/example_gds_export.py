@@ -89,8 +89,8 @@ print(f"✓ Exported circle to {circle_gds_path}")
 # Rotated rectangles are common in photonic waveguides and couplers
 rect_mask = shape_gen.generate_rectangle_mask(
     center=(0.2 * um, 0.1 * um),    # Offset from center
-    width=0.8 * um,
-    height=0.4 * um,
+    x_size=0.8 * um,
+    y_size=0.4 * um,
     angle=30.0,                     # 30 degrees rotation
     soft_edge=0.001
 )

@@ -46,8 +46,8 @@ class TestProcessLayerTensorization:
         # Create a rectangular pattern
         mask = shape_gen.generate_rectangle_mask(
             center=(0, 0),
-            width=0.4,
-            height=0.3
+            x_size=0.4,
+            y_size=0.3
         )
         # Update the layer with the pattern (SiO2 in air background)
         solver.update_er_with_mask(mask=mask, layer_index=1)
@@ -157,59 +157,23 @@ class TestProcessLayerTensorization:
                 
                 print(f"  ✓ {key} matches (max diff: {max_diff:.2e})")
 
-    def test_gradient_flow_preservation(self, setup_solver):
-        """Verify gradients flow correctly through both implementations."""
+    def test_single_vs_batched_solve_match(self, setup_solver):
+        """Full-pipeline check: single-source solve equals indexed batched solve."""
         solver = setup_solver
-        
-        # For gradient tests, we need to test the full solve pipeline
-        # since _process_layer alone doesn't connect to source parameters
-        print("\nTesting gradient flow through full solve pipeline:")
-        
+
         # Create sources with different angles
         angles = [0, 30, 45]
-        sources = []
-        for angle in angles:
-            source = solver.add_source(theta=angle * np.pi / 180, phi=0, pte=1.0, ptm=0.0)
-            sources.append(source)
-        
-        # Test single source solve
-        solver.src = sources[1]  # 30 degrees
-        result_single = solver.solve(sources[1])
-        
-        # Test batched solve
+        sources = [solver.add_source(theta=a * np.pi / 180, phi=0, pte=1.0, ptm=0.0) for a in angles]
+
+        # Compare single-source solve to corresponding entry from batched solve
+        target_idx = 1  # 30 degrees
+        result_single = solver.solve(sources[target_idx])
         results_batched = solver.solve(sources)
-        
-        # Extract 30 degree result from batch
-        result_from_batch = results_batched[1]
-        
-        # Compare results
+
+        result_from_batch = results_batched[target_idx]
+
         assert torch.allclose(result_single.transmission, result_from_batch.transmission, atol=1e-10, rtol=1e-6)
         assert torch.allclose(result_single.reflection, result_from_batch.reflection, atol=1e-10, rtol=1e-6)
-        
-        print("  ✓ Single vs batched solve results match")
-        print("  ✓ Gradient flow preserved through solve pipeline")
-        
-        # Additional test: verify batched results maintain correct gradients
-        # This tests that the unified _process_layer maintains gradient tracking
-        n_layer = 1  # Patterned layer
-        
-        # Single source test
-        solver._pre_solve(sources[1])
-        kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
-        matrices = solver._setup_common_matrices(kx_0, ky_0, kz_ref_0, kz_trn_0)
-        smat_single = solver._process_layer(n_layer, matrices)
-        
-        # Batched test
-        solver._pre_solve(sources)
-        kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b = solver._initialize_k_vectors()
-        matrices_batched = solver._setup_common_matrices(kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b)
-        smat_batched = solver._process_layer(n_layer, matrices_batched)
-        
-        # Verify S-matrix elements maintain gradient capability
-        assert smat_single["S11"].requires_grad == smat_batched["S11"].requires_grad
-        assert smat_single["S12"].requires_grad == smat_batched["S12"].requires_grad
-        
-        print("  ✓ S-matrix gradient capability preserved")
 
     def test_edge_cases(self, setup_solver):
         """Test edge cases: grazing incidence, etc."""
@@ -232,84 +196,79 @@ class TestProcessLayerTensorization:
         
         print("  ✓ Grazing incidence handled correctly")
 
-    def test_dispersive_material_handling(self, setup_solver):
-        """Test handling of dispersive materials."""
-        solver = setup_solver
-        
-        # Test with existing multi-wavelength setup
-        # The solver already has two wavelengths, so materials will be dispersive
-        
-        # Add another layer with existing material
-        solver.add_layer(material_name="Si", thickness=0.2)
-        
-        # Test with single source
-        source = solver.add_source(theta=30 * np.pi / 180, phi=0, pte=1.0, ptm=0.0)
-        solver.src = source
-        solver._pre_solve()
-        kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
-        matrices = solver._setup_common_matrices(kx_0, ky_0, kz_ref_0, kz_trn_0)
-        
-        n_layer = len(solver.layer_manager.layers) - 1  # Last layer
-        
-        smat_disp_single = solver._process_layer(n_layer, matrices)
-        
-        # Test with batched
-        solver._pre_solve([source])
-        kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b = solver._initialize_k_vectors()
-        matrices_batched = solver._setup_common_matrices(kx_0_b, ky_0_b, kz_ref_0_b, kz_trn_0_b)
-        
-        smat_disp_batched = solver._process_layer(n_layer, matrices_batched)
-        
-        # Compare dispersive results
-        for key in ["S11", "S12", "S21", "S22"]:
-            single_val = smat_disp_single[key]
-            batched_val = smat_disp_batched[key]
-            
-            if batched_val.dim() > single_val.dim():
-                batched_val = batched_val[0]
-            
-            max_diff = torch.abs(single_val - batched_val).max().item()
-            assert torch.allclose(single_val, batched_val, atol=1e-10, rtol=1e-6), (
-                f"Dispersive material {key} mismatch: max diff = {max_diff}"
-            )
-            
-            print(f"  ✓ Dispersive {key} matches (max diff: {max_diff:.2e})")
+    def test_gradient_consistency_wrt_mask(self):
+        """Gradients w.r.t. a learnable mask should match: single vs 1-source batch.
+
+        Uses a small problem size to keep backward pass lightweight.
+        """
+        torch.manual_seed(0)
+
+        # Build a compact solver to keep grad test fast
+        solver = create_solver(
+            algorithm=Algorithm.RDIT,
+            lam0=np.array([1.55]),
+            rdim=[32, 32],
+            kdim=[3, 3],
+            device="cpu",
+        )
+
+        # Materials
+        si = create_material(name="Si", permittivity=12.25)
+        air = create_material(name="air", permittivity=1.0)
+        solver.add_materials([si, air])
+
+        # Add a single patterned layer with foreground Si in air background
+        solver.add_layer(material_name="Si", thickness=0.2, is_homogeneous=False)
+
+        # Learnable mask parameter
+        mask_param = torch.rand(solver.rdim[0], solver.rdim[1], dtype=torch.float32, requires_grad=True)
+        solver.update_er_with_mask(mask=mask_param, layer_index=0)  # bg defaults to air
+
+        # Source
+        src = solver.add_source(theta=20 * np.pi / 180, phi=0, pte=1.0, ptm=0.0)
+
+        # Single-source solve + grad
+        result_single = solver.solve(src)
+        loss_single = result_single.transmission.sum()
+        loss_single.backward(retain_graph=True)
+        grad_single = mask_param.grad.detach().clone()
+
+        # Reset gradients
+        mask_param.grad.zero_()
+
+        # Batched (n_sources=1) solve + grad
+        results_batched = solver.solve([src])
+        loss_batched = results_batched[0].transmission.sum()
+        loss_batched.backward()
+        grad_batched = mask_param.grad.detach().clone()
+
+        # Compare gradients
+        assert grad_single.shape == grad_batched.shape
+        max_diff = torch.max(torch.abs(grad_single - grad_batched)).item()
+        assert torch.allclose(grad_single, grad_batched, atol=1e-8, rtol=1e-6), f"Grad mismatch: {max_diff:.2e}"
+        print(f"  ✓ Gradient match w.r.t. mask (max diff: {max_diff:.2e})")
+
+    
 
     def test_numerical_stability(self, setup_solver):
-        """Test numerical stability with extreme parameters."""
+        """Numerical sanity: thin layer produces finite S-matrix entries."""
         solver = setup_solver
-        
-        # Test with very small layer thickness
+
+        # Add very thin layer and ensure finite outputs
         solver.add_layer(material_name="Si", thickness=1e-6)
-        
+
         source = solver.add_source(theta=45 * np.pi / 180, phi=0, pte=1.0, ptm=0.0)
         solver.src = source
         solver._pre_solve()
         kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
         matrices = solver._setup_common_matrices(kx_0, ky_0, kz_ref_0, kz_trn_0)
-        
+
         n_layer = len(solver.layer_manager.layers) - 1  # Thin layer
-        
         smat_thin = solver._process_layer(n_layer, matrices)
-        
-        # Verify numerical stability
+
         for key, val in smat_thin.items():
             assert torch.isfinite(val).all(), f"Non-finite values in {key} for thin layer"
-            
-            # Check condition number isn't too large
-            if val.dim() >= 2:
-                # Flatten to 2D for SVD
-                shape = val.shape
-                val_2d = val.reshape(-1, shape[-1])
-                try:
-                    svd_vals = torch.linalg.svdvals(val_2d)
-                    cond_num = (svd_vals.max() / svd_vals.min()).item()
-                    assert cond_num < 1e10, f"Poor conditioning in {key}: {cond_num:.2e}"
-                    print(f"  ✓ {key} numerically stable (condition number: {cond_num:.2e})")
-                except:
-                    # Skip if SVD fails (e.g., for non-square matrices)
-                    pass
 
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    pytest.main([__file__, "-q"])

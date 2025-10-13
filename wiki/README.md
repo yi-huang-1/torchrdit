@@ -24,6 +24,7 @@ The documentation is generated automatically using pydoc-markdown. To update it:
 - **Results.md**: Documentation for the results module
 - **Shapes.md**: Documentation for the shapes module
 - **Solver.md**: Documentation for the solver module
+- **Vector.md**: Documentation for tangent vector field utilities
 - **Utils.md**: Documentation for utility functions
 - **Visualization.md**: Documentation for visualization tools
 - **GDS.md**: Documentation for GDS export/import functionality
@@ -39,7 +40,7 @@ For your documentation to be most effective, follow these guidelines for docstri
 def calculate_field(mesh, material_properties, frequency):
     """
     Calculate electromagnetic fields on a given mesh.
-    
+
     Parameters
     ----------
     mesh : Mesh
@@ -51,21 +52,21 @@ def calculate_field(mesh, material_properties, frequency):
         - 'sigma': conductivity
     frequency : float
         Operating frequency in Hz.
-        
+
     Returns
     -------
     ndarray
         Complex E-field values at mesh nodes.
-        
+
     Notes
     -----
     This function solves Maxwell's equations using the FDTD method.
     The governing equation is:
-    
+
     ∇ x (∇ x E) - k₀²εᵣE = 0
-    
+
     where k₀ is the wavenumber and εᵣ is the relative permittivity.
-    
+
     Examples
     --------
     ```python

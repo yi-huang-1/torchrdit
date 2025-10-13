@@ -4,7 +4,7 @@ import numpy as np
 import os
 
 from torchrdit.materials import MaterialClass
-from torchrdit.material_proxy import MaterialDataProxy, UnitConverter
+from torchrdit.material_proxy import MaterialDataProxy
 
 @pytest.fixture
 def non_dispersive_material():
@@ -75,12 +75,12 @@ def test_proxy_integration(dispersive_material):
     proxy = dispersive_material._data_proxy
     test_wavelengths = np.array([2.5, 3.5])
     real_eps, imag_eps = proxy.extract_permittivity(dispersive_material._loadeder, test_wavelengths, fit_order=2)
-    
-    # Check that we got reasonable values back from the polynomial fit
-    assert len(real_eps(test_wavelengths)) == 2
-    assert len(imag_eps(test_wavelengths)) == 2
-    assert 2.1 <= real_eps(test_wavelengths)[0] <= 2.3
-    assert 0.2 <= imag_eps(test_wavelengths)[0] <= 0.4
+
+    # Interpolation should return expected linear midpoints for this synthetic data
+    vals_real = real_eps(test_wavelengths)
+    vals_imag = imag_eps(test_wavelengths)
+    np.testing.assert_allclose(vals_real, np.array([2.15, 2.25]), rtol=0, atol=1e-6)
+    np.testing.assert_allclose(vals_imag, np.array([0.25, 0.35]), rtol=0, atol=1e-6)
 
 def test_load_dispersive_er(dispersive_material):
     lam0 = np.array([2.0, 5.0])  # Values within the data range
@@ -90,8 +90,8 @@ def test_load_dispersive_er(dispersive_material):
     assert 'wavelengths' in dispersive_material.fitted_data
     assert 'data_eps1' in dispersive_material.fitted_data
     assert 'data_eps2' in dispersive_material.fitted_data
-    assert 'fitted_eps1' in dispersive_material.fitted_data or 'fitted_crv1' in dispersive_material.fitted_data
-    assert 'fitted_eps2' in dispersive_material.fitted_data or 'fitted_crv2' in dispersive_material.fitted_data
+    assert 'fitted_eps1' in dispersive_material.fitted_data
+    assert 'fitted_eps2' in dispersive_material.fitted_data
     
     # Verify the permittivity tensor was created
     assert dispersive_material.er is not None
@@ -105,12 +105,16 @@ def test_freq_data_conversion(freq_data_material):
     
     assert freq_data_material.er is not None
     assert freq_data_material.er.shape == (2,)
-    
-    # The values should be in the right ballpark based on our test data
-    assert 2.0 <= freq_data_material.er[0].real <= 2.2
-    # We might get a negative imaginary part due to the way our polynomial fit works
-    # So check the absolute value instead
-    assert 0.1 <= abs(freq_data_material.er[0].imag) <= 0.3
+
+    # Known table points: 200 THz -> 1.5 um => eps ~ 2.1 - 0.2j (negative imag convention)
+    # and 150 THz -> 2.0 um => ~ 2.2 - 0.3j
+    er = freq_data_material.er
+    assert np.isclose(er[0].real.item(), 2.1, atol=2e-2)
+    assert np.isclose(abs(er[0].imag.item()), 0.2, atol=2e-2)
+    assert er[0].imag.item() <= 0
+    assert np.isclose(er[1].real.item(), 2.2, atol=2e-2)
+    assert np.isclose(abs(er[1].imag.item()), 0.3, atol=2e-2)
+    assert er[1].imag.item() <= 0
 
 def test_invalid_dispersive_material_initialization():
     with pytest.raises(ValueError, match='File path of the dispersive data must be defined'):
@@ -136,19 +140,7 @@ def test_check_header(tmp_path):
         f.write("1.0 2.0 0.1\n2.0 2.1 0.2\n")
     assert not MaterialDataProxy._check_header(file_path_no_header)
 
-def test_unit_converter_integration():
-    """Test that UnitConverter is properly integrated with MaterialClass."""
-    converter = UnitConverter()
-    
-    # Test wavelength conversion (common operations in material handling)
-    wl_um = np.array([1.55])
-    wl_nm = converter.convert_length(wl_um, 'um', 'nm')
-    assert np.isclose(wl_nm, 1550)
-    
-    # Test frequency to wavelength conversion
-    freq_thz = np.array([193.5])
-    wl_nm = converter.freq_to_wavelength(freq_thz, 'thz', 'nm')
-    assert np.isclose(wl_nm, 1550, rtol=1e-2)
+# Removed redundant UnitConverter integration test; UnitConverter is tested elsewhere.
 
 def test_factory_methods(tmp_path):
     """Test the factory methods for creating materials."""

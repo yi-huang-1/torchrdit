@@ -84,11 +84,7 @@ import torch
 from .material_proxy import MaterialDataProxy, UnitConverter
 
 
-__all__ = [
-    'MaterialClass',
-    'handle_plasmonic_materials',
-    'stabilize_epsilon_batch'
-]
+__all__ = ["MaterialClass", "handle_plasmonic_materials", "stabilize_epsilon_batch"]
 
 
 def handle_plasmonic_materials(
@@ -321,11 +317,11 @@ class MaterialClass:
         self._max_poly_order = max_poly_fit_order
         # Use LRU cache with limited size instead of unbounded dict
         self._compute_permittivity_cached = lru_cache(maxsize=128)(self._compute_permittivity)
-        
+
         # Set stabilization parameters
         self._stabilization_params = stabilization_params or {}
-        self._min_loss = self._stabilization_params.get('min_loss', 1e-5)
-        self._threshold = self._stabilization_params.get('threshold', 0.01)
+        self._min_loss = self._stabilization_params.get("min_loss", 1e-5)
+        self._threshold = self._stabilization_params.get("threshold", 0.01)
 
         # Validate data format if dispersive
         if dielectric_dispersion and self._data_format not in self._SUPPORTED_FORMATS:
@@ -457,7 +453,14 @@ class MaterialClass:
         epsilon = handle_plasmonic_materials(self._er, min_loss=self._min_loss, threshold=self._threshold)
         return epsilon
 
-    def _compute_permittivity(self, wavelengths_tuple: Tuple[float, ...], lengthunit: str) -> torch.Tensor:
+    def _compute_permittivity(
+        self,
+        wavelengths_tuple: Tuple[float, ...],
+        lengthunit: str,
+        fit_order: int,
+        min_loss: float,
+        threshold: float,
+    ) -> torch.Tensor:
         """
         Internal method to compute permittivity for given wavelengths.
 
@@ -466,6 +469,9 @@ class MaterialClass:
         Args:
             wavelengths_tuple: Tuple of wavelengths (hashable for caching)
             lengthunit: Length unit used
+            fit_order: Polynomial fit order used in interpolation
+            min_loss: Stabilization minimum loss parameter
+            threshold: Stabilization threshold around Re(ε) = -1
 
         Returns:
             Complex permittivity tensor
@@ -512,7 +518,7 @@ class MaterialClass:
 
         # Use the proxy to extract permittivity at simulation wavelengths
         eps_real, eps_imag = self._data_proxy.extract_permittivity(
-            filtered_data, sim_wavelengths, fit_order=self._max_poly_order
+            filtered_data, sim_wavelengths, fit_order=fit_order
         )
 
         # Store the fitted data for reference
@@ -526,7 +532,7 @@ class MaterialClass:
 
         # Create permittivity tensor and stabilize if needed
         epsilon = torch.tensor(eps_real(sim_wavelengths) - 1j * eps_imag(sim_wavelengths))
-        epsilon = handle_plasmonic_materials(epsilon, min_loss=self._min_loss, threshold=self._threshold)
+        epsilon = handle_plasmonic_materials(epsilon, min_loss=min_loss, threshold=threshold)
         return epsilon
 
     def load_dispersive_er(self, lam0: np.ndarray, lengthunit: str = "um") -> None:
@@ -549,8 +555,10 @@ class MaterialClass:
         # Convert to tuple for hashability in LRU cache
         wavelengths_tuple = tuple(lam0)
 
-        # Use the cached computation method
-        self._er = self._compute_permittivity_cached(wavelengths_tuple, lengthunit)
+        # Use the cached computation method, include fit-affecting parameters in key
+        self._er = self._compute_permittivity_cached(
+            wavelengths_tuple, lengthunit, self._max_poly_order, self._min_loss, self._threshold
+        )
 
     @classmethod
     def from_nk_data(cls, name: str, n: float, k: float = 0.0, permeability: float = 1.0) -> "MaterialClass":

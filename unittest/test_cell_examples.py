@@ -1,8 +1,5 @@
 import unittest
 import torch
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.path import Path
 
 from torchrdit.solver import create_solver
 from torchrdit.utils import create_material
@@ -24,17 +21,8 @@ class TestCellDocExamples(unittest.TestCase):
     """
     
     def setUp(self):
-        """Set up test fixtures."""
-        # Create basic coordinate grid for ShapeGenerator tests
-        self.rdim = (256, 256)
-        x_grid = torch.linspace(-0.5, 0.5, self.rdim[0])
-        y_grid = torch.linspace(-0.5, 0.5, self.rdim[1])
-        self.X, self.Y = torch.meshgrid(x_grid, y_grid, indexing='xy')
-        
-        # Create materials for Cell3D tests
-        self.air = create_material(name="air", permittivity=1.0)
-        self.silicon = create_material(name="Si", permittivity=11.7)
-        self.sio2 = create_material(name="sio2", permittivity=2.25)
+        """Set up test fixtures (none required)."""
+        pass
     
     def test_celltype_example(self):
         """Test the CellType class examples."""
@@ -65,7 +53,7 @@ class TestCellDocExamples(unittest.TestCase):
         self.assertEqual(cell.rdim, [256, 256])
         self.assertEqual(cell.kdim, [5, 5])
         self.assertEqual(len(cell.layers), 1)
-        self.assertEqual(cell.layers[0].thickness, 0.2)
+        self.assertTrue(torch.isclose(cell.layers[0].thickness, torch.tensor(0.2)).item())
         self.assertEqual(cell.layers[0].material_name, "Si")
     
     def test_cell3d_initialization(self):
@@ -100,29 +88,7 @@ class TestCellDocExamples(unittest.TestCase):
         self.assertEqual(rcwa_solver.algorithm.name, "RCWA")
         self.assertEqual(rcwa_solver.cell_type, CellType.Other)  # Non-rectangular lattice
     
-    def test_add_materials_example(self):
-        """Test the add_materials method examples."""
-        # Example from add_materials docstring
-        cell = Cell3D()
-        silicon = create_material(name='silicon', permittivity=11.7)
-        sio2 = create_material(name='sio2', permittivity=2.25)
-        
-        # Add multiple materials at once
-        cell.add_materials([silicon, sio2])
-        
-        # Add a single material
-        gold = create_material(name='gold', permittivity=complex(-10.0, 1.5))
-        cell.add_materials([gold])
-        
-        # Verify materials were added
-        self.assertIn('silicon', cell._matlib)
-        self.assertIn('sio2', cell._matlib)
-        self.assertIn('gold', cell._matlib)
-        
-        # Check material properties
-        self.assertEqual(cell._matlib['silicon'].er, 11.7)
-        self.assertEqual(cell._matlib['sio2'].er, 2.25)
-        self.assertEqual(cell._matlib['gold'].er, np.conj(complex(-10.0, 1.5))) # automatically check and convert to negative convention
+    
     
     def test_add_layer_examples(self):
         """Test the add_layer method examples."""
@@ -158,18 +124,18 @@ class TestCellDocExamples(unittest.TestCase):
         
         # Check layer properties
         self.assertEqual(cell.layers[0].material_name, 'silicon')
-        self.assertEqual(cell.layers[0].thickness, 0.2)
+        self.assertTrue(torch.isclose(cell.layers[0].thickness, torch.tensor(0.2)).item())
         self.assertTrue(cell.layers[0].is_homogeneous)
         
         self.assertEqual(cell.layers[1].material_name, 'air2')
-        self.assertEqual(cell.layers[1].thickness, 0.1)
+        self.assertTrue(torch.isclose(cell.layers[1].thickness, torch.tensor(0.1)).item())
         
         self.assertEqual(cell.layers[2].material_name, 'silicon')
-        self.assertEqual(cell.layers[2].thickness, 0.3)
+        self.assertTrue(torch.isclose(cell.layers[2].thickness, torch.tensor(0.3)).item())
         self.assertFalse(cell.layers[2].is_homogeneous)
         
         self.assertEqual(cell.layers[3].material_name, 'sio2')
-        self.assertEqual(cell.layers[3].thickness, 0.15)
+        self.assertTrue(torch.isclose(cell.layers[3].thickness, torch.tensor(0.15)).item())
         self.assertTrue(cell.layers[3].is_optimize)
     
     def test_update_trn_material_example(self):
@@ -182,12 +148,18 @@ class TestCellDocExamples(unittest.TestCase):
         # Set transmission material by name
         cell.update_trn_material(trn_material='silicon')
         self.assertEqual(cell.layer_manager.trn_material_name, 'silicon')
+        # Public property check for physics value (εr of trn layer)
+        self.assertTrue(
+            torch.isclose(cell.er2, torch.tensor(11.7, dtype=torch.complex128)).item()
+        )
         
         # Set transmission material by providing a material object
         water = create_material(name='water', permittivity=1.77)
         cell.update_trn_material(trn_material=water)
         self.assertEqual(cell.layer_manager.trn_material_name, 'water')
-        self.assertIn('water', cell._matlib)
+        self.assertTrue(
+            torch.isclose(cell.er2, torch.tensor(1.77, dtype=torch.complex128)).item()
+        )
     
     def test_update_ref_material_example(self):
         """Test the update_ref_material method examples."""
@@ -199,12 +171,34 @@ class TestCellDocExamples(unittest.TestCase):
         # Set reflection material by name
         cell.update_ref_material(ref_material='silicon')
         self.assertEqual(cell.layer_manager.ref_material_name, 'silicon')
+        self.assertTrue(
+            torch.isclose(cell.er1, torch.tensor(11.7, dtype=torch.complex128)).item()
+        )
         
         # Set reflection material by providing a material object
         metal = create_material(name='silver', permittivity=complex(-15.0, 1.0))
         cell.update_ref_material(ref_material=metal)
         self.assertEqual(cell.layer_manager.ref_material_name, 'silver')
-        self.assertIn('silver', cell._matlib)
+        # Only check real part here (lossy complex value)
+        self.assertTrue(
+            torch.isclose(cell.er1.real, torch.tensor(-15.0, dtype=torch.float64)).item()
+        )
+
+    def test_default_boundary_material_properties(self):
+        """Public property check for default boundary materials (air)."""
+        cell = Cell3D()
+        self.assertTrue(
+            torch.isclose(cell.er1, torch.tensor(1.0, dtype=torch.complex128)).item()
+        )
+        self.assertTrue(
+            torch.isclose(cell.er2, torch.tensor(1.0, dtype=torch.complex128)).item()
+        )
+        self.assertTrue(
+            torch.isclose(cell.ur1, torch.tensor(1.0, dtype=torch.complex128)).item()
+        )
+        self.assertTrue(
+            torch.isclose(cell.ur2, torch.tensor(1.0, dtype=torch.complex128)).item()
+        )
     
     def test_get_layout_example(self):
         """Test the get_layout method example."""

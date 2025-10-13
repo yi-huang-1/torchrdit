@@ -1,9 +1,13 @@
 """
-Test suite for tensorizing _pre_solve and _pre_solve_batched methods.
+Unit tests for tensorized _pre_solve.
 
-This test suite ensures mathematical equivalence between the original
-sequential implementation and the new tensorized implementation.
-Following TDD principles, these tests are written before the implementation.
+Focus:
+- Single vs batched equivalence (multi-source sequential vs batched)
+- Edge angles (normal and grazing) and dimension handling
+- Real gradient flow through theta/phi in both single and batched paths
+
+Notes:
+- Removed self-referential or placeholder tests that did not validate distinct behavior.
 """
 
 import torch
@@ -38,40 +42,7 @@ class TestPreSolveTensorization:
 
         return solver
 
-    def test_single_source_equivalence(self, setup_solver):
-        """Verify _pre_solve and _pre_solve_batched[0] produce identical results."""
-        solver = setup_solver
-
-        # Test case 1: Scalar theta/phi
-        source_single = solver.add_source(
-            theta=30 * np.pi / 180, phi=45 * np.pi / 180, pte=1.0, ptm=0.0
-        )
-
-        # Run single source through _pre_solve
-        solver.src = source_single
-        solver._pre_solve()
-        kinc_single = solver.kinc.clone()
-
-        # Run same source through unified _pre_solve with list
-        solver._pre_solve([source_single])
-        kinc_batched = solver.kinc[0].clone()  # Extract first source
-
-        # Compare results
-        assert kinc_single.shape == kinc_batched.shape, (
-            f"Shape mismatch: single {kinc_single.shape} vs batched {kinc_batched.shape}"
-        )
-
-        max_diff = torch.abs(kinc_single - kinc_batched).max().item()
-        assert torch.allclose(kinc_single, kinc_batched, atol=1e-6, rtol=1e-5), (
-            f"kinc mismatch: max diff = {max_diff}"
-        )
-
-        # Verify reciprocal lattice vectors are identical
-        assert hasattr(solver, "reci_t1") and hasattr(solver, "reci_t2"), (
-            "Reciprocal lattice vectors not set"
-        )
-
-        print(f"✓ Single source equivalence test passed (max diff: {max_diff:.2e})")
+    # Removed single-source self-comparison; multi-source test below subsumes it.
 
     def test_multiple_sources_sequential_match(self, setup_solver):
         """Verify batched processing matches sequential processing."""
@@ -107,7 +78,7 @@ class TestPreSolveTensorization:
             assert torch.allclose(seq_kinc, batch_kinc, atol=1e-6, rtol=1e-5), (
                 f"Source {i} (θ={angles[i]}°) mismatch: max diff = {max_diff}"
             )
-            print(f"✓ Source {i} match verified (max diff: {max_diff:.2e})")
+            # Assertions above ensure equivalence.
 
     def test_edge_cases(self, setup_solver):
         """Test extreme angles and special cases."""
@@ -151,44 +122,47 @@ class TestPreSolveTensorization:
             "Grazing incidence z-component too large"
         )
 
-        print("✓ Edge cases test passed")
+        # Assertions above ensure edge-case behavior.
 
-    def test_gradient_flow_preservation(self, setup_solver):
-        """Ensure gradients propagate correctly through both paths."""
+    def test_gradients_theta_phi_single_and_batched(self, setup_solver):
+        """Real gradient test: kinc should depend on theta/phi in both paths."""
         solver = setup_solver
 
-        # Create source parameters with gradients enabled
-        # Note: Current implementation expects scalar values, not tensors
-        theta_val = 30 * np.pi / 180
-        phi_val = 45 * np.pi / 180
+        # Single-source path with differentiable theta/phi
+        theta = torch.tensor(0.7, dtype=solver.tfloat, requires_grad=True)
+        phi = torch.tensor(0.3, dtype=solver.tfloat, requires_grad=True)
+        src = solver.add_source(theta=theta, phi=phi, pte=1.0, ptm=0.0)
 
-        # For gradient testing, we'll need to test after solve() is called
-        # since _pre_solve doesn't directly support tensor inputs
-        # This test will be updated when we implement the unified version
-
-        # Test with regular values for now
-        source = solver.add_source(theta=theta_val, phi=phi_val, pte=1.0, ptm=0.0)
-
-        # Test single source
-        solver.src = source
+        solver.src = src
         solver._pre_solve()
+        kinc = solver.kinc
+        loss = (kinc.real ** 2).sum()
+        loss.backward()
 
-        kinc_single = solver.kinc.clone()
+        assert theta.grad is not None and torch.isfinite(theta.grad)
+        assert phi.grad is not None and torch.isfinite(phi.grad)
 
-        # Test batched source using unified _pre_solve
-        solver._pre_solve([source])
-        kinc_batched = solver.kinc[0].clone()
+        # Batched path with two independent differentiable angle pairs
+        theta_b = [
+            torch.tensor(0.5, dtype=solver.tfloat, requires_grad=True),
+            torch.tensor(1.0, dtype=solver.tfloat, requires_grad=True),
+        ]
+        phi_b = [
+            torch.tensor(0.2, dtype=solver.tfloat, requires_grad=True),
+            torch.tensor(0.8, dtype=solver.tfloat, requires_grad=True),
+        ]
+        sources = [
+            solver.add_source(theta=theta_b[0], phi=phi_b[0], pte=1.0, ptm=0.0),
+            solver.add_source(theta=theta_b[1], phi=phi_b[1], pte=1.0, ptm=0.0),
+        ]
 
-        # For now, just verify that both methods produce the same result
-        assert torch.allclose(kinc_single, kinc_batched, atol=1e-6), (
-            "Single vs batched kinc mismatch"
-        )
+        solver._pre_solve(sources)
+        kinc_b = solver.kinc
+        loss_b = (kinc_b.real ** 2).sum()
+        loss_b.backward()
 
-        # Gradient flow will be tested after unified implementation
-        # The current implementation doesn't support gradient flow through theta/phi
-        # This is a limitation we'll address in the unified version
-
-        print("✓ Gradient flow preservation test passed (basic equivalence verified)")
+        for v in theta_b + phi_b:
+            assert v.grad is not None and torch.isfinite(v.grad)
 
     def test_dimension_handling(self, setup_solver):
         """Test various input dimension scenarios."""
@@ -220,7 +194,7 @@ class TestPreSolveTensorization:
             "Array input should produce different kinc per frequency"
         )
 
-        print("✓ Dimension handling test passed")
+        # Assertions above ensure per-frequency inputs are handled correctly.
 
     def test_numerical_stability(self, setup_solver):
         """Test numerical stability with extreme values."""
@@ -249,38 +223,9 @@ class TestPreSolveTensorization:
             "NaN or Inf detected for near-90° angle"
         )
 
-        print("✓ Numerical stability test passed")
+        # Assertions above ensure no NaN/Inf at extremes.
 
-    def test_dispersive_material_handling(self, setup_solver):
-        """Test handling of dispersive materials."""
-        solver = setup_solver
-
-        # For dispersive materials, we need to create a dispersive material
-        # and add it to the solver, not modify er1/ur1 directly
-        # The current implementation handles dispersive materials through
-        # the material system, not by direct property modification
-
-        # Test with single source
-        source = solver.add_source(theta=45 * np.pi / 180, phi=0, pte=1.0, ptm=0.0)
-        solver.src = source
-        solver._pre_solve()
-        kinc_single = solver.kinc.clone()
-
-        # Test with batched sources using unified _pre_solve
-        solver._pre_solve([source])
-        kinc_batched = solver.kinc[0].clone()
-
-        # Verify results match
-        assert torch.allclose(kinc_single, kinc_batched, atol=1e-6), (
-            "Material handling mismatch between methods"
-        )
-
-        # Verify kinc has correct shape for multiple wavelengths
-        assert kinc_single.shape == (solver.n_freqs, 3), (
-            f"Expected shape ({solver.n_freqs}, 3), got {kinc_single.shape}"
-        )
-
-        print("✓ Dispersive material handling test passed")
+    # Removed dispersive-material test; it didn't introduce dispersion and duplicated equivalence checks.
 
 
 if __name__ == "__main__":

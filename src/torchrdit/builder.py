@@ -1,4 +1,4 @@
-from typing import List, Dict, Union, Any, TYPE_CHECKING
+from typing import List, Dict, Union, Any, Optional, TYPE_CHECKING
 import torch
 import numpy as np
 from .constants import Algorithm, Precision
@@ -103,11 +103,14 @@ def _add_layers(
         is_homogeneous = layer.get("is_homogeneous", True)
         is_optimize = layer.get("is_optimize", False)
 
+        slice_count = layer.get("slice_count", 1)
+
         solver.add_layer(
             material_name=materials[material_name],
             thickness=thickness,
             is_homogeneous=is_homogeneous,
             is_optimize=is_optimize,
+            slice_count=slice_count,
         )
 
 
@@ -226,6 +229,10 @@ class SolverBuilder:
         self._config_path = None
         self._trn_material = None
         self._ref_material = None
+        self._fff_vector_scheme = "POL"
+        self._fff_fourier_weight = 1e-2
+        self._fff_smoothness_weight = 1e-3
+        self._fff_vector_steps = 1
 
     def with_algorithm(self, algorithm_type: Algorithm) -> "SolverBuilder":
         """Set the algorithm type for the solver.
@@ -605,6 +612,44 @@ class SolverBuilder:
         self._is_use_FFF = use_fff
         return self
 
+    def with_fff_vector_options(
+        self,
+        *,
+        scheme: Optional[str] = None,
+        fourier_weight: Optional[float] = None,
+        smoothness_weight: Optional[float] = None,
+        steps: Optional[int] = None,
+    ) -> "SolverBuilder":
+        """Configure tangent vector field generation behaviour.
+
+        Args:
+            scheme: Tangent field scheme (e.g., ``'POL'``, ``'NORMAL'``).
+            fourier_weight: Weight for the Fourier-domain loss term.
+            smoothness_weight: Weight for the spatial smoothness penalty.
+            steps: Number of Newton iterations for tangent field refinement.
+
+        Returns:
+            SolverBuilder: The builder instance for method chaining.
+
+        Raises:
+            ValueError: If ``steps`` is provided and less than 1.
+
+        Keywords:
+            tangent field, normal vector method, Fourier factorization, options
+        """
+        if scheme is not None:
+            self._fff_vector_scheme = scheme
+        if fourier_weight is not None:
+            self._fff_fourier_weight = float(fourier_weight)
+        if smoothness_weight is not None:
+            self._fff_smoothness_weight = float(smoothness_weight)
+        if steps is not None:
+            steps_int = int(steps)
+            if steps_int < 1:
+                raise ValueError("Vector field steps must be a positive integer.")
+            self._fff_vector_steps = steps_int
+        return self
+
     def with_device(self, device: Union[str, torch.device]) -> "SolverBuilder":
         """Set the computation device (CPU or GPU).
 
@@ -808,6 +853,22 @@ class SolverBuilder:
             self._device = case_insensitive_config["device"][1]
         if "rdit_order" in case_insensitive_config:
             self._rdit_order = case_insensitive_config["rdit_order"][1]
+        vector_option_key = None
+        if "fff_vector" in case_insensitive_config:
+            vector_option_key = "fff_vector"
+        elif "vector_field" in case_insensitive_config:
+            vector_option_key = "vector_field"
+
+        if vector_option_key is not None:
+            vector_options = case_insensitive_config[vector_option_key][1]
+            if not isinstance(vector_options, dict):
+                raise ValueError(f"{vector_option_key} configuration must be a dictionary.")
+            self.with_fff_vector_options(
+                scheme=vector_options.get("scheme"),
+                fourier_weight=vector_options.get("fourier_weight", vector_options.get("fourier_loss_weight")),
+                smoothness_weight=vector_options.get("smoothness_weight", vector_options.get("smoothness_loss_weight")),
+                steps=vector_options.get("steps"),
+            )
 
         # Process materials and layers
         base_path = ""
@@ -873,6 +934,10 @@ class SolverBuilder:
                 t1=self._t1,
                 t2=self._t2,
                 is_use_FFF=self._is_use_FFF,
+                fff_vector_scheme=self._fff_vector_scheme,
+                fff_fourier_weight=self._fff_fourier_weight,
+                fff_smoothness_weight=self._fff_smoothness_weight,
+                fff_vector_steps=self._fff_vector_steps,
                 precision=self._precision,
                 device=self._device,
             )
@@ -891,6 +956,10 @@ class SolverBuilder:
                 t1=self._t1,
                 t2=self._t2,
                 is_use_FFF=self._is_use_FFF,
+                fff_vector_scheme=self._fff_vector_scheme,
+                fff_fourier_weight=self._fff_fourier_weight,
+                fff_smoothness_weight=self._fff_smoothness_weight,
+                fff_vector_steps=self._fff_vector_steps,
                 precision=self._precision,
                 device=self._device,
             )

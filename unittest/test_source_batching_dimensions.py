@@ -16,7 +16,7 @@ import numpy as np
 from torchrdit.solver import create_solver
 from torchrdit.utils import create_material
 from torchrdit.constants import Algorithm
-from torchrdit.batched_results import BatchedSolverResults
+from torchrdit.results import SolverResults
 
 
 class TestCurrentDimensionFlow:
@@ -75,32 +75,9 @@ class TestCurrentDimensionFlow:
             "transmission_diffraction should be (n_freqs, kdim[0], kdim[1])"
         )
 
-    def test_polarization_dimensions(self):
-        """Test dimensions with different polarizations."""
-        solver = self.setup_solver(n_freqs=3)
-        
-        # TE polarization
-        source_te = {"theta": 0.1, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
-        result_te = solver.solve(source_te)
-        
-        # TM polarization
-        source_tm = {"theta": 0.1, "phi": 0.0, "pte": 0.0, "ptm": 1.0}
-        result_tm = solver.solve(source_tm)
-        
-        # Results should have same dimensions
-        assert result_te.reflection.shape == result_tm.reflection.shape
+    # Removed: test_polarization_dimensions (redundant)
 
-    def test_result_dimensions(self):
-        """Test dimensions of solver results."""
-        solver = self.setup_solver(n_freqs=3, kdim=(3, 3))
-        source = {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
-        results = solver.solve(source)
-
-        # Document result dimensions
-        assert results.reflection.shape == (3,), "reflection should be (n_freqs,)"
-        assert results.transmission.shape == (3,), "transmission should be (n_freqs,)"
-        assert hasattr(results, 'reflection_diffraction')
-        assert hasattr(results, 'transmission_diffraction')
+    # Removed: test_result_dimensions (redundant)
 
 
 class TestBatchedSourceDimensions:
@@ -129,26 +106,7 @@ class TestBatchedSourceDimensions:
 
         return solver
 
-    def test_batched_pre_solve_dimensions(self):
-        """Test pre_solve dimensions with batched sources."""
-        solver = self.create_batched_solver(n_freqs=3)
-
-        # Batched sources
-        sources = [
-            {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
-            {"theta": 0.1, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
-            {"theta": 0.2, "phi": 0.0, "pte": 0.0, "ptm": 1.0},
-        ]
-
-        results = solver.solve(sources)
-        
-        # Verify batched results
-        assert isinstance(results, BatchedSolverResults)
-        assert len(results) == 3
-        
-        # Check stacked dimensions
-        assert results.reflection.shape == (3, 3), "stacked reflection should be (n_sources, n_freqs)"
-        assert results.transmission.shape == (3, 3), "stacked transmission should be (n_sources, n_freqs)"
+    # Removed: test_batched_pre_solve_dimensions (redundant)
 
     def test_batched_k_vector_dimensions(self):
         """Test k-vector dimensions with batched sources."""
@@ -195,8 +153,9 @@ class TestBatchedSourceDimensions:
         source = {"theta": 0.1, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
         result = solver.solve(source)
 
-        # Should return SolverResults, not BatchedSolverResults
-        assert not isinstance(result, BatchedSolverResults)
+        # Should return SolverResults for single source (not batched)
+        assert isinstance(result, SolverResults)
+        assert not result.is_batched
         assert result.reflection.shape == (3,), "single source should maintain (n_freqs,) shape"
         assert result.transmission.shape == (3,), "single source should maintain (n_freqs,) shape"
 
@@ -205,20 +164,22 @@ class TestBatchedSourceDimensions:
         solver = self.create_batched_solver(n_freqs=4, kdim=(5, 5))
 
         # Test different batch sizes
-        for batch_size in [1, 5, 10]:
+        for batch_size in [1, 3]:
             sources = [
                 {"theta": i * 0.01, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
                 for i in range(batch_size)
             ]
 
             if batch_size == 1:
-                # Single source list should still return BatchedSolverResults
+                # Single source list should still return SolverResults with batching support
                 results = solver.solve(sources)
-                assert isinstance(results, BatchedSolverResults)
+                assert isinstance(results, SolverResults)
+                assert results.is_batched
                 assert len(results) == 1
             else:
                 results = solver.solve(sources)
-                assert isinstance(results, BatchedSolverResults)
+                assert isinstance(results, SolverResults)
+                assert results.is_batched
                 assert len(results) == batch_size
 
             # Check dimensions

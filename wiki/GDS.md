@@ -5,7 +5,7 @@ The `torchrdit.gds` module provides functionality to export photonic structure m
 
 ## Key Features
 - Export binary masks to GDS format with JSON vertex data
-- Import masks from GDS JSON files  
+- Import masks from GDS JSON files
 - Support for complex topologies including holes and disconnected regions
 - Batch processing for multiple masks
 - Both Cartesian and non-Cartesian lattice systems
@@ -16,7 +16,7 @@ The `torchrdit.gds` module provides functionality to export photonic structure m
 
 ### mask_to_gds
 ```python
-mask_to_gds(mask, layout, cell_name, file_path, smooth=0.01, padding=20, 
+mask_to_gds(mask, layout, cell_name, file_path, smooth=0.01, padding=20,
             connectivity=1, morph_separate=False)
 ```
 
@@ -228,7 +228,7 @@ appropriate handler (_get_cartesian_coord or _get_non_cartesian_coord).
 def gds_export(boundary_list: list,
                layout: tuple,
                cell_name: str,
-               file_path: str,
+               file_path: Union[str, Path],
                smooth: float = 0.1)
 ```
 
@@ -241,7 +241,7 @@ Export boundary list to GDSII file with support for holes.
 - `Format` - [[[outer_boundary], [hole1], [hole2], ...], ...]
 - `layout` - Layout, or meshgrid matrices X and Y of the mask
 - `cell_name` - Cell name in GDSII file
-- `file_path` - File path of the generated gds file
+- `file_path` - File path of the generated gds file (str or pathlib.Path)
 - `smooth` - Parameter in the UnivariateSpline function controls the smoothness
 
 <a id="torchrdit.gds.mask_to_gds"></a>
@@ -253,7 +253,7 @@ def mask_to_gds(mask: Union[torch.Tensor, List[torch.Tensor], np.ndarray,
                             List[np.ndarray]],
                 layout: tuple,
                 cell_name: str,
-                file_path: str,
+                file_path: Union[str, Path],
                 smooth: float = 0.01,
                 padding: int = 20,
                 connectivity: int = 1,
@@ -275,8 +275,9 @@ Supports both single masks and batch processing of multiple masks.
   For batch export: list of 2D tensors/arrays, or 3D tensor (batch, height, width).
 - `layout` - Tuple of (X, Y) coordinate meshgrid matrices.
 - `cell_name` - Name for the GDS cell. For batches, will be appended with index.
-- `file_path` - Output file path (should end with .gds). For batches, index will be
-  inserted before extension (e.g., "output.gds" -> "output_0.gds").
+- `file_path` - Output file path (str or pathlib.Path, should end with .gds).
+  For batches, index will be inserted before extension
+  (e.g., "output.gds" -> "output_0.gds").
 - `smooth` - Smoothing parameter for boundary splines (default: 0.01).
   Lower values preserve shape fidelity better.
 - `padding` - Padding pixels to handle shapes at boundaries (default: 20).
@@ -332,7 +333,8 @@ mask_to_gds(mask, (X, Y), "DEVICE", "device.gds")
 #### load\_gds\_vertices
 
 ```python
-def load_gds_vertices(json_path: str) -> List[List[Tuple[float, float]]]
+def load_gds_vertices(
+        json_path: Union[str, Path]) -> List[List[Tuple[float, float]]]
 ```
 
 Load polygon vertices from JSON file.
@@ -342,7 +344,7 @@ vertices for all boundaries in the mask.
 
 **Arguments**:
 
-- `json_path` - Path to JSON file containing vertex data.
+- `json_path` - Path to JSON file containing vertex data (str or pathlib.Path).
   
 
 **Returns**:
@@ -380,7 +382,7 @@ for group in vertices:
 #### gds\_to\_mask
 
 ```python
-def gds_to_mask(json_path: str,
+def gds_to_mask(json_path: Union[str, Path],
                 shape_generator,
                 soft_edge: float = 0.0) -> torch.Tensor
 ```
@@ -393,7 +395,7 @@ disconnected regions.
 
 **Arguments**:
 
-- `json_path` - Path to JSON file containing vertex data.
+- `json_path` - Path to JSON file containing vertex data (str or pathlib.Path).
 - `shape_generator` - ShapeGenerator instance for coordinate system.
 - `soft_edge` - Soft edge parameter for polygon generation (default: 0.0).
   

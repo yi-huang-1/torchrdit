@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.27] - 2025-10-13
+
+### Added
+
+- **Batch Source Field Compatibility**: Full integration with batch solving
+  - All field APIs work correctly with both single and batch source results
+  - Proper lattice vector propagation in BatchedSolverResults
+
+### Fixed
+
+- **Batch Source Field Reconstruction**: Fixed missing lattice vectors in batch mode
+  - Added lattice_t1, lattice_t2, default_rdim fields to BatchedSolverResults
+  - Fixed wave_vectors propagation in batch results
+  - Preserve per-layer `slice_count` when layers toggle between homogeneous and grating representations, ensuring repeated sub-slice scattering reuse continues to accelerate the `is_use_FFF` flow after mask updates.
+
 ## [0.1.26] - 2025-07-25
 
 ### Added
@@ -70,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **GDS Export/Import Functionality**: Industry-standard GDSII format support for fabrication workflows
   - `mask_to_gds()`: Export binary masks to GDS files with JSON vertex data
-  - `gds_to_mask()`: Import masks from GDS JSON files  
+  - `gds_to_mask()`: Import masks from GDS JSON files
   - `load_gds_vertices()`: Load polygon vertices from JSON files
   - Support for complex topologies including holes and disconnected regions
   - Batch processing for multiple masks

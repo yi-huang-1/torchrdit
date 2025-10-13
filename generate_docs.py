@@ -14,7 +14,7 @@ def create_material_proxy_page(docs_dir):
     """Create a MaterialProxy page for the wiki."""
     # First check if the auto-generated API file exists
     api_file = docs_dir / "MaterialProxy-API.md"
-    
+
     # Create the custom intro content
     intro_content = """# Material Proxy Module
 
@@ -70,32 +70,32 @@ eps_real, eps_imag = proxy.extract_permittivity(si_data, wavelengths)
 Below is the complete API reference for the material_proxy module, automatically generated from the source code.
 
 """
-    
+
     # Create the MaterialProxy.md file
     with open(docs_dir / "MaterialProxy.md", "w") as f:
         f.write(intro_content)
-        
+
         # If the auto-generated API file exists, append its content (skipping the header)
         if api_file.exists():
             with open(api_file, "r") as api_f:
                 api_content = api_f.read()
-                
+
                 # Find the first heading and skip everything before it
                 import re
                 match = re.search(r'^#', api_content, re.MULTILINE)
                 if match:
                     api_content = api_content[match.start():]
-                
+
                 f.write(api_content)
         else:
             # If API file doesn't exist, include a warning
             f.write("""
-**Note: Automatic API documentation could not be generated. 
+**Note: Automatic API documentation could not be generated.
 Please ensure that the module is properly installed and importable.**
 """)
-    
+
     print("  -> Created MaterialProxy.md")
-    
+
     # Try to remove the temporary API file to keep things clean
     if api_file.exists():
         try:
@@ -107,15 +107,15 @@ def main():
     # Create wiki directory if it doesn't exist
     wiki_dir = Path("wiki")
     wiki_dir.mkdir(exist_ok=True)
-    
+
     # Load configuration
     with open("pydoc-markdown.yml", "r") as f:
         config = yaml.safe_load(f)
-    
+
     # Extract docs directory from config
     docs_dir = Path(config.get("docs_directory", "wiki"))
     docs_dir.mkdir(exist_ok=True)
-    
+
     # Remove all existing files in the wiki directory
     print("Cleaning wiki directory...")
     file_count = 0
@@ -124,21 +124,21 @@ def main():
             file_path.unlink()
             file_count += 1
     print(f"  -> Removed {file_count} files")
-    
+
     # Generate documentation for each module
     for module in config.get("modules", []):
         module_name = module["name"]
         output_file = docs_dir / module["output_file"]
-        
+
         print(f"Generating documentation for {module_name}...")
-        
+
         # Run pydoc-markdown for this module
         cmd = ["pydoc-markdown", "-m", module_name, "--render-toc"]
-        
+
         try:
             with open(output_file, "w") as f:
                 result = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, text=True)
-                
+
             if result.returncode != 0:
                 print(f"  -> Warning: Failed to generate documentation for {module_name}")
                 # Create a minimal documentation file when module import fails
@@ -167,40 +167,43 @@ This is a placeholder for {module_name} documentation.
 Please check that the module exists and is properly installed.
 """)
             print(f"  -> Created error documentation for {module_name}")
-    
+
     # Create Home page
     create_home_page(docs_dir)
-    
+
     # Create a sidebar for navigation
     create_sidebar(docs_dir)
-    
+
     # Create a Getting Started guide
     create_getting_started_guide(docs_dir)
-    
+
     # Create an Examples page
     create_examples_page(docs_dir)
-    
+
     # Create a Shapes page
     create_shapes_page(docs_dir)
-    
+
+    # Create a Vector page
+    create_vector_page(docs_dir)
+
     # Create an Observers page
     create_observers_page(docs_dir)
-    
+
     # Create a Results page
     create_results_page(docs_dir)
-    
+
     # Create a Constants page
     create_constants_page(docs_dir)
-    
+
     # Create a MaterialProxy page
     create_material_proxy_page(docs_dir)
-    
+
     # Create a Source Batching page
     create_source_batching_page(docs_dir)
-    
+
     # Create a GDS page
     create_gds_page(docs_dir)
-    
+
     # Create a README file for the wiki directory
     create_readme(docs_dir)
 
@@ -241,6 +244,7 @@ Welcome to the `TorchRDIT` documentation. `TorchRDIT` is an advanced software pa
 - [Results Module](Results) - Structured data containers for simulation results
 - [Shapes Module](Shapes) - Shape generation for photonic structures
 - [Solver Module](Solver) - Core solver functionality
+- [Vector Module](Vector) - Tangent vector field generation
 - [Utils](Utils) - Utility functions
 - [Visualization](Visualization) - Tools for visualizing results
 
@@ -253,12 +257,17 @@ TorchRDIT now includes industry-standard GDS file format support:
 - Batch processing for multiple designs
 - See the [GDS](GDS) page for details
 
-## New in v0.1.22: Source Batching
+## New in v0.1.27: Unified Interface & Field APIs
 
-TorchRDIT now supports efficient batched processing of multiple sources:
-- Process multiple incident angles simultaneously
-- 3-6x performance improvement for parameter sweeps
-- Full gradient support for multi-condition optimization
+TorchRDIT v0.1.27 introduces major improvements:
+- **Unified SolverResults**: Single class handles both single and batched sources
+
+## New in v0.1.22-v0.1.26: Source Batching & GDS Support
+
+Recent features include:
+- **Source Batching**: Process multiple incident angles simultaneously (3-6x speedup)
+- **GDS Integration**: Industry-standard file format support for fabrication
+- **Numerical Stability**: Enhanced protection for edge cases
 - See the [Source Batching](SourceBatching) page for details
 
 ## Examples
@@ -295,6 +304,7 @@ def create_sidebar(docs_dir):
   - [Results](Results)
   - [Shapes](Shapes)
   - [Solver](Solver)
+  - [Vector](Vector)
   - [Utils](Utils)
   - [Visualization](Visualization)
   - [GDS](GDS)
@@ -391,7 +401,7 @@ results = device.solve(source) # SolverResults object
 # Extract the results
 print(f"Transmission: {results.transmission.item() * 100:.2f}%")
 print(f"Reflection: {results.reflection.item() * 100:.2f}%")
-                
+
 print("Phase of the transmission field x-component: ", torch.angle(results.transmission_field.x))
 print("Phase of the reflection field x-component: ", torch.angle(results.reflection_field.x))
 ```
@@ -462,20 +472,20 @@ def create_examples_page(docs_dir):
     """Create the Examples page for the wiki."""
     # Get the examples directory
     examples_dir = Path("examples")
-    
+
     # Check if examples directory exists
     examples_exists = examples_dir.exists()
     example_files = []
-    
+
     # If examples not found in root, try src directory structure
     if not examples_exists:
         examples_dir = Path("src/examples")
         examples_exists = examples_dir.exists()
-    
+
     if examples_exists:
         # Find all Python example files
         example_files = sorted([f for f in examples_dir.glob("*.py") if f.is_file()])
-    
+
     # Create base examples content
     content = """# TorchRDIT Examples
 
@@ -492,7 +502,7 @@ The examples are organized into several categories:
 
 ### Simulation Algorithms
 - RCWA (Rigorous Coupled-Wave Analysis)
-- R-DIT (Rigorous Diffraction Interface Theory) 
+- R-DIT (Rigorous Diffraction Interface Theory)
 
 ### Material Properties
 - Homogeneous materials
@@ -543,7 +553,8 @@ builder.add_layer({
     "material": "SiO",
     "thickness": h1.item(),
     "is_homogeneous": False,
-    "is_optimize": True
+    "is_optimize": True,
+    "slice_count": 3,  # Optional: reuse a sub-slice scattering block three times
 })
 # Build the solver
 dev1 = builder.build()
@@ -562,7 +573,8 @@ dev1 = (get_solver_builder()
             "material": "SiO",
             "thickness": h1.item(),
             "is_homogeneous": False,
-            "is_optimize": True
+            "is_optimize": True,
+            "slice_count": 3,
         })
         .build())
 ```
@@ -579,6 +591,8 @@ def configure_gmrf_solver(builder):
 # Create the solver using the configuration function
 dev1 = create_solver_from_builder(configure_gmrf_solver)
 ```
+
+> **Tip:** Every `add_layer` call accepts an optional `slice_count` field. When greater than one, TorchRDIT computes the scattering response for a single sub-slice and reuses it `slice_count` times via the Redheffer product. Non-integer or non-positive inputs fall back to `1`, so existing configurations continue to work without changes.
 
 ### Structure Building
 
@@ -609,10 +623,10 @@ device.update_er_with_mask(mask=mask, layer_index=0)
 ```python
 # Creating materials with dispersion from data files
 material_sic = create_material(
-    name='SiC', 
-    dielectric_dispersion=True, 
-    user_dielectric_file='Si_C-e.txt', 
-    data_format='freq-eps', 
+    name='SiC',
+    dielectric_dispersion=True,
+    user_dielectric_file='Si_C-e.txt',
+    data_format='freq-eps',
     data_unit='thz'
 )
 
@@ -648,13 +662,13 @@ def objective_GMRF(dev, src, radius):
 for epoch in trange(num_epochs):
     # Zero gradients
     optimizer.zero_grad()
-    
+
     # Forward pass
     loss = objective_GMRF(dev, src, radius)
-    
+
     # Backward pass
     loss.backward()
-    
+
     # Update parameters
     optimizer.step()
 ```
@@ -670,12 +684,12 @@ These examples demonstrate the key capabilities of TorchRDIT, including differen
         for example_file in example_files:
             example_name = example_file.stem
             example_content = ""
-            
+
             # Read the file content
             try:
                 with open(example_file, 'r') as f:
                     example_content = f.read()
-                
+
                 # Extract docstring (if it exists)
                 docstring = ""
                 if example_content.strip().startswith('"""'):
@@ -683,17 +697,17 @@ These examples demonstrate the key capabilities of TorchRDIT, including differen
                     end = example_content.find('"""', start)
                     if end > start:
                         docstring = example_content[start:end].strip()
-                
+
                 # Add example section
                 content += f"\n### {example_name}\n\n"
-                
+
                 # Add docstring if available
                 if docstring:
                     content += f"{docstring}\n\n"
-                
+
                 # Add code block with the full content (no truncation)
                 content += f"```python\n{example_content}\n```\n"
-                
+
             except Exception as e:
                 content += f"\n### {example_name}\n\n**Error loading example: {str(e)}**\n"
     else:
@@ -707,7 +721,7 @@ def create_shapes_page(docs_dir):
     """Create a dedicated Shapes page for the wiki."""
     # First check if the auto-generated API file exists
     api_file = docs_dir / "Shapes-API.md"
-    
+
     # Create the custom intro content
     intro_content = """# Shape Generation Module
 
@@ -736,7 +750,7 @@ shape_gen = ShapeGenerator.from_solver(solver)
 
 # Generate shapes
 circle = shape_gen.generate_circle_mask(center=(0.0, 0.0), radius=0.3)
-rect = shape_gen.generate_rectangle_mask(width=0.4, height=0.2, angle=30)
+rect = shape_gen.generate_rectangle_mask(x_size=0.4, y_size=0.2, angle=30)
 
 # Combine shapes
 combined = shape_gen.combine_masks(circle, rect, operation='union')
@@ -750,32 +764,32 @@ solver.update_er_with_mask(combined, layer_index=0)
 Below is the complete API reference for the shapes module, automatically generated from the source code.
 
 """
-    
+
     # Create the Shapes.md file
     with open(docs_dir / "Shapes.md", "w") as f:
         f.write(intro_content)
-        
+
         # If the auto-generated API file exists, append its content (skipping the header)
         if api_file.exists():
             with open(api_file, "r") as api_f:
                 api_content = api_f.read()
-                
+
                 # Find the first heading and skip everything before it
                 import re
                 match = re.search(r'^#', api_content, re.MULTILINE)
                 if match:
                     api_content = api_content[match.start():]
-                
+
                 f.write(api_content)
         else:
             # If API file doesn't exist, include a warning
             f.write("""
-**Note: Automatic API documentation could not be generated. 
+**Note: Automatic API documentation could not be generated.
 Please ensure that the module is properly installed and importable.**
 """)
-    
+
     print("  -> Created Shapes.md")
-    
+
     # Try to remove the temporary API file to keep things clean
     if api_file.exists():
         try:
@@ -783,11 +797,115 @@ Please ensure that the module is properly installed and importable.**
         except:
             pass
 
+
+def create_vector_page(docs_dir):
+    """Create the tangent vector field documentation page."""
+    api_file = docs_dir / "Vector-API.md"
+
+    # Ensure API reference is generated
+    if not api_file.exists():
+        cmd = ["pydoc-markdown", "-m", "torchrdit.vector", "--render-toc"]
+        try:
+            with open(api_file, "w") as api_handle:
+                result = subprocess.run(cmd, stdout=api_handle, stderr=subprocess.PIPE, text=True)
+            if result.returncode != 0:
+                api_file.write_text(f"""# torchrdit.vector
+
+**Note: Automatic API documentation for `torchrdit.vector` failed.**
+
+stderr:
+{result.stderr}
+""")
+        except Exception as exc:
+            api_file.write_text(f"""# torchrdit.vector
+
+**Error: Documentation generation for `torchrdit.vector` encountered an error: {exc}**
+""")
+
+    intro_content = """# Tangent Vector Field Module
+
+## Overview
+The `torchrdit.vector` module provides Torch-native tangent vector field generation used by Fourier-factorized solvers.
+
+This module reproduces the tangent-field utilities from the fmmax project
+(``https://github.com/facebookresearch/fmmax``). The implementation follows the derivations
+of the following papers:
+- M. F. Schubert and A. M. Hammond, "Fourier modal method for inverse design of metasurface-enhanced micro-LEDs," Opt. Express 31, 42945 (2023).
+- V. Liu and S. Fan, "S4 : A free electromagnetic solver for layered periodic structures," Computer Physics Communications 183, 2233–2244 (2012).
+
+## Key Components
+- `LatticeVectors`: stores primitive lattice vectors and constructs their reciprocal basis.
+- `FourierExpansionManager`: manages Fourier order selection, projection, and reconstruction.
+- `TangentFieldGenerator`: optimizes smooth tangent fields with configurable penalties.
+- `compute_tangent_field`: convenience wrapper that returns the field components for a given scheme.
+
+## Supported Schemes
+- `POL`: normalized tangent directions suitable for standard Fourier factorization.
+- `NORMAL`: elementwise-normalized tangential vectors for unit-magnitude fields.
+- `JONES`: tangent field mapped to Jones vectors for ellipse visualizations.
+- `JONES_DIRECT`: direct Jones-space optimization without post-processing.
+
+## Usage Example
+```python
+import torch
+from torchrdit.vector import TangentFieldGenerator
+
+grid_size = 256
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+mask = torch.rand(grid_size, grid_size, dtype=torch.float32, device=device)
+coords = torch.linspace(-0.5, 0.5, grid_size, device=device)
+YO, XO = torch.meshgrid(coords, coords, indexing="ij")
+
+generator = TangentFieldGenerator(
+    lattice_t1=torch.tensor([1.0, 0.0], dtype=mask.dtype, device=device),
+    lattice_t2=torch.tensor([0.0, 1.0], dtype=mask.dtype, device=device),
+    kdim=(9, 9),
+    fourier_loss_weight=1e-2,
+    smoothness_loss_weight=1e-3,
+    steps=2,
+)
+
+tx, ty = generator.compute(mask, XO, YO, scheme="JONES")
+```
+
+## API Reference
+
+The API reference below is generated automatically from the source.
+
+"""
+
+    with open(docs_dir / "Vector.md", "w") as f:
+        f.write(intro_content)
+
+        if api_file.exists():
+            api_content = api_file.read_text()
+            import re
+            match = re.search(r'^#', api_content, re.MULTILINE)
+            if match:
+                api_content = api_content[match.start():]
+            f.write(api_content)
+        else:
+            f.write("""
+**Note: Automatic API documentation could not be generated.
+Please ensure that the module is properly installed and importable.**
+""")
+
+    print("  -> Created Vector.md")
+
+    # Clean up temporary API file if desired
+    if api_file.exists():
+        try:
+            api_file.unlink()
+        except:
+            pass
+
+
 def create_observers_page(docs_dir):
     """Create a dedicated Observers page for the wiki."""
     # First check if the auto-generated API file exists
     api_file = docs_dir / "Observers-API.md"
-    
+
     # Create the custom intro content
     intro_content = """# Observer Module
 
@@ -822,32 +940,32 @@ result = solver.solve(source)
 Below is the complete API reference for the observers module, automatically generated from the source code.
 
 """
-    
+
     # Create the Observers.md file
     with open(docs_dir / "Observers.md", "w") as f:
         f.write(intro_content)
-        
+
         # If the auto-generated API file exists, append its content (skipping the header)
         if api_file.exists():
             with open(api_file, "r") as api_f:
                 api_content = api_f.read()
-                
+
                 # Find the first heading and skip everything before it
                 import re
                 match = re.search(r'^#', api_content, re.MULTILINE)
                 if match:
                     api_content = api_content[match.start():]
-                
+
                 f.write(api_content)
         else:
             # If API file doesn't exist, include a warning
             f.write("""
-**Note: Automatic API documentation could not be generated. 
+**Note: Automatic API documentation could not be generated.
 Please ensure that the module is properly installed and importable.**
 """)
-    
+
     print("  -> Created Observers.md")
-    
+
     # Try to remove the temporary API file to keep things clean
     if api_file.exists():
         try:
@@ -859,7 +977,7 @@ def create_results_page(docs_dir):
     """Create the Results page for the wiki."""
     # First check if the auto-generated API file exists
     api_file = docs_dir / "Results-API.md"
-    
+
     # Create the custom intro content
     intro_content = """# Results Module
 
@@ -986,24 +1104,24 @@ Below is the complete API reference for the results module, automatically genera
     # Create the Results.md file
     with open(docs_dir / "Results.md", "w") as f:
         f.write(intro_content)
-        
+
         # If the auto-generated API file exists, append its content (skipping the header)
         if api_file.exists():
             with open(api_file, "r") as api_f:
                 # Skip the first line which is usually the module header
                 api_content = api_f.read()
-                
+
                 # Find the first heading and skip everything before it
                 import re
                 match = re.search(r'^#', api_content, re.MULTILINE)
                 if match:
                     api_content = api_content[match.start():]
-                
+
                 f.write(api_content)
         else:
             # If API file doesn't exist, include a warning
             f.write("""
-**Note: Automatic API documentation could not be generated. 
+**Note: Automatic API documentation could not be generated.
 Please ensure that the module is properly installed and importable.**
 
 ## Key Methods
@@ -1021,9 +1139,9 @@ Please ensure that the module is properly installed and importable.**
 - `get_all_diffraction_orders`: List all available diffraction orders
 - `get_propagating_orders`: List only propagating diffraction orders
 """)
-    
+
     print("  -> Created Results.md")
-    
+
     # Try to remove the temporary Results-API.md file to keep things clean
     if api_file.exists():
         try:
@@ -1035,7 +1153,7 @@ def create_constants_page(docs_dir):
     """Create a Constants page for the wiki."""
     # First check if the auto-generated API file exists
     api_file = docs_dir / "Constants-API.md"
-    
+
     # Create the custom intro content
     intro_content = """# Constants Module
 
@@ -1088,32 +1206,32 @@ solver = create_solver(algorithm=Algorithm.RCWA)
 Below is the complete API reference for the constants module, automatically generated from the source code.
 
 """
-    
+
     # Create the Constants.md file
     with open(docs_dir / "Constants.md", "w") as f:
         f.write(intro_content)
-        
+
         # If the auto-generated API file exists, append its content (skipping the header)
         if api_file.exists():
             with open(api_file, "r") as api_f:
                 api_content = api_f.read()
-                
+
                 # Find the first heading and skip everything before it
                 import re
                 match = re.search(r'^#', api_content, re.MULTILINE)
                 if match:
                     api_content = api_content[match.start():]
-                
+
                 f.write(api_content)
         else:
             # If API file doesn't exist, include a warning
             f.write("""
-**Note: Automatic API documentation could not be generated. 
+**Note: Automatic API documentation could not be generated.
 Please ensure that the module is properly installed and importable.**
 """)
-    
+
     print("  -> Created Constants.md")
-    
+
     # Try to remove the temporary API file to keep things clean
     if api_file.exists():
         try:
@@ -1125,12 +1243,14 @@ def create_source_batching_page(docs_dir):
     """Create a Source Batching page for the wiki."""
     # First check if the auto-generated API file exists
     api_file = docs_dir / "SourceBatching-API.md"
-    
+
     # Create the custom intro content
     intro_content = """# Source Batching Module
 
 ## Overview
-The source batching feature in TorchRDIT v0.1.22 enables efficient processing of multiple incident sources simultaneously, providing significant performance improvements for parameter sweeps and multi-condition optimizations.
+The source batching feature in TorchRDIT enables efficient processing of multiple incident sources simultaneously, providing significant performance improvements for parameter sweeps and multi-condition optimizations.
+
+As of v0.1.27, source batching is fully integrated into the unified SolverResults interface - there is no separate BatchedSolverResults class.
 
 ## Key Features
 - Process multiple incident angles in a single solve() call
@@ -1138,7 +1258,7 @@ The source batching feature in TorchRDIT v0.1.22 enables efficient processing of
 - Full gradient support for optimization workflows
 - 3-6x speedup compared to sequential processing
 - Memory-efficient processing of large parameter sweeps
-- Zero breaking changes - fully backward compatible
+- Unified interface - single SolverResults class handles both single and batched sources
 
 ## Quick Start
 
@@ -1157,7 +1277,7 @@ sources = [
     for angle in np.linspace(0, 60, 13) * deg
 ]
 
-# Batch solve - returns BatchedSolverResults
+# Batch solve - returns SolverResults with unified interface
 results = solver.solve(sources)
 
 # Access results
@@ -1223,45 +1343,53 @@ sources = [
 for epoch in range(100):
     optimizer.zero_grad()
     solver.update_er_with_mask(mask=mask, layer_index=0)
-    
+
     results = solver.solve(sources)
     loss = -results.transmission.mean()  # Maximize average
-    
+
     loss.backward()
     optimizer.step()
 ```
 
-## BatchedSolverResults API
+## Unified SolverResults API (v0.1.27)
 
-The `BatchedSolverResults` class provides convenient access to results from multiple sources:
+The unified `SolverResults` class now handles both single and batched sources seamlessly:
 
-### Attributes
-- `transmission`: Shape (n_sources, n_freqs) - Total transmission efficiency
-- `reflection`: Shape (n_sources, n_freqs) - Total reflection efficiency
-- `n_sources`: Number of sources in the batch
-- `source_parameters`: List of source dictionaries
+### Key Properties
+- `n_sources`: Number of sources (1 for single, >1 for batched)
+- `is_batched`: Returns True if results contain multiple sources
+- `transmission`: Shape (n_freqs) or (n_sources, n_freqs) depending on batching
+- `reflection`: Shape (n_freqs) or (n_sources, n_freqs) depending on batching
 
-### Methods
+### Batched-Only Methods
+When `is_batched` is True, these additional methods are available:
 - `__getitem__(idx)`: Get results for specific source(s)
 - `__iter__()`: Iterate over individual source results
+- `__len__()`: Get number of sources
 - `find_optimal_source(metric)`: Find source with best performance
 - `get_parameter_sweep_data(parameter, metric)`: Extract sweep data
 
 ### Example Usage
 ```python
-# Access individual results
-result_30deg = results[1]  # Returns SolverResults
+# Works with both single and batched sources
+results = solver.solve(sources)  # Unified SolverResults
 
-# Iterate through results
-for i, result in enumerate(results):
-    print(f"Source {i}: T={result.transmission[0]:.3f}")
+if results.is_batched:
+    # Access individual results
+    result_30deg = results[1]  # Returns SolverResults for one source
 
-# Find optimal source
-best_idx = results.find_optimal_source('max_transmission')
-worst_idx = results.find_optimal_source('min_reflection')
+    # Iterate through results
+    for i, result in enumerate(results):
+        print(f"Source {i}: T={result.transmission[0]:.3f}")
 
-# Extract parameter sweep data
-angles, trans = results.get_parameter_sweep_data('theta', 'transmission')
+    # Find optimal source (batched only)
+    best_idx = results.find_optimal_source('max_transmission')
+
+    # Extract parameter sweep data
+    angles, trans = results.get_parameter_sweep_data('theta', 'transmission')
+else:
+    # Single source - access directly
+    print(f"T={results.transmission[0]:.3f}")
 ```
 
 ## Performance Considerations
@@ -1272,7 +1400,7 @@ For very large parameter sweeps, use chunking:
 ```python
 def process_large_sweep(solver, angles, chunk_size=100):
     all_results = []
-    
+
     for i in range(0, len(angles), chunk_size):
         chunk = angles[i:i+chunk_size]
         sources = [
@@ -1281,7 +1409,7 @@ def process_large_sweep(solver, angles, chunk_size=100):
         ]
         results = solver.solve(sources)
         all_results.append(results.transmission[:, 0].numpy())
-    
+
     return np.concatenate(all_results)
 ```
 
@@ -1312,11 +1440,11 @@ For complete examples, see:
 - `examples/example_source_batching.py` - Comprehensive demos
 
 """
-    
+
     # Create the SourceBatching.md file
     with open(docs_dir / "SourceBatching.md", "w") as f:
         f.write(intro_content)
-    
+
     print("  -> Created SourceBatching.md")
 
 
@@ -1324,7 +1452,7 @@ def create_gds_page(docs_dir):
     """Create a GDS page for the wiki."""
     # First check if the auto-generated API file exists
     api_file = docs_dir / "GDS-API.md"
-    
+
     # Create the custom intro content
     intro_content = """# GDS Module
 
@@ -1333,7 +1461,7 @@ The `torchrdit.gds` module provides functionality to export photonic structure m
 
 ## Key Features
 - Export binary masks to GDS format with JSON vertex data
-- Import masks from GDS JSON files  
+- Import masks from GDS JSON files
 - Support for complex topologies including holes and disconnected regions
 - Batch processing for multiple masks
 - Both Cartesian and non-Cartesian lattice systems
@@ -1344,7 +1472,7 @@ The `torchrdit.gds` module provides functionality to export photonic structure m
 
 ### mask_to_gds
 ```python
-mask_to_gds(mask, layout, cell_name, file_path, smooth=0.01, padding=20, 
+mask_to_gds(mask, layout, cell_name, file_path, smooth=0.01, padding=20,
             connectivity=1, morph_separate=False)
 ```
 
@@ -1454,32 +1582,32 @@ The coordinate extrapolation handles both:
 Below is the complete API reference for the gds module, automatically generated from the source code.
 
 """
-    
+
     # Create the GDS.md file
     with open(docs_dir / "GDS.md", "w") as f:
         f.write(intro_content)
-        
+
         # If the auto-generated API file exists, append its content (skipping the header)
         if api_file.exists():
             with open(api_file, "r") as api_f:
                 api_content = api_f.read()
-                
+
                 # Find the first heading and skip everything before it
                 import re
                 match = re.search(r'^#', api_content, re.MULTILINE)
                 if match:
                     api_content = api_content[match.start():]
-                
+
                 f.write(api_content)
         else:
             # If API file doesn't exist, include a warning
             f.write("""
-**Note: Automatic API documentation could not be generated. 
+**Note: Automatic API documentation could not be generated.
 Please ensure that the module is properly installed and importable.**
 """)
-    
+
     print("  -> Created GDS.md")
-    
+
     # Try to remove the temporary API file to keep things clean
     if api_file.exists():
         try:
@@ -1517,6 +1645,7 @@ The documentation is generated automatically using pydoc-markdown. To update it:
 - **Results.md**: Documentation for the results module
 - **Shapes.md**: Documentation for the shapes module
 - **Solver.md**: Documentation for the solver module
+- **Vector.md**: Documentation for tangent vector field utilities
 - **Utils.md**: Documentation for utility functions
 - **Visualization.md**: Documentation for visualization tools
 - **GDS.md**: Documentation for GDS export/import functionality
@@ -1532,7 +1661,7 @@ For your documentation to be most effective, follow these guidelines for docstri
 def calculate_field(mesh, material_properties, frequency):
     \"\"\"
     Calculate electromagnetic fields on a given mesh.
-    
+
     Parameters
     ----------
     mesh : Mesh
@@ -1544,21 +1673,21 @@ def calculate_field(mesh, material_properties, frequency):
         - 'sigma': conductivity
     frequency : float
         Operating frequency in Hz.
-        
+
     Returns
     -------
     ndarray
         Complex E-field values at mesh nodes.
-        
+
     Notes
     -----
     This function solves Maxwell's equations using the FDTD method.
     The governing equation is:
-    
+
     ∇ x (∇ x E) - k₀²εᵣE = 0
-    
+
     where k₀ is the wavenumber and εᵣ is the relative permittivity.
-    
+
     Examples
     --------
     ```python
@@ -1585,4 +1714,4 @@ If you need to make changes, update the docstrings in the source code or modify 
         print("  -> Created README.md")
 
 if __name__ == "__main__":
-    main() 
+    main()

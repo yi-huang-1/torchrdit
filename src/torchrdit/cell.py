@@ -19,7 +19,7 @@ Keywords:
     unit cell, geometry, shape generation, mask, material, layer, photonics
 """
 
-from typing import Callable, Tuple, Union, List, Any
+from typing import Callable, Tuple, Union, List, Any, TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -28,6 +28,9 @@ from .utils import tensor_params_check, create_material
 from .materials import MaterialClass
 from .constants import lengthunit_dict
 from .layers import LayerManager
+
+if TYPE_CHECKING:
+    pass
 
 # Function Type
 FuncType = Callable[..., Any]
@@ -375,7 +378,12 @@ class Cell3D:
         self._init_dispersive_materials()
 
     def add_layer(
-        self, material_name: Any, thickness: torch.Tensor, is_homogeneous: bool = True, is_optimize: bool = False
+        self,
+        material_name: Any,
+        thickness: torch.Tensor,
+        is_homogeneous: bool = True,
+        is_optimize: bool = False,
+        slice_count: int = 1,
     ):
         """Add a new material layer to the structure.
 
@@ -437,6 +445,17 @@ class Cell3D:
             layer, material, thickness, homogeneous, patterned, photonic structure,
             multilayer, stack, optimization
         """
+        slice_count_val = 1
+        candidate = slice_count
+        try:
+            if isinstance(candidate, torch.Tensor):
+                candidate = candidate.item()
+            slice_int = int(candidate)
+            if slice_int > 1:
+                slice_count_val = slice_int
+        except (TypeError, ValueError):
+            slice_count_val = 1
+
         if isinstance(material_name, MaterialClass):
             if material_name.name not in self._matlib:
                 self.add_materials([material_name])
@@ -456,6 +475,7 @@ class Cell3D:
                     material_name=material_name,
                     is_optimize=is_optimize,
                     is_dispersive=self._matlib[material_name].isdispersive_er,
+                    slice_count=slice_count_val,
                 )
             else:
                 self.layer_manager.add_layer(
@@ -464,6 +484,7 @@ class Cell3D:
                     material_name=material_name,
                     is_optimize=is_optimize,
                     is_dispersive=self._matlib[material_name].isdispersive_er,
+                    slice_count=slice_count_val,
                 )
 
         else:

@@ -132,6 +132,8 @@ class Layer(metaclass=ABCMeta):
         self.kermat = None
         self.kurmat = None
         self.mask_format = None
+        self._bg_material = None
+        self._slice_count = 1
 
     @abstractmethod
     def __str__(self) -> str:
@@ -164,6 +166,24 @@ class Layer(metaclass=ABCMeta):
         self._thickness = thickness
 
     @property
+    def slice_count(self) -> int:
+        """Number of identical sub-slices the layer should be divided into."""
+        return self._slice_count
+
+    @slice_count.setter
+    def slice_count(self, count: int) -> None:
+        """Set the number of identical sub-slices used for this layer."""
+        if isinstance(count, torch.Tensor):
+            count_val = int(count.item())
+        else:
+            count_val = int(count)
+
+        if count_val < 1:
+            raise ValueError("slice_count must be at least 1.")
+
+        self._slice_count = count_val
+
+    @property
     def material_name(self) -> str:
         """Get the name of the material assigned to this layer.
 
@@ -187,6 +207,32 @@ class Layer(metaclass=ABCMeta):
             material, layer property, update material
         """
         self._material_name = material_name
+
+    @property
+    def bg_material(self) -> str:
+        """Get the background material name for patterned layers.
+
+        Returns:
+            str: The name of the background material used in patterned layers,
+                 or None if not set.
+
+        Keywords:
+            background material, pattern material, patterned layer
+        """
+        return self._bg_material
+
+    @bg_material.setter
+    def bg_material(self, bg_material: str):
+        """Set the background material name for patterned layers.
+
+        Args:
+            bg_material (str): The name of the background material to use
+                             where the mask is 0 (False).
+
+        Keywords:
+            background material, pattern material, update material
+        """
+        self._bg_material = bg_material
 
     @property
     def is_homogeneous(self) -> bool:
@@ -912,7 +958,15 @@ class LayerManager:
                 return None
 
     @tensor_params_check(check_start_index=2, check_stop_index=2)
-    def add_layer(self, layer_type, thickness, material_name, is_optimize=False, is_dispersive=False):
+    def add_layer(
+        self,
+        layer_type,
+        thickness,
+        material_name,
+        is_optimize=False,
+        is_dispersive=False,
+        slice_count: int = 1,
+    ):
         """Add a new layer to the layer structure.
 
         This method creates a new layer of the specified type with the given properties
@@ -946,6 +1000,7 @@ class LayerManager:
             is_optimize=is_optimize,
             is_dispersive=is_dispersive,
         )
+        new_layer.slice_count = slice_count
         self.layers.append(new_layer)
 
     def replace_layer_to_homogeneous(self, layer_index):
@@ -960,13 +1015,16 @@ class LayerManager:
         Keywords:
             convert layer, homogeneous layer, layer modification
         """
+        current_layer = self.layers[layer_index]
+        current_slice_count = getattr(current_layer, "slice_count", 1)
         new_layer = self.layer_director.build_layer(
             layer_type="homogenous",
-            thickness=self.layers[layer_index].thickness,
-            material_name=self.layers[layer_index].material_name,
-            is_optimize=self.layers[layer_index].is_optimize,
-            is_dispersive=self.layers[layer_index].is_dispersive,
+            thickness=current_layer.thickness,
+            material_name=current_layer.material_name,
+            is_optimize=current_layer.is_optimize,
+            is_dispersive=current_layer.is_dispersive,
         )
+        new_layer.slice_count = current_slice_count
         self.layers[layer_index] = new_layer
 
     def replace_layer_to_grating(self, layer_index):
@@ -981,13 +1039,16 @@ class LayerManager:
         Keywords:
             convert layer, grating layer, patterned layer, layer modification
         """
+        current_layer = self.layers[layer_index]
+        current_slice_count = getattr(current_layer, "slice_count", 1)
         new_layer = self.layer_director.build_layer(
             layer_type="grating",
-            thickness=self.layers[layer_index].thickness,
-            material_name=self.layers[layer_index].material_name,
-            is_optimize=self.layers[layer_index].is_optimize,
-            is_dispersive=self.layers[layer_index].is_dispersive,
+            thickness=current_layer.thickness,
+            material_name=current_layer.material_name,
+            is_optimize=current_layer.is_optimize,
+            is_dispersive=current_layer.is_dispersive,
         )
+        new_layer.slice_count = current_slice_count
         self.layers[layer_index] = new_layer
 
     @tensor_params_check(check_start_index=2, check_stop_index=2)

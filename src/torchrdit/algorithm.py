@@ -187,6 +187,10 @@ class RCWAAlgorithm(SolverAlgorithm):
         smat_layer["S21"] = smat_layer["S12"]
         smat_layer["S22"] = smat_layer["S11"]
 
+        # Note: W and V matrices are not stored as they are not used by the calling solver.
+        # If needed for future features (e.g., internal field monitors), storage should be
+        # conditional based on solver options to avoid unnecessary memory allocation.
+
         return smat_layer
 
     def set_rdit_order(self, rdit_order):
@@ -386,6 +390,9 @@ class RDITAlgorithm(SolverAlgorithm):
             "S21": mat_zzi * 0.5,  # Symmetric, reuse mat_zzi
             "S22": mat_yyi * 0.5,  # Symmetric, reuse mat_yyi
         }
+
+        # Note: R-DIT doesn't compute W and V matrices since it's eigendecomposition-free
+        # Field reconstruction for R-DIT should use different methods that don't rely on eigenvectors
         return smat_layer
 
     def set_rdit_order(self, rdit_order):

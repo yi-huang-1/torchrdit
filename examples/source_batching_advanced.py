@@ -314,7 +314,7 @@ def example_large_sweep_chunking():
     
     solver.add_layer(material_name="Si", thickness=0.5, is_homogeneous=False)
     shape_gen = ShapeGenerator.from_solver(solver)
-    mask = shape_gen.generate_rectangle_mask(width=0.4, height=0.2, angle=45)
+    mask = shape_gen.generate_rectangle_mask(x_size=0.4, y_size=0.2, angle=45)
     solver.update_er_with_mask(mask=mask, layer_index=0)
     
     # Process 1000 angles
