@@ -368,7 +368,7 @@ def _field_magnitude(field: torch.Tensor) -> torch.Tensor:
         dtype=magnitude_sq.dtype,
         device=field.device,
     )
-    magnitude_sq = torch.where(magnitude_sq < floor, floor, magnitude_sq)
+    magnitude_sq = torch.clamp(magnitude_sq, min=floor)
     return torch.sqrt(magnitude_sq)
 
 
@@ -386,7 +386,7 @@ def _normalize(field: torch.Tensor) -> torch.Tensor:
         dtype=dtype,
         device=field.device,
     )
-    max_magnitude = torch.where(max_magnitude <= threshold, torch.ones_like(max_magnitude), max_magnitude)
+    max_magnitude = torch.clamp(max_magnitude, min=threshold)
     return field / max_magnitude
 
 
@@ -398,7 +398,7 @@ def _normalize_elementwise(field: torch.Tensor) -> torch.Tensor:
         dtype=magnitude.dtype,
         device=field.device,
     )
-    magnitude = torch.where(magnitude <= threshold, torch.ones_like(magnitude), magnitude)
+    magnitude = torch.clamp(magnitude, min=threshold)
     return field / magnitude
 
 
