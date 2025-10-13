@@ -28,6 +28,19 @@ __all__ = [
 ]
 
 
+def _magnitude_floor(dtype: torch.dtype) -> float:
+    """Return a stable floor value for squared magnitudes."""
+    if dtype == torch.float32:
+        return 1e-8
+    if dtype == torch.float64:
+        return 1e-16
+    if dtype == torch.float16:
+        return 1e-4
+    if dtype == torch.bfloat16:
+        return 1e-4
+    raise TypeError(f"Unsupported dtype for stability epsilon {dtype}")
+
+
 def _complex_dtype(real_dtype: torch.dtype) -> torch.dtype:
     """Return the complex dtype paired with ``real_dtype``."""
     if real_dtype == torch.float32:
@@ -348,7 +361,15 @@ def ifft(
 
 def _field_magnitude(field: torch.Tensor) -> torch.Tensor:
     """Compute the per-pixel magnitude."""
-    return torch.sqrt(torch.sum(torch.abs(field) ** 2, dim=-1, keepdim=True))
+    magnitude_sq = torch.sum(torch.abs(field) ** 2, dim=-1, keepdim=True)
+    base_dtype = field.real.dtype if field.is_complex() else field.dtype
+    floor = torch.tensor(
+        _magnitude_floor(base_dtype),
+        dtype=magnitude_sq.dtype,
+        device=field.device,
+    )
+    magnitude_sq = torch.where(magnitude_sq < floor, floor, magnitude_sq)
+    return torch.sqrt(magnitude_sq)
 
 
 def _max_field_magnitude(field: torch.Tensor) -> torch.Tensor:
@@ -359,18 +380,25 @@ def _max_field_magnitude(field: torch.Tensor) -> torch.Tensor:
 def _normalize(field: torch.Tensor) -> torch.Tensor:
     """Normalize a field by its global maximum."""
     max_magnitude = _max_field_magnitude(field)
-    zero = torch.zeros(1, dtype=max_magnitude.dtype, device=field.device)
-    ones = torch.ones_like(max_magnitude)
-    max_magnitude = torch.where(torch.isclose(max_magnitude, zero, atol=1e-12), ones, max_magnitude)
+    dtype = max_magnitude.dtype
+    threshold = torch.tensor(
+        math.sqrt(_magnitude_floor(dtype)),
+        dtype=dtype,
+        device=field.device,
+    )
+    max_magnitude = torch.where(max_magnitude <= threshold, torch.ones_like(max_magnitude), max_magnitude)
     return field / max_magnitude
 
 
 def _normalize_elementwise(field: torch.Tensor) -> torch.Tensor:
     """Normalize each pixel independently."""
     magnitude = _field_magnitude(field)
-    zero = torch.zeros(1, dtype=magnitude.dtype, device=field.device)
-    ones = torch.ones_like(magnitude)
-    magnitude = torch.where(torch.isclose(magnitude, zero, atol=1e-12), ones, magnitude)
+    threshold = torch.tensor(
+        math.sqrt(_magnitude_floor(magnitude.dtype)),
+        dtype=magnitude.dtype,
+        device=field.device,
+    )
+    magnitude = torch.where(magnitude <= threshold, torch.ones_like(magnitude), magnitude)
     return field / magnitude
 
 
@@ -728,7 +756,10 @@ def _field_loss_value_jac_and_hessian(
     jac = torch.autograd.grad(loss_value, flat_real, create_graph=True)[0]
 
     def hessian_matvec(vec: torch.Tensor) -> torch.Tensor:
-        _, hvp = torch.autograd.functional.hvp(loss_from_real, flat_real, vec)
+        product = torch.dot(jac, vec)
+        hvp = torch.autograd.grad(product, flat_real, retain_graph=True)[0]
+        if not torch.isfinite(hvp).all():
+            raise ConjugateGradientError("Hessian matvec produced non-finite result.")
         return hvp
 
     return loss_value, jac, hessian_matvec
