@@ -67,8 +67,8 @@ def _sobel_gradients(mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
 def test_tangent_field_matches_reference(vector_module):
     mask = torch.zeros((8, 8), dtype=torch.float64)
     mask[2:6, 2:6] = 1.0
-    XO = torch.zeros_like(mask)
-    YO = torch.zeros_like(mask)
+    grid = torch.linspace(-0.5, 0.5, mask.shape[0], dtype=torch.float64)
+    YO, XO = torch.meshgrid(grid, grid, indexing="ij")
     lattice_t1 = torch.tensor([1.0, 0.0], dtype=torch.float64)
     lattice_t2 = torch.tensor([0.0, 1.0], dtype=torch.float64)
 
