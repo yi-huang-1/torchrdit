@@ -1,7 +1,13 @@
 # Tangent Vector Field Module
 
 ## Overview
-The `torchrdit.vector` module provides Torch-native tangent vector field generation used by Fourier-factorized solvers. It reproduces the fmmax tangent-field workflow while remaining fully differentiable and backend-agnostic inside TorchRDIT.
+The `torchrdit.vector` module provides Torch-native tangent vector field generation used by Fourier-factorized solvers.
+
+This module reproduces the tangent-field utilities from the fmmax project
+(``https://github.com/facebookresearch/fmmax``). The implementation follows the derivations
+of the following papers:
+- M. F. Schubert and A. M. Hammond, "Fourier modal method for inverse design of metasurface-enhanced micro-LEDs," Opt. Express 31, 42945 (2023).
+- V. Liu and S. Fan, "S4 : A free electromagnetic solver for layered periodic structures," Computer Physics Communications 183, 2233–2244 (2012).
 
 ## Key Components
 - `LatticeVectors`: stores primitive lattice vectors and constructs their reciprocal basis.
@@ -39,10 +45,6 @@ generator = TangentFieldGenerator(
 tx, ty = generator.compute(mask, XO, YO, scheme="JONES")
 ```
 
-## References
-- Liu, V. & Fan, S. (2012). *S4: A free electromagnetic solver for layered periodic structures*. Optics Express, 20(17).
-- fmmax project: <https://github.com/fmmax/fmmax>
-
 ## API Reference
 
 The API reference below is generated automatically from the source.
@@ -53,6 +55,8 @@ The API reference below is generated automatically from the source.
   * [LatticeVectors](#torchrdit.vector.LatticeVectors)
     * [reciprocal](#torchrdit.vector.LatticeVectors.reciprocal)
     * [to](#torchrdit.vector.LatticeVectors.to)
+    * [normalized\_basis](#torchrdit.vector.LatticeVectors.normalized_basis)
+    * [inverse\_metric](#torchrdit.vector.LatticeVectors.inverse_metric)
   * [Expansion](#torchrdit.vector.Expansion)
     * [basis\_coefficients](#torchrdit.vector.Expansion.basis_coefficients)
     * [num\_terms](#torchrdit.vector.Expansion.num_terms)
@@ -63,10 +67,12 @@ The API reference below is generated automatically from the source.
     * [min\_array\_shape](#torchrdit.vector.FourierExpansionManager.min_array_shape)
     * [project](#torchrdit.vector.FourierExpansionManager.project)
     * [reconstruct](#torchrdit.vector.FourierExpansionManager.reconstruct)
+    * [fourier\_penalty\_weights](#torchrdit.vector.FourierExpansionManager.fourier_penalty_weights)
   * [generate\_expansion](#torchrdit.vector.generate_expansion)
   * [min\_array\_shape\_for\_expansion](#torchrdit.vector.min_array_shape_for_expansion)
   * [fft](#torchrdit.vector.fft)
   * [ifft](#torchrdit.vector.ifft)
+  * [ConjugateGradientError](#torchrdit.vector.ConjugateGradientError)
   * [TangentFieldGenerator](#torchrdit.vector.TangentFieldGenerator)
     * [compute](#torchrdit.vector.TangentFieldGenerator.compute)
   * [compute\_tangent\_field](#torchrdit.vector.compute_tangent_field)
@@ -115,6 +121,30 @@ def to(*,
 ```
 
 Return a copy of the lattice on the requested device and dtype.
+
+<a id="torchrdit.vector.LatticeVectors.normalized_basis"></a>
+
+#### normalized\_basis
+
+```python
+def normalized_basis(*,
+                     device: torch.device | None = None,
+                     dtype: torch.dtype | None = None) -> torch.Tensor
+```
+
+Return normalized basis vectors on the requested device/dtype.
+
+<a id="torchrdit.vector.LatticeVectors.inverse_metric"></a>
+
+#### inverse\_metric
+
+```python
+def inverse_metric(*,
+                   device: torch.device | None = None,
+                   dtype: torch.dtype | None = None) -> torch.Tensor
+```
+
+Return the inverse lattice metric on the requested device/dtype.
 
 <a id="torchrdit.vector.Expansion"></a>
 
@@ -223,6 +253,16 @@ def reconstruct(y: torch.Tensor,
 
 Reconstruct the spatial field from Fourier samples.
 
+<a id="torchrdit.vector.FourierExpansionManager.fourier_penalty_weights"></a>
+
+#### fourier\_penalty\_weights
+
+```python
+def fourier_penalty_weights() -> torch.Tensor
+```
+
+Return Fourier penalty weights on the current device/dtype.
+
 <a id="torchrdit.vector.generate_expansion"></a>
 
 #### generate\_expansion
@@ -270,6 +310,16 @@ def ifft(y: torch.Tensor,
 ```
 
 Reconstruct ``y`` onto a spatial grid.
+
+<a id="torchrdit.vector.ConjugateGradientError"></a>
+
+## ConjugateGradientError Objects
+
+```python
+class ConjugateGradientError(RuntimeError)
+```
+
+Raised when the conjugate-gradient solver fails to converge.
 
 <a id="torchrdit.vector.TangentFieldGenerator"></a>
 

@@ -182,9 +182,6 @@ Below is the complete API reference for the results module, automatically genera
     * [calculate\_interface\_fourier\_coefficients](#torchrdit.results.SolverResults.calculate_interface_fourier_coefficients)
     * [find\_optimal\_source](#torchrdit.results.SolverResults.find_optimal_source)
     * [get\_parameter\_sweep\_data](#torchrdit.results.SolverResults.get_parameter_sweep_data)
-    * [get\_reflection\_interface\_fields](#torchrdit.results.SolverResults.get_reflection_interface_fields)
-    * [get\_transmission\_interface\_fields](#torchrdit.results.SolverResults.get_transmission_interface_fields)
-    * [calculate\_interface\_fields](#torchrdit.results.SolverResults.calculate_interface_fields)
 
 <a id="torchrdit.results"></a>
 
@@ -196,35 +193,6 @@ This module provides data structures for organizing and analyzing results from
 electromagnetic simulations. It defines dataclasses that encapsulate reflection
 and transmission coefficients, field components, scattering matrices, and wave
 vectors in a structured, easy-to-use format.
-
-New in v0.1.27:
-- Unified SolverResults interface handles both single and batched sources
-- Complete field reconstruction APIs for interface fields
-- Magnetic field coefficient support with proper denormalization
-- Lattice vector integration for accurate coordinate systems
-- No separate BatchedSolverResults class - everything unified in SolverResults
-
-INDEXING CONVENTION DOCUMENTATION:
-TorchRDIT follows a consistent transpose-then-flatten indexing pattern to maintain
-compatibility with MATLAB matrix structures:
-
-1. SOLVER STORAGE PATTERN (solver.py):
-- Fourier coefficients: reshape(kdim[0], kdim[1]) → transpose() → flatten()
-- Wave vectors: stored directly without transpose
-
-2. FIELD RECONSTRUCTION PATTERN (_reconstruct_field):
-- Fourier coefficients: used directly (already transposed during storage)
-- Wave vectors: apply transpose() before flatten() to match coefficient ordering
-
-This ensures consistent row/column-major ordering between coefficient and wave vector
-indexing, eliminating oscillatory artifacts in field reconstructions.
-
-3. FFT CONVENTION (_reconstruct_field):
-- To align with MATLAB implementations and ensure correct phase reconstruction,
-the inverse FFT process uses negative harmonic placement: fft_index = center - harmonic
-- Fourier coefficients are placed at negative harmonic indices in a larger grid
-- This matches the sign convention used in _gen_toeplitz2d (layers.py) and S4 software
-- Critical for proper spatial field alignment between different simulation tools
 
 **Notes**:
 
@@ -365,8 +333,7 @@ class _FourierCoefficients()
 Internal class for k-space Fourier coefficients (not real-space fields).
 
 Contains Fourier coefficients in k-space representing spectral amplitudes.
-These are the raw coefficients from the electromagnetic solver before
-field reconstruction.
+These are the raw coefficients from the electromagnetic solver
 
 Note: This is an internal class - use public field API methods instead.
 
@@ -422,7 +389,6 @@ components in k-space. These represent the spectral amplitudes s_x, s_y, s_z for
 electric fields and u_x, u_y, u_z for magnetic fields, indexed by harmonic orders.
 
 Important: These are Fourier coefficients in k-space, not real-space field values.
-To obtain real-space fields, use field reconstruction methods.
 
 **Attributes**:
 
@@ -454,9 +420,6 @@ if field.mag_x is not None:
     u_x = field.mag_x  # Fourier coefficients of h_hat_x(x,y,z)
     u_y = field.mag_y  # Fourier coefficients of h_hat_y(x,y,z)
 
-    # Note: To obtain physical H-fields in real space, use the interface field methods:
-    # results.get_reflection_interface_fields() or results.get_transmission_interface_fields()
-    # These methods automatically perform IFFT reconstruction and denormalization.
 ```
   
   Keywords:
@@ -584,14 +547,7 @@ Unified results container for electromagnetic solver with single/batched source 
 
 Comprehensive container for all results from electromagnetic simulations, supporting
 both single and batched source solving. Includes reflection and transmission coefficients,
-diffraction efficiencies, field components, scattering matrices, wave vectors, and
-new v0.1.27 field reconstruction capabilities.
-
-New in v0.1.27:
-- Unified interface: Single class handles both single and batched sources
-- Field APIs: Interface field calculation and real-space reconstruction
-- Magnetic field support: Full H-field components with denormalization
-- Lattice vector integration: Proper coordinate system for field reconstruction
+diffraction efficiencies, field components, scattering matrices, wave vectors.
 
 **Notes**:
 
@@ -615,7 +571,7 @@ New in v0.1.27:
 - `structure_matrix` _ScatteringMatrix_ - Scattering matrix for the entire structure.
 - `wave_vectors` _WaveVectors_ - Wave vector components for the simulation.
 - `n_sources` _int_ - Number of sources (1 for single, >1 for batched).
-  lattice_t1, lattice_t2 (Optional[torch.Tensor]): Lattice vectors for field reconstruction.
+  lattice_t1, lattice_t2 (Optional[torch.Tensor]): Lattice vectors.
 - `default_rdim` _Optional[Tuple[int, int]]_ - Default spatial resolution from solver.
   
 
@@ -627,7 +583,7 @@ results = solver.solve(source)
 total_reflection = results.reflection[0]  # First wavelength
 total_transmission = results.transmission[0]
 
-# Batched source results (v0.1.27 unified interface)
+# Batched source results
 sources = [solver.add_source(theta=angle) for angle in angles]
 results = solver.solve(sources)  # Returns SolverResults with batching
 
@@ -639,11 +595,6 @@ for i, result in enumerate(results):
 if results.is_batched:
     best_idx = results.find_optimal_source('max_transmission')
 
-# Field reconstruction (new in v0.1.27)
-fields = results.get_transmission_interface_fields()
-E_x, E_y, E_z = fields['E_x'], fields['E_y'], fields['E_z']
-H_x, H_y, H_z = fields['H_x'], fields['H_y'], fields['H_z']  # Denormalized
-
 # Interface Fourier coefficients
 coeffs = results.get_reflection_interface_fourier_coefficients()
 S_x, S_y, S_z = coeffs['S_x'], coeffs['S_y'], coeffs['S_z']  # E-field coefficients
@@ -653,7 +604,7 @@ U_x, U_y, U_z = coeffs['U_x'], coeffs['U_y'], coeffs['U_z']  # H-field coefficie
   Keywords:
   electromagnetic simulation, results, reflection, transmission, diffraction,
   scattering matrix, field components, wave vectors, RCWA, R-DIT, diffraction order,
-  efficiency, Fourier optics, batched sources, field reconstruction, interface fields
+  efficiency, Fourier optics, batched sources
 
 <a id="torchrdit.results.SolverResults.reflection"></a>
 
@@ -1243,7 +1194,6 @@ and field visualization.
 
   U components are Fourier coefficients of normalized magnetic fields h_hat(x,y,z).
   The normalization is applied in real space: h_hat(x,y,z) = -j * sqrt(mu0/epsilon0) * h(x,y,z).
-  For physical calculations, denormalization must be done AFTER reconstructing fields to real space.
   
 
 **Examples**:
@@ -1307,7 +1257,6 @@ and field visualization.
 
   U components are Fourier coefficients of normalized magnetic fields h_hat(x,y,z).
   The normalization is applied in real space: h_hat(x,y,z) = -j * sqrt(mu0/epsilon0) * h(x,y,z).
-  For physical calculations, denormalization must be done AFTER reconstructing fields to real space.
   
 
 **Examples**:
@@ -1379,7 +1328,6 @@ electromagnetic field visualization.
 
   U components are Fourier coefficients of normalized magnetic fields h_hat(x,y,z).
   The normalization is applied in real space: h_hat(x,y,z) = -j * sqrt(mu0/epsilon0) * h(x,y,z).
-  For physical calculations, denormalization must be done AFTER reconstructing fields to real space.
   
 
 **Examples**:
@@ -1509,210 +1457,4 @@ plt.plot(angles * 180/np.pi, trans)
 plt.xlabel('Angle (degrees)')
 plt.ylabel('Transmission')
 ```
-
-<a id="torchrdit.results.SolverResults.get_reflection_interface_fields"></a>
-
-#### get\_reflection\_interface\_fields
-
-```python
-def get_reflection_interface_fields(
-        resolution: Optional[Tuple[int,
-                                   int]] = None) -> Dict[str, torch.Tensor]
-```
-
-Get real-space E and H fields at reflection interface.
-
-Reconstructs the actual electromagnetic fields E(x,y,z) and H(x,y,z) at the
-reflection interface by inverse Fourier transforming the interface Fourier
-coefficients using the validated IFFT-based method. This provides the
-complete field distribution needed for energy flow analysis and field visualization.
-
-**Arguments**:
-
-- `resolution` - Optional (height, width) for sampling resolution.
-  If None, uses solver's rdim. Physical extent is always
-  one unit cell (-0.5 to 0.5 in lattice coordinates).
-  
-
-**Returns**:
-
-  Dict[str, torch.Tensor]: Dictionary with keys:
-  - 'E_x', 'E_y', 'E_z': Electric field components
-  - 'H_x', 'H_y', 'H_z': Magnetic field components (actual H, denormalized)
-  
-  All fields have shape (n_freqs, height, width) where height, width
-  are from resolution parameter (default: solver's rdim).
-  
-
-**Examples**:
-
-```python
-# Get fields with default resolution
-fields = results.get_reflection_interface_fields()
-
-# Access electric field components
-E_x = fields['E_x']  # Shape: (n_freqs, rdim[0], rdim[1])
-E_y = fields['E_y']
-E_z = fields['E_z']
-
-# Access actual magnetic field components (denormalized)
-H_x = fields['H_x']  # Actual magnetic field H(x,y,z)
-H_y = fields['H_y']
-H_z = fields['H_z']
-
-# Calculate field intensity at first frequency
-E_intensity = torch.abs(E_x[0])**2 + torch.abs(E_y[0])**2 + torch.abs(E_z[0])**2
-
-# Calculate Poynting vector (S = E x H*)
-S_z = 0.5 * torch.real(E_x[0] * torch.conj(H_y[0]) - E_y[0] * torch.conj(H_x[0]))
-
-# Custom resolution for higher detail
-high_res_fields = results.get_reflection_interface_fields(resolution=(128, 128))
-```
-  
-  Keywords:
-  real-space fields, reflection interface, electromagnetic fields, field reconstruction,
-  inverse Fourier transform, field visualization, energy flow, Poynting vector
-
-<a id="torchrdit.results.SolverResults.get_transmission_interface_fields"></a>
-
-#### get\_transmission\_interface\_fields
-
-```python
-def get_transmission_interface_fields(
-        resolution: Optional[Tuple[int,
-                                   int]] = None) -> Dict[str, torch.Tensor]
-```
-
-Get real-space E and H fields at transmission interface.
-
-Reconstructs the actual electromagnetic fields E(x,y,z) and H(x,y,z) at the
-transmission interface by inverse Fourier transforming the interface Fourier
-coefficients using the validated IFFT-based method. This provides the
-complete field distribution needed for energy flow analysis and field visualization.
-
-**Arguments**:
-
-- `resolution` - Optional (height, width) for sampling resolution.
-  If None, uses solver's rdim. Physical extent is always
-  one unit cell (-0.5 to 0.5 in lattice coordinates).
-  
-
-**Returns**:
-
-  Dict[str, torch.Tensor]: Dictionary with keys:
-  - 'E_x', 'E_y', 'E_z': Electric field components
-  - 'H_x', 'H_y', 'H_z': Magnetic field components (actual H, denormalized)
-  
-  All fields have shape (n_freqs, height, width) where height, width
-  are from resolution parameter (default: solver's rdim).
-  
-
-**Examples**:
-
-```python
-# Get fields with default resolution
-fields = results.get_transmission_interface_fields()
-
-# Access electric field components
-E_x = fields['E_x']  # Shape: (n_freqs, rdim[0], rdim[1])
-E_y = fields['E_y']
-E_z = fields['E_z']
-
-# Access actual magnetic field components (denormalized)
-H_x = fields['H_x']  # Actual magnetic field H(x,y,z)
-H_y = fields['H_y']
-H_z = fields['H_z']
-
-# Calculate transmitted power density
-S_z = 0.5 * torch.real(E_x[0] * torch.conj(H_y[0]) - E_y[0] * torch.conj(H_x[0]))
-total_power = torch.sum(S_z) * dx * dy  # Include area element
-
-# Compare with transmission efficiency
-print(f"Integrated power: {total_power:.4f}")
-print(f"Transmission efficiency: {results.transmission[0]:.4f}")
-```
-  
-  Keywords:
-  real-space fields, transmission interface, electromagnetic fields, field reconstruction,
-  inverse Fourier transform, field visualization, energy flow, power transmission
-
-<a id="torchrdit.results.SolverResults.calculate_interface_fields"></a>
-
-#### calculate\_interface\_fields
-
-```python
-def calculate_interface_fields(
-    interface: str = "both",
-    resolution: Optional[Tuple[int, int]] = None
-) -> Dict[str, Dict[str, torch.Tensor]]
-```
-
-Calculate real-space E and H fields at specified interface(s).
-
-Main API method for calculating real-space electromagnetic fields at the
-reflection and/or transmission interfaces using the validated IFFT-based method.
-This method provides field reconstruction for field monitoring, energy flow analysis,
-and electromagnetic field visualization applications.
-
-**Arguments**:
-
-- `interface` - Which interface(s) to calculate. Options:
-  - 'reflection': Only reflection interface fields
-  - 'transmission': Only transmission interface fields
-  - 'both': Both interfaces (default)
-- `resolution` - Optional (height, width) for sampling resolution.
-  If None, uses solver's rdim. Physical extent is always
-  one unit cell (-0.5 to 0.5 in lattice coordinates).
-  
-
-**Returns**:
-
-  Dict[str, Dict[str, torch.Tensor]]: Nested dictionary containing:
-  - 'reflection': Reflection interface fields (if requested)
-  - 'transmission': Transmission interface fields (if requested)
-  
-  Each interface dict contains:
-  - 'E_x', 'E_y', 'E_z': Electric field components
-  - 'H_x', 'H_y', 'H_z': Magnetic field components (actual H, denormalized)
-  
-  All field tensors have shape (n_freqs, height, width).
-  
-
-**Examples**:
-
-```python
-# Get fields at both interfaces with default resolution
-all_fields = results.calculate_interface_fields('both')
-
-# Access electric field at reflection interface
-E_x_refl = all_fields['reflection']['E_x']
-E_y_refl = all_fields['reflection']['E_y']
-
-# Access magnetic field at transmission interface
-H_x_trn = all_fields['transmission']['H_x']
-H_y_trn = all_fields['transmission']['H_y']
-
-# Calculate field enhancement
-incident_field = torch.abs(all_fields['reflection']['E_x'][0])
-transmitted_field = torch.abs(all_fields['transmission']['E_x'][0])
-enhancement = transmitted_field / incident_field
-
-# High resolution field visualization
-high_res = results.calculate_interface_fields('both', resolution=(256, 256))
-
-# Single interface calculation
-refl_only = results.calculate_interface_fields('reflection')
-trn_only = results.calculate_interface_fields('transmission')
-```
-  
-
-**Raises**:
-
-- `ValueError` - If interface parameter is not valid.
-  
-  Keywords:
-  interface fields, real-space fields, field reconstruction, electromagnetic fields,
-  field monitoring, energy flow analysis, reflection interface, transmission interface,
-  field visualization, inverse Fourier transform
 

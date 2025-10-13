@@ -6,6 +6,8 @@
     * [\_\_str\_\_](#torchrdit.layers.Layer.__str__)
     * [thickness](#torchrdit.layers.Layer.thickness)
     * [thickness](#torchrdit.layers.Layer.thickness)
+    * [slice\_count](#torchrdit.layers.Layer.slice_count)
+    * [slice\_count](#torchrdit.layers.Layer.slice_count)
     * [material\_name](#torchrdit.layers.Layer.material_name)
     * [material\_name](#torchrdit.layers.Layer.material_name)
     * [bg\_material](#torchrdit.layers.Layer.bg_material)
@@ -244,6 +246,28 @@ Set the thickness of the layer.
   
   Keywords:
   thickness, layer property, update parameter
+
+<a id="torchrdit.layers.Layer.slice_count"></a>
+
+#### slice\_count
+
+```python
+@property
+def slice_count() -> int
+```
+
+Number of identical sub-slices the layer should be divided into.
+
+<a id="torchrdit.layers.Layer.slice_count"></a>
+
+#### slice\_count
+
+```python
+@slice_count.setter
+def slice_count(count: int) -> None
+```
+
+Set the number of identical sub-slices used for this layer.
 
 <a id="torchrdit.layers.Layer.material_name"></a>
 
@@ -1126,7 +1150,8 @@ def add_layer(layer_type,
               thickness,
               material_name,
               is_optimize=False,
-              is_dispersive=False)
+              is_dispersive=False,
+              slice_count: int = 1)
 ```
 
 Add a new layer to the layer structure.

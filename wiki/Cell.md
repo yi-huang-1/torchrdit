@@ -354,7 +354,8 @@ solver.add_materials([gold])
 def add_layer(material_name: Any,
               thickness: torch.Tensor,
               is_homogeneous: bool = True,
-              is_optimize: bool = False)
+              is_optimize: bool = False,
+              slice_count: int = 1)
 ```
 
 Add a new material layer to the structure.
