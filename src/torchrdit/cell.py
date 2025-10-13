@@ -30,7 +30,7 @@ from .constants import lengthunit_dict
 from .layers import LayerManager
 
 if TYPE_CHECKING:
-    from .layers import Layer
+    pass
 
 # Function Type
 FuncType = Callable[..., Any]

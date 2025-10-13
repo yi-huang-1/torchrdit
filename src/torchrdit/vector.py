@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, Tuple
 
 import torch
-import torch.nn.functional as F
 
 
 __all__ = [
