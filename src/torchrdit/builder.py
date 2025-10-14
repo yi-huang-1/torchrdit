@@ -626,7 +626,15 @@ class SolverBuilder:
         """Configure tangent vector field generation behaviour.
 
         Args:
-            scheme: Tangent field scheme (e.g., ``'POL'``, ``'NORMAL'``).
+            scheme: Tangent field scheme used by Fast Fourier Factorization. Supported
+                values mirror :func:`torchrdit.vector.compute_tangent_field`:
+
+                * ``"POL"`` – polarization-preserving tangents normalized by the global maximum.
+                * ``"NORMAL"`` – per-pixel unit tangents for geometry-driven factorization.
+                * ``"JONES"`` – convert refined tangents into Jones vectors after the solve.
+                * ``"JONES_DIRECT"`` – execute the Newton solve directly in Jones space.
+
+                Defaults to the builder's current choice (``"POL"`` for new instances).
             fourier_weight: Weight for the Fourier-domain loss term.
             smoothness_weight: Weight for the spatial smoothness penalty.
             steps: Number of Newton iterations for tangent field refinement.
