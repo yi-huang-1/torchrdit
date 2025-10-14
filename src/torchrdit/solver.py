@@ -574,8 +574,15 @@ def create_solver(
                     but adds computational overhead.
 
         fff_vector_scheme (str): Tangent vector field scheme to use when generating
-                Fourier-factorization normals. Options include ``'POL'``, ``'NORMAL'``,
-                ``'JONES'``, and ``'JONES_DIRECT'``. Default is ``'POL'``.
+                Fourier-factorization normals. Choose among:
+
+                * ``'POL'`` – polarization-preserving tangents normalized by the global maximum.
+                * ``'NORMAL'`` – per-pixel unit tangents for geometry-driven factorization.
+                * ``'JONES'`` – convert refined tangents into Jones vectors after the solve.
+                * ``'JONES_DIRECT'`` – run the Newton refinement directly in Jones space
+                  (fmmax/S4 style).
+
+                Default is ``'POL'``.
         fff_fourier_weight (float): Weight applied to the Fourier-domain loss
                 during tangent field refinement. Default is ``1e-2``.
         fff_smoothness_weight (float): Weight applied to the smoothness loss
