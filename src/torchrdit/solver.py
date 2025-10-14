@@ -1397,15 +1397,18 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         This method handles both homogeneous and non-homogeneous layers,
         automatically detecting whether input is single source or batched.
+        It also respects the per-layer ``slice_count`` property by splitting
+        the layer thickness into identical slices and repeatedly composing the
+        resulting scattering matrices when ``slice_count > 1``.
 
         Args:
-            n_layer: Layer index to process
-            matrices: Dictionary of matrices from setup_common_matrices
-                     Can be either single source (3D) or batched (4D)
+            n_layer: Layer index to process.
+            matrices: Dictionary of matrices from ``setup_common_matrices``.
+                     Can be either single source (3D) or batched (4D).
 
         Returns:
-            dict: Scattering matrix for the layer
-                  Shape matches input (3D for single, 4D for batched)
+            dict: Scattering matrix for the layer with the same shape convention
+                  as the input (3D for single sources, 4D for batched sources).
         """
         # Detect if input is batched based on dimension
         is_single_source = matrices["mat_kx_diag"].dim() == 3
@@ -1436,7 +1439,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 layer.thickness, dtype=self.tfloat, device=self.device
             )
         layer_thickness_complex = layer_thickness_tensor.to(self.tcomplex)
-        slice_thickness = layer_thickness_complex / slice_count
+        slice_thickness = layer_thickness_complex / slice_count  # Evenly split thickness across slices
         smat_layer = {}
 
         # Handle non-homogeneous layers

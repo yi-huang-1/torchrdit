@@ -74,6 +74,8 @@ def _add_layers(
         solver (Union["RCWASolver", "RDITSolver"]): The solver to add layers to.
         layers_list (List[Dict[str, Any]]): List of layer configurations. Each dictionary
             should contain at minimum a "material" key and a "thickness" key.
+            Optional keys include ``"slice_count"`` to replicate a layer across
+            multiple identical slices for improved accuracy on thick layers.
         materials (Dict[str, Any]): Dictionary of material objects with material names as keys.
 
     Examples:
@@ -81,6 +83,7 @@ def _add_layers(
     layers = [
         {"material": "SiO2", "thickness": 0.2, "is_homogeneous": True},
         {"material": "Si", "thickness": 0.5, "is_homogeneous": False},
+        {"material": "Si", "thickness": 1.0, "slice_count": 4},
     ]
     _add_layers(solver, layers, materials_dict)
     ```

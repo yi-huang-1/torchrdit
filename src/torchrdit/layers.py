@@ -85,6 +85,8 @@ class Layer(metaclass=ABCMeta):
         is_dispersive (bool): Whether the layer's material has frequency-dependent properties.
         is_optimize (bool): Whether the layer's parameters are subject to optimization.
         is_solved (bool): Whether the electromagnetic response of this layer has been solved.
+        slice_count (int): Number of identical sub-slices used to discretize the layer
+            thickness during propagation calculations. Defaults to 1 (no slicing).
         ermat (torch.Tensor, optional): Permittivity distribution matrix.
         urmat (torch.Tensor, optional): Permeability distribution matrix.
         kermat (torch.Tensor, optional): Fourier-transformed permittivity matrix.
@@ -167,12 +169,23 @@ class Layer(metaclass=ABCMeta):
 
     @property
     def slice_count(self) -> int:
-        """Number of identical sub-slices the layer should be divided into."""
+        """Number of identical sub-slices used when propagating through the layer.
+
+        Returns:
+            int: Count of slices the solver will use when expanding this layer
+                into thinner segments for Redheffer star-matrix composition.
+                A value of 1 means no additional slicing.
+        """
         return self._slice_count
 
     @slice_count.setter
     def slice_count(self, count: int) -> None:
-        """Set the number of identical sub-slices used for this layer."""
+        """Set the number of identical sub-slices used for this layer.
+
+        Increasing the slice count allows the solver to model thick layers by
+        re-using the same material response multiple times with reduced
+        thickness per slice. The value must be a positive integer.
+        """
         if isinstance(count, torch.Tensor):
             count_val = int(count.item())
         else:
@@ -985,6 +998,10 @@ class LayerManager:
                         optimization procedures. Default is False.
             is_dispersive (bool): Whether the material has frequency-dependent properties.
                            Default is False.
+            slice_count (int): Number of identical sub-slices to use when propagating
+                        through this layer. Values greater than 1 split the layer
+                        thickness evenly and repeatedly combine the slice scattering
+                        matrices. Default is 1.
 
         Note:
             Users typically do not call this method directly but rather use the
@@ -1011,6 +1028,7 @@ class LayerManager:
 
         Args:
             layer_index (int): Index of the layer to convert in the layers list.
+                The existing layer's slice_count is preserved for the replacement.
 
         Keywords:
             convert layer, homogeneous layer, layer modification
@@ -1035,6 +1053,7 @@ class LayerManager:
 
         Args:
             layer_index (int): Index of the layer to convert in the layers list.
+                The existing layer's slice_count is preserved for the replacement.
 
         Keywords:
             convert layer, grating layer, patterned layer, layer modification

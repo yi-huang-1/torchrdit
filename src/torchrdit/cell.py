@@ -404,6 +404,10 @@ class Cell3D:
             is_optimize (bool): Whether this layer's parameters (e.g., thickness) should be
                        included in optimization. Set to True if you plan to optimize
                        this layer's properties. Default is False.
+            slice_count (int): Number of identical sub-slices used to model this layer
+                        during propagation. Increasing the count splits the thickness
+                        evenly across repeated slices, improving accuracy for thick
+                        or high-index layers at the cost of runtime. Default is 1.
 
         Raises:
             RuntimeError: If the specified material does not exist in the material library.
@@ -443,7 +447,7 @@ class Cell3D:
 
         Keywords:
             layer, material, thickness, homogeneous, patterned, photonic structure,
-            multilayer, stack, optimization
+            multilayer, stack, optimization, slice_count
         """
         slice_count_val = 1
         candidate = slice_count
