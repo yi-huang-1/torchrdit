@@ -8,6 +8,8 @@ based on the configuration in pydoc-markdown.yml.
 import os
 import yaml
 import subprocess
+import shutil
+import tempfile
 from pathlib import Path
 
 def create_material_proxy_page(docs_dir):
@@ -62,7 +64,38 @@ si_data = proxy.load_data('Si_data.txt', 'wl-eps', 'um')
 
 # Extract permittivity at specific wavelengths
 wavelengths = np.array([1.3, 1.55, 1.7])
-eps_real, eps_imag = proxy.extract_permittivity(si_data, wavelengths)
+eps1, eps2 = proxy.extract_permittivity(si_data, wavelengths)
+```
+
+### In-memory dispersive samples (λ-ε or λ-nk)
+
+TorchRDIT can also build dispersive materials without file I/O by providing
+in-memory samples at wavelengths in μm.
+
+Inputs may be Python sequences, NumPy arrays, or torch tensors. When torch
+tensors are provided, TorchRDIT converts them to CPU NumPy internally to build
+an interpolation table (no autograd gradients are preserved for these samples).
+
+```python
+from torchrdit.utils import create_material
+
+# In-memory complex epsilon samples (TorchRDIT uses exp(-iωt); lossy Im(ε) < 0).
+# If you provide Im(ε) > 0, values are conjugated internally to match the convention.
+silica = create_material(
+    name="silica_inmem_eps",
+    dielectric_dispersion=True,
+    user_dielectric_wavelengths_um=[1.0, 1.5, 2.0],
+    user_dielectric_eps=[2.10-0.00j, 2.08-0.00j, 2.05-0.00j],
+)
+
+# In-memory n/k samples (k defaults to 0 if omitted)
+silicon = create_material(
+    name="silicon_inmem_nk",
+    dielectric_dispersion=True,
+    user_dielectric_wavelengths_um=[1.3, 1.55, 1.7],
+    user_dielectric_n=[3.50, 3.48, 3.46],
+    user_dielectric_k=[0.0, 0.0, 0.0],
+)
 ```
 
 ## API Reference
@@ -104,17 +137,56 @@ Please ensure that the module is properly installed and importable.**
             pass
 
 def main():
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+
     # Create wiki directory if it doesn't exist
-    wiki_dir = Path("wiki")
+    wiki_dir = script_dir / "wiki"
     wiki_dir.mkdir(exist_ok=True)
 
     # Load configuration
-    with open("pydoc-markdown.yml", "r") as f:
+    config_path = script_dir / "pydoc-markdown.yml"
+    with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
     # Extract docs directory from config
     docs_dir = Path(config.get("docs_directory", "wiki"))
+    if not docs_dir.is_absolute():
+        docs_dir = script_dir / docs_dir
     docs_dir.mkdir(exist_ok=True)
+
+    # Build a pydoc-markdown-only config (our YAML includes script-only keys like
+    # docs_directory/modules that pydoc-markdown will warn about).
+    pydoc_cfg = {k: v for k, v in config.items() if k in {"loaders", "processors", "renderer"}}
+
+    # Make loader search paths absolute (relative paths are interpreted relative to the
+    # config file location by pydoc-markdown, and we write a temporary config).
+    for loader in pydoc_cfg.get("loaders", []) or []:
+        if isinstance(loader, dict) and loader.get("type") == "python":
+            search_path = loader.get("search_path") or []
+            abs_paths = []
+            for p in search_path:
+                p_path = Path(p)
+                abs_paths.append(str((script_dir / p_path).resolve()) if not p_path.is_absolute() else str(p_path))
+            loader["search_path"] = abs_paths
+
+    # pydoc-markdown uses YAPF to format signatures. With type annotations,
+    # formatting fails if signatures omit the leading "def".
+    pydoc_cfg.setdefault("renderer", {})
+    pydoc_cfg["renderer"]["signature_with_def"] = True
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False, dir=str(script_dir)) as tmp_f:
+        yaml.safe_dump(pydoc_cfg, tmp_f)
+        pydoc_cfg_path = Path(tmp_f.name)
+
+    # Find the pydoc-markdown CLI.
+    # - Prefer PATH (system install).
+    # - Fall back to repo venv (.venv/bin/pydoc-markdown).
+    pydoc_markdown = shutil.which("pydoc-markdown")
+    if pydoc_markdown is None:
+        venv_candidate = repo_root / ".venv" / "bin" / "pydoc-markdown"
+        if venv_candidate.exists():
+            pydoc_markdown = str(venv_candidate)
 
     # Remove all existing files in the wiki directory
     print("Cleaning wiki directory...")
@@ -133,11 +205,24 @@ def main():
         print(f"Generating documentation for {module_name}...")
 
         # Run pydoc-markdown for this module
-        cmd = ["pydoc-markdown", "-m", module_name, "--render-toc"]
+        if pydoc_markdown is None:
+            cmd = None
+        else:
+            # Pass the config file so loader search paths and renderer settings are applied.
+            cmd = [pydoc_markdown, str(pydoc_cfg_path), "-m", module_name, "--render-toc"]
 
         try:
             with open(output_file, "w") as f:
-                result = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, text=True)
+                if cmd is None:
+                    result = subprocess.CompletedProcess(args=[], returncode=1, stderr="pydoc-markdown not found")
+                else:
+                    result = subprocess.run(
+                        cmd,
+                        stdout=f,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        cwd=str(script_dir),
+                    )
 
             if result.returncode != 0:
                 print(f"  -> Warning: Failed to generate documentation for {module_name}")
@@ -147,7 +232,10 @@ def main():
 
 **Note: Documentation generation for this module failed.**
 
-This could be due to import errors or other issues. Please ensure the module is properly installed and importable.
+This could be due to import errors or missing tools.
+
+- Ensure `pydoc-markdown` is installed and available.
+- If you're using the repository venv, run this script via `.venv/bin/python torchrdit/generate_docs.py`.
 
 ## Module Structure
 
@@ -208,6 +296,12 @@ Please check that the module exists and is properly installed.
     create_readme(docs_dir)
 
     print("Documentation generation complete!")
+
+    # Clean up the temporary pydoc-markdown config file.
+    try:
+        pydoc_cfg_path.unlink()
+    except Exception:
+        pass
 
 def create_home_page(docs_dir):
     """Create the Home page for the wiki."""
@@ -322,7 +416,7 @@ This guide will help you set up and run your first electromagnetic simulation wi
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.10+
 - PyTorch 1.9+
 - NumPy
 - Matplotlib (for visualization)
@@ -343,7 +437,28 @@ pip install -e .
 
 ## Basic Usage
 
-TorchRDIT provides a builder pattern for configuring and running simulations. Here's a simple example:
+TorchRDIT provides a regulated, spec-driven interface (recommended) and a lower-level builder API.
+
+### Recommended: regulated interface
+
+```python
+import torchrdit as tr
+
+# `spec` can be a dict or a JSON spec file path.
+results = tr.simulate(spec)
+results2 = tr.simulate("spec.json")
+```
+
+For dispersive materials, relative `materials[*].dielectric_file` paths are resolved automatically:
+spec/config directory (when loaded from JSON) → caller script directory → current working directory.
+
+TorchRDIT also supports in-memory dispersive materials via `materials[*].dispersion` in the regulated interface.
+These arrays can be provided as Python / NumPy / torch values, but torch tensors are converted to CPU NumPy
+internally to build the interpolation table (no autograd gradients for these samples).
+
+### Builder API (lower-level)
+
+Here's a simple example using the builder pattern:
 
 ```python
 import torch
@@ -447,6 +562,10 @@ device.update_er_with_mask(mask=circle_mask, layer_index=0)
 ## Automatic Differentiation
 
 One of the key features of TorchRDIT is its support for automatic differentiation through PyTorch:
+
+Note: some parts of the pipeline are not differentiable. For example, in-memory
+dispersive material samples are converted to NumPy and interpolated outside of
+torch, so gradients are not available with respect to those samples.
 
 ```python
 # Make mask parameters differentiable
@@ -621,17 +740,24 @@ device.update_er_with_mask(mask=mask, layer_index=0)
 ### Dispersive Materials
 
 ```python
-# Creating materials with dispersion from data files
-material_sic = create_material(
-    name='SiC',
-    dielectric_dispersion=True,
-    user_dielectric_file='Si_C-e.txt',
-    data_format='freq-eps',
-    data_unit='thz'
-)
+# Dispersive materials are typically specified via `dielectric_file` in a spec/config.
+# When running through `tr.simulate(spec)` / `tr.optimize(spec, ...)` or loading a JSON
+# config/spec file, relative `dielectric_file` paths resolve automatically:
+# spec/config directory → caller script directory → current working directory.
+#
+# Recommended usage (portable, no `base_path` required):
+import torchrdit as tr
 
-# Visualize fitted permittivity
-display_fitted_permittivity(device, fig_ax=axes)
+spec = {
+    "solver": {"algorithm": "RCWA", "wavelengths": [1.55], "grids": [64, 64], "harmonics": [3, 3]},
+    "materials": {
+        "SiC": {"dielectric_dispersion": True, "dielectric_file": "Si_C-e.txt", "data_format": "freq-eps", "data_unit": "thz"},
+    },
+    "layers": [{"material": "SiC", "thickness": 0.1, "is_homogeneous": True}],
+    "sources": {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
+}
+results = tr.simulate(spec)           # dict spec
+results2 = tr.simulate("spec.json")   # JSON spec (recommended for portability)
 ```
 
 ### Automatic Differentiation

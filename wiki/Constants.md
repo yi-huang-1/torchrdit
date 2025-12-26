@@ -65,7 +65,7 @@ Below is the complete API reference for the constants module, automatically gene
 
 <a id="torchrdit.constants"></a>
 
-# torchrdit.constants
+# Module torchrdit.constants
 
 Constants module for the TorchRDIT electromagnetic solver package.
 
@@ -122,31 +122,31 @@ solver = create_solver(algorithm=Algorithm.RCWA)
 
 <a id="torchrdit.constants.EPS_0"></a>
 
-#### EPS\_0
+#### torchrdit.constants.EPS\_0
 
 vacuum permittivity (F/m)
 
 <a id="torchrdit.constants.MU_0"></a>
 
-#### MU\_0
+#### torchrdit.constants.MU\_0
 
 vacuum permeability (H/m)
 
 <a id="torchrdit.constants.C_0"></a>
 
-#### C\_0
+#### torchrdit.constants.C\_0
 
 speed of light in vacuum (m/s)
 
 <a id="torchrdit.constants.ETA_0"></a>
 
-#### ETA\_0
+#### torchrdit.constants.ETA\_0
 
 vacuum impedance (Ω)
 
 <a id="torchrdit.constants.Q_E"></a>
 
-#### Q\_E
+#### torchrdit.constants.Q\_E
 
 elementary charge (C)
 
@@ -217,13 +217,13 @@ print(f"Solver uses: {rcwa_solver.algorithm.name}")
 
 <a id="torchrdit.constants.Algorithm.RCWA"></a>
 
-#### RCWA
+#### Algorithm.RCWA
 
 Rigorous Coupled-Wave Analysis
 
 <a id="torchrdit.constants.Algorithm.RDIT"></a>
 
-#### RDIT
+#### Algorithm.RDIT
 
 Rigorous Diffraction Interface Theory (R-DIT)
 
@@ -296,13 +296,13 @@ print(f"Double precision uses dtype: {torch.float64}")
 
 <a id="torchrdit.constants.Precision.SINGLE"></a>
 
-#### SINGLE
+#### Precision.SINGLE
 
 32-bit floating point (torch.float32)
 
 <a id="torchrdit.constants.Precision.DOUBLE"></a>
 
-#### DOUBLE
+#### Precision.DOUBLE
 
 64-bit floating point (torch.float64)
 

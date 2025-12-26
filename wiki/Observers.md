@@ -34,12 +34,11 @@ Below is the complete API reference for the observers module, automatically gene
 
 * [torchrdit.observers](#torchrdit.observers)
   * [ConsoleProgressObserver](#torchrdit.observers.ConsoleProgressObserver)
-    * [\_\_init\_\_](#torchrdit.observers.ConsoleProgressObserver.__init__)
     * [update](#torchrdit.observers.ConsoleProgressObserver.update)
 
 <a id="torchrdit.observers"></a>
 
-# torchrdit.observers
+# Module torchrdit.observers
 
 Observer implementations for tracking and reporting solver progress.
 
@@ -150,45 +149,9 @@ result = solver.solve(source)
   console output, progress reporting, solver monitoring, text output,
   verbose logging, simulation tracking, calculation time, observer pattern
 
-<a id="torchrdit.observers.ConsoleProgressObserver.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__(verbose: bool = True)
-```
-
-Initialize the console observer.
-
-**Arguments**:
-
-- `verbose` _bool_ - Whether to print detailed progress messages.
-  When True, all steps of the solving process are reported.
-  When False, only major milestones are reported.
-  Default is True.
-  
-
-**Examples**:
-
-```python
-from torchrdit.observers import ConsoleProgressObserver
-from torchrdit.solver import create_solver
-solver = create_solver()
-# Create a verbose observer
-verbose_observer = ConsoleProgressObserver(verbose=True)
-solver.add_observer(verbose_observer)
-
-# Create a minimal observer
-minimal_observer = ConsoleProgressObserver(verbose=False)
-solver.add_observer(minimal_observer)
-```
-  
-  Keywords:
-  initialization, verbosity setting, observer creation
-
 <a id="torchrdit.observers.ConsoleProgressObserver.update"></a>
 
-#### update
+### ConsoleProgressObserver.update
 
 ```python
 def update(event_type: str, data: dict) -> None

@@ -1,11 +1,13 @@
 from typing import List, Dict, Union, Any, Optional, TYPE_CHECKING
+from pathlib import Path
 import torch
 import numpy as np
 from .constants import Algorithm, Precision
 from .materials import MaterialClass
 from .utils import create_material
 from .algorithm import SolverAlgorithm
-import os  # Needed for path joining in _create_materials
+import os
+from .path_utils import infer_caller_dir, resolve_data_path
 
 # Import types for type checking only, not at runtime
 if TYPE_CHECKING:
@@ -13,7 +15,10 @@ if TYPE_CHECKING:
 
 
 # Function that was previously TorchrditConfig._create_materials
-def _create_materials(materials_dict: Dict[str, Any], base_path: str) -> Dict[str, Any]:
+def _create_materials(
+    materials_dict: Dict[str, Any],
+    config_dir: Optional[Union[str, os.PathLike]] = None,
+) -> Dict[str, Any]:
     """Create material objects from dictionary specification.
 
     This internal utility function converts a dictionary of material specifications
@@ -23,14 +28,17 @@ def _create_materials(materials_dict: Dict[str, Any], base_path: str) -> Dict[st
         materials_dict (Dict[str, Any]): Dictionary of material specifications.
             Each key is a material name, and each value is a dictionary containing
             the material properties.
-        base_path (str): Base path for relative file references for material data files.
+        config_dir (str | os.PathLike | None): Directory context for resolving relative
+            material data files (e.g. dispersive ``dielectric_file``). Resolution order:
+            ``config_dir`` (typically the JSON config file directory), then caller script
+            directory, then current working directory.
 
     Returns:
         Dict[str, Any]: Dictionary of created material objects with material names as keys.
 
-    Examples:
-    ```python
-    materials_spec = {
+	    Examples:
+	    ```python
+	    materials_spec = {
         "Si": {"permittivity": 12.0},
         "SiO2": {"permittivity": 2.25},
         "Au": {
@@ -38,26 +46,124 @@ def _create_materials(materials_dict: Dict[str, Any], base_path: str) -> Dict[st
             "dielectric_file": "materials/gold.txt",
             "data_format": "freq-eps",
             "data_unit": "thz"
-        }
-    }
-    materials = _create_materials(materials_spec, "./data")
-    ```
+        },
+        "SiC_inmem": {
+            "dielectric_dispersion": True,
+            "dispersion": {
+                "wavelengths_um": [1.0, 1.5, 2.0],
+                "n": [2.6, 2.55, 2.5],
+                "k": [0.1, 0.08, 0.05],
+            },
+        },
+	    }
+	    materials = _create_materials(materials_spec, config_dir="./data")
+	    ```
+	
+	    Notes:
+	        - In-memory dispersion samples under ``"dispersion"`` accept Python sequences,
+	          NumPy arrays, or torch tensors; values are converted to CPU NumPy internally
+	          (no autograd gradients) to build an interpolation table.
 
-    Keywords:
-        materials, permittivity, dielectric dispersion, material creation
-    """
-    materials = {}
+	    Keywords:
+	        materials, permittivity, dielectric dispersion, material creation
+	    """
+    materials: Dict[str, Any] = {}
     for name, props in materials_dict.items():
-        if props.get("dielectric_dispersion", False):
-            materials[name] = create_material(
-                name=name,
-                dielectric_dispersion=True,
-                user_dielectric_file=os.path.join(base_path, props["dielectric_file"]),
-                data_format=props.get("data_format", "freq-eps"),
-                data_unit=props.get("data_unit", "thz"),
-            )
+        if not isinstance(name, str):
+            raise ValueError(f"Material name must be a string, got {type(name)}")
+        if not isinstance(props, dict):
+            raise ValueError(f"Material properties must be a dictionary at materials[{name!r}], got {type(props)}")
+
+        is_dispersive = bool(props.get("dielectric_dispersion", False))
+        if is_dispersive:
+            allowed_keys = {"permittivity", "dielectric_dispersion", "dielectric_file", "dispersion", "data_format", "data_unit"}
+            unknown = set(props.keys()) - allowed_keys
+            if unknown:
+                raise ValueError(
+                    f"Unknown material keys detected at materials[{name!r}]: {sorted(unknown)} "
+                    f"(allowed: {sorted(allowed_keys)})"
+                )
+            if "permittivity" in props:
+                raise ValueError(
+                    f"Material at materials[{name!r}]: 'permittivity' is not allowed when 'dielectric_dispersion' is True"
+                )
+
+            has_file = "dielectric_file" in props
+            has_disp = "dispersion" in props
+            if has_file and has_disp:
+                raise ValueError(
+                    f"Material at materials[{name!r}] cannot specify both 'dielectric_file' and 'dispersion'"
+                )
+            if not has_file and not has_disp:
+                raise ValueError(
+                    f"Material at materials[{name!r}] requires 'dielectric_file' or 'dispersion' when 'dielectric_dispersion' is True"
+                )
+
+            if has_file:
+                caller_dir = infer_caller_dir(
+                    skip_files=("builder.py", "solver.py", "interface.py", "__init__.py", "path_utils.py")
+                )
+                resolved_file = resolve_data_path(
+                    props["dielectric_file"],
+                    config_dir=config_dir,
+                    caller_dir=str(caller_dir) if caller_dir is not None else None,
+                )
+                materials[name] = create_material(
+                    name=name,
+                    dielectric_dispersion=True,
+                    user_dielectric_file=resolved_file,
+                    data_format=props.get("data_format", "freq-eps"),
+                    data_unit=props.get("data_unit", "thz"),
+                )
+            else:
+                if "data_format" in props or "data_unit" in props:
+                    raise ValueError(
+                        f"Material at materials[{name!r}]: 'data_format'/'data_unit' are not used with in-memory dispersion"
+                    )
+                disp = props["dispersion"]
+                if not isinstance(disp, dict):
+                    raise ValueError(f"Material at materials[{name!r}].dispersion must be a dict, got {type(disp)}")
+                allowed_disp_keys = {"wavelengths_um", "eps", "n", "k"}
+                unknown_disp = set(disp.keys()) - allowed_disp_keys
+                if unknown_disp:
+                    raise ValueError(
+                        f"Unknown dispersion keys detected at materials[{name!r}].dispersion: {sorted(unknown_disp)} "
+                        f"(allowed: {sorted(allowed_disp_keys)})"
+                    )
+                if "wavelengths_um" not in disp:
+                    raise ValueError(f"Material at materials[{name!r}].dispersion requires 'wavelengths_um'")
+
+                has_eps = "eps" in disp
+                has_n = "n" in disp
+                if has_eps and has_n:
+                    raise ValueError(f"Material at materials[{name!r}].dispersion cannot specify both 'eps' and 'n/k'")
+                if not has_eps and not has_n:
+                    raise ValueError(f"Material at materials[{name!r}].dispersion requires 'eps' or 'n' (+ optional 'k')")
+                if has_eps and ("k" in disp):
+                    raise ValueError(f"Material at materials[{name!r}].dispersion: when 'eps' is provided, 'k' is not allowed")
+
+                materials[name] = create_material(
+                    name=name,
+                    dielectric_dispersion=True,
+                    user_dielectric_wavelengths_um=disp["wavelengths_um"],
+                    user_dielectric_eps=disp.get("eps"),
+                    user_dielectric_n=disp.get("n"),
+                    user_dielectric_k=disp.get("k"),
+                )
         else:
+            allowed_keys = {"permittivity", "dielectric_dispersion"}
+            unknown = set(props.keys()) - allowed_keys
+            if unknown:
+                raise ValueError(
+                    f"Unknown material keys detected at materials[{name!r}]: {sorted(unknown)} "
+                    f"(allowed: {sorted(allowed_keys)})"
+                )
+            if "permittivity" not in props:
+                raise ValueError(
+                    f"Material at materials[{name!r}] requires 'permittivity' when 'dielectric_dispersion' is False"
+                )
             materials[name] = create_material(name=name, permittivity=props["permittivity"])
+
     return materials
 
 
@@ -91,7 +197,16 @@ def _add_layers(
     Keywords:
         layers, materials, thickness, solver configuration, layer stack
     """
-    for layer in layers_list:
+    allowed_keys = {"type", "material", "thickness", "is_homogeneous", "is_optimize", "slice_count"}
+    for idx, layer in enumerate(layers_list):
+        if not isinstance(layer, dict):
+            raise ValueError(f"Layer configuration at layers[{idx}] must be a dict, got {type(layer)}")
+        unknown = set(layer.keys()) - allowed_keys
+        if unknown:
+            raise ValueError(f"Unknown layer keys detected at layers[{idx}]: {sorted(unknown)} (allowed: {sorted(allowed_keys)})")
+        if "material" not in layer or "thickness" not in layer:
+            raise ValueError(f"Layer configuration at layers[{idx}] must include 'material' and 'thickness'")
+
         if isinstance(layer["material"], str):
             material_name = layer["material"]
         elif isinstance(layer["material"], MaterialClass):
@@ -99,14 +214,21 @@ def _add_layers(
         else:
             raise ValueError(f"Invalid material type: {type(layer['material'])}")
 
-        if isinstance(layer["thickness"], torch.Tensor):
-            thickness = layer["thickness"]
+        thickness_val = layer["thickness"]
+        if isinstance(thickness_val, torch.Tensor):
+            thickness = thickness_val
         else:
-            thickness = torch.tensor(layer["thickness"], dtype=torch.float32)
+            thickness = torch.as_tensor(thickness_val, dtype=torch.float32)
         is_homogeneous = layer.get("is_homogeneous", True)
         is_optimize = layer.get("is_optimize", False)
 
         slice_count = layer.get("slice_count", 1)
+        if isinstance(slice_count, torch.Tensor):
+            slice_count = int(slice_count.item())
+        else:
+            slice_count = int(slice_count)
+        if slice_count < 1:
+            slice_count = 1
 
         solver.add_layer(
             material_name=materials[material_name],
@@ -820,7 +942,6 @@ class SolverBuilder:
             "rdit_order",
             "materials",
             "layers",
-            "base_path",
             "trn_material",
             "ref_material",
         }
@@ -856,8 +977,8 @@ class SolverBuilder:
             lattice_vectors = case_insensitive_config["lattice_vectors"][1]
             t1_data = lattice_vectors["t1"]
             t2_data = lattice_vectors["t2"]
-            self._t1 = torch.tensor(t1_data)
-            self._t2 = torch.tensor(t2_data)
+            self._t1 = t1_data if isinstance(t1_data, torch.Tensor) else torch.as_tensor(t1_data)
+            self._t2 = t2_data if isinstance(t2_data, torch.Tensor) else torch.as_tensor(t2_data)
         if "use_fff" in case_insensitive_config:
             self._is_use_FFF = case_insensitive_config["use_fff"][1]
         if "device" in case_insensitive_config:
@@ -882,12 +1003,14 @@ class SolverBuilder:
             )
 
         # Process materials and layers
-        base_path = ""
-        if "base_path" in case_insensitive_config:
-            base_path = case_insensitive_config["base_path"][1]
-
+        config_dir = None
+        if getattr(self, "_config_path", None):
+            try:
+                config_dir = str(Path(self._config_path).resolve().parent)
+            except OSError:
+                config_dir = None
         if "materials" in case_insensitive_config:
-            materials_dict = _create_materials(case_insensitive_config["materials"][1], base_path)
+            materials_dict = _create_materials(case_insensitive_config["materials"][1], config_dir=config_dir)
             self._materials = list(materials_dict.values())
             self._materials_dict = materials_dict
 

@@ -186,12 +186,18 @@ class ConsoleProgressObserver(SolverObserver):
             event handling, progress notification, console output, observer update,
             event types, calculation progress
         """
+        prefix = ""
+        opt_step = data.get("opt_step")
+        opt_total_steps = data.get("opt_total_steps")
+        if isinstance(opt_step, int) and isinstance(opt_total_steps, int) and opt_total_steps > 0:
+            prefix = f"[opt {opt_step}/{opt_total_steps}] "
+
         if event_type == "calculation_starting":
             self.start_time = time.time()
             mode = data.get("mode", "unknown")
             n_freqs = data.get("n_freqs", 0)
             n_layers = data.get("n_layers", 0)
-            print(f"Starting calculation in {mode} mode with {n_freqs} frequencies and {n_layers} layers...")
+            print(f"{prefix}Starting calculation in {mode} mode with {n_freqs} frequencies and {n_layers} layers...")
 
         elif event_type == "initializing_k_vectors" and self.verbose:
             print("Initializing k-vectors...")
@@ -221,7 +227,7 @@ class ConsoleProgressObserver(SolverObserver):
         elif event_type == "calculation_completed":
             elapsed_time = time.time() - self.start_time
             n_freqs = data.get("n_freqs", 0)
-            print(f"Calculation completed in {elapsed_time:.2f} seconds for {n_freqs} frequencies.")
+            print(f"{prefix}Calculation completed in {elapsed_time:.2f} seconds for {n_freqs} frequencies.")
 
 
 if TQDM_AVAILABLE:

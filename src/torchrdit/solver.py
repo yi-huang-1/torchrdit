@@ -50,6 +50,15 @@ silicon = create_material(name="silicon", permittivity=11.7)
 sio2 = create_material(name="sio2", permittivity=2.25)
 solver.add_materials([silicon, sio2])
 
+# Dispersive material can be created from a data file or in-memory samples:
+# gold = create_material(
+#     name="gold",
+#     dielectric_dispersion=True,
+#     user_dielectric_wavelengths_um=[1.0, 1.5, 2.0],
+#     user_dielectric_n=[0.45, 0.35, 0.30],
+#     user_dielectric_k=[6.5, 7.0, 7.5],
+# )
+
 # Define layers
 solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
 solver.add_layer(material_name="sio2", thickness=torch.tensor(0.3))
@@ -560,7 +569,8 @@ def create_solver(
               Higher values improve accuracy but significantly increase computation time.
 
         materiallist (List[Any]): List of materials used in the simulation. Can include
-                      MaterialClass instances created with create_material().
+                      MaterialClass instances created with create_material(), including
+                      dispersive materials defined from a file or in-memory samples.
                       Default is an empty list.
 
         t1 (torch.Tensor): First lattice vector defining the unit cell geometry.

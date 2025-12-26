@@ -44,7 +44,38 @@ si_data = proxy.load_data('Si_data.txt', 'wl-eps', 'um')
 
 # Extract permittivity at specific wavelengths
 wavelengths = np.array([1.3, 1.55, 1.7])
-eps_real, eps_imag = proxy.extract_permittivity(si_data, wavelengths)
+eps1, eps2 = proxy.extract_permittivity(si_data, wavelengths)
+```
+
+### In-memory dispersive samples (λ-ε or λ-nk)
+
+TorchRDIT can also build dispersive materials without file I/O by providing
+in-memory samples at wavelengths in μm.
+
+Inputs may be Python sequences, NumPy arrays, or torch tensors. When torch
+tensors are provided, TorchRDIT converts them to CPU NumPy internally to build
+an interpolation table (no autograd gradients are preserved for these samples).
+
+```python
+from torchrdit.utils import create_material
+
+# In-memory complex epsilon samples (TorchRDIT uses exp(-iωt); lossy Im(ε) < 0).
+# If you provide Im(ε) > 0, values are conjugated internally to match the convention.
+silica = create_material(
+    name="silica_inmem_eps",
+    dielectric_dispersion=True,
+    user_dielectric_wavelengths_um=[1.0, 1.5, 2.0],
+    user_dielectric_eps=[2.10-0.00j, 2.08-0.00j, 2.05-0.00j],
+)
+
+# In-memory n/k samples (k defaults to 0 if omitted)
+silicon = create_material(
+    name="silicon_inmem_nk",
+    dielectric_dispersion=True,
+    user_dielectric_wavelengths_um=[1.3, 1.55, 1.7],
+    user_dielectric_n=[3.50, 3.48, 3.46],
+    user_dielectric_k=[0.0, 0.0, 0.0],
+)
 ```
 
 ## API Reference
@@ -55,20 +86,19 @@ Below is the complete API reference for the material_proxy module, automatically
 
 * [torchrdit.material\_proxy](#torchrdit.material_proxy)
   * [UnitConverter](#torchrdit.material_proxy.UnitConverter)
-    * [\_\_init\_\_](#torchrdit.material_proxy.UnitConverter.__init__)
     * [validate\_units](#torchrdit.material_proxy.UnitConverter.validate_units)
     * [convert\_length](#torchrdit.material_proxy.UnitConverter.convert_length)
     * [convert\_frequency](#torchrdit.material_proxy.UnitConverter.convert_frequency)
     * [freq\_to\_wavelength](#torchrdit.material_proxy.UnitConverter.freq_to_wavelength)
     * [wavelength\_to\_freq](#torchrdit.material_proxy.UnitConverter.wavelength_to_freq)
   * [MaterialDataProxy](#torchrdit.material_proxy.MaterialDataProxy)
-    * [\_\_init\_\_](#torchrdit.material_proxy.MaterialDataProxy.__init__)
+    * [build\_wl\_eps\_data\_from\_arrays](#torchrdit.material_proxy.MaterialDataProxy.build_wl_eps_data_from_arrays)
     * [load\_data](#torchrdit.material_proxy.MaterialDataProxy.load_data)
     * [extract\_permittivity](#torchrdit.material_proxy.MaterialDataProxy.extract_permittivity)
 
 <a id="torchrdit.material_proxy"></a>
 
-# torchrdit.material\_proxy
+# Module torchrdit.material\_proxy
 
 Module for handling material data with unit awareness in TorchRDIT.
 
@@ -104,13 +134,14 @@ print(f"193.5 THz = {wavelength:.2f} μm")
 # Loading material data:
 from torchrdit.material_proxy import MaterialDataProxy
 import numpy as np
+import torch
 # Load silicon data from file
 proxy = MaterialDataProxy()
 # File contains wavelength (um) and permittivity data
 si_data = proxy.load_data('Si_data.txt', 'wl-eps', 'um')
 # Extract permittivity at specific wavelengths
 wavelengths = np.array([1.3, 1.55, 1.7])
-eps_real, eps_imag = proxy.extract_permittivity(si_data, wavelengths)
+eps1, eps2 = proxy.extract_permittivity(si_data, wavelengths)
 ```
   
   Keywords:
@@ -164,25 +195,9 @@ print(converter.wavelength_to_freq(1.55, 'um', 'thz'))
   unit conversion, wavelength, frequency, length units, frequency units,
   unit validation, unit transformation, electromagnetic units
 
-<a id="torchrdit.material_proxy.UnitConverter.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__()
-```
-
-Initialize the UnitConverter with supported units from constants.
-
-Initializes the converter with dictionaries of supported length and
-frequency units from the constants module.
-
-Keywords:
-    initialization, unit converter creation
-
 <a id="torchrdit.material_proxy.UnitConverter.validate_units"></a>
 
-#### validate\_units
+### UnitConverter.validate\_units
 
 ```python
 def validate_units(unit, unit_type)
@@ -232,7 +247,7 @@ except ValueError as e:
 
 <a id="torchrdit.material_proxy.UnitConverter.convert_length"></a>
 
-#### convert\_length
+### UnitConverter.convert\_length
 
 ```python
 def convert_length(value, from_unit, to_unit)
@@ -277,7 +292,7 @@ print(converter.convert_length(wavelengths_nm, 'nm', 'um'))
 
 <a id="torchrdit.material_proxy.UnitConverter.convert_frequency"></a>
 
-#### convert\_frequency
+### UnitConverter.convert\_frequency
 
 ```python
 def convert_frequency(value, from_unit, to_unit)
@@ -322,7 +337,7 @@ print(converter.convert_frequency(frequencies_ghz, 'ghz', 'thz'))
 
 <a id="torchrdit.material_proxy.UnitConverter.freq_to_wavelength"></a>
 
-#### freq\_to\_wavelength
+### UnitConverter.freq\_to\_wavelength
 
 ```python
 def freq_to_wavelength(freq, freq_unit, wl_unit)
@@ -370,7 +385,7 @@ print(converter.freq_to_wavelength(freqs_thz, 'thz', 'um'))
 
 <a id="torchrdit.material_proxy.UnitConverter.wavelength_to_freq"></a>
 
-#### wavelength\_to\_freq
+### UnitConverter.wavelength\_to\_freq
 
 ```python
 def wavelength_to_freq(wavelength, wl_unit, freq_unit)
@@ -438,6 +453,12 @@ MaterialDataProxy supports multiple data formats including:
 - 'freq-nk': Frequency and complex refractive index (n, k) data
 - 'wl-nk': Wavelength and complex refractive index (n, k) data
 
+In addition to file-based loading, MaterialDataProxy can construct dispersive
+material datasets directly from in-memory samples for use by `MaterialClass`.
+The internal representation is a table of shape (N, 3):
+
+`[wavelength_um, eps1, eps2]` where `ε = eps1 - 1j*eps2` and `eps2 >= 0`.
+
 This class is typically used internally by the MaterialClass to load and process
 dispersive material data, but can also be used directly for material data analysis
 and manipulation.
@@ -457,16 +478,16 @@ proxy = MaterialDataProxy()
 data = proxy.load_data('materials/SiO2.txt', 'wl-eps', 'um')
 
 # Get the first few rows of the loaded and converted data
-print(f"Wavelength (μm) | ε_real | ε_imag")
+print(f"Wavelength (μm) | eps1 | eps2")
 for i in range(min(3, data.shape[0])):
     print(f"{data[i, 0]:.2f} | {data[i, 1]:.2f} | {data[i, 2]:.4f}")
 
 # Extract permittivity at specific wavelengths
 import numpy as np
 wavelengths = np.array([1.31, 1.55, 1.85])
-eps_real, eps_imag = proxy.extract_permittivity(data, wavelengths)
-for wl, er, ei in zip(wavelengths, eps_real(wavelengths), eps_imag(wavelengths)):
-    print(f"λ={wl}μm: ε={er:.4f}{'-' if ei < 0 else '+'}{abs(ei):.4f}j")
+eps1, eps2 = proxy.extract_permittivity(data, wavelengths)
+for wl, er, e2 in zip(wavelengths, eps1(wavelengths), eps2(wavelengths)):
+    print(f"λ={wl}μm: ε={er:.4f} - 1j*{e2:.4f}")
 ```
   
   Keywords:
@@ -474,42 +495,38 @@ for wl, er, ei in zip(wavelengths, eps_real(wavelengths), eps_imag(wavelengths))
   material properties, data processing, unit conversion, dispersive materials,
   optical constants, electromagnetic properties
 
-<a id="torchrdit.material_proxy.MaterialDataProxy.__init__"></a>
+<a id="torchrdit.material_proxy.MaterialDataProxy.build_wl_eps_data_from_arrays"></a>
 
-#### \_\_init\_\_
-
-```python
-def __init__(unit_converter=None)
-```
-
-Initialize the MaterialDataProxy with an optional custom unit converter.
-
-**Arguments**:
-
-- `unit_converter` _UnitConverter, optional_ - Custom unit converter instance
-  to use for unit transformations. If None, a new
-  UnitConverter instance is created. Default is None.
-  
-
-**Examples**:
+### MaterialDataProxy.build\_wl\_eps\_data\_from\_arrays
 
 ```python
-from torchrdit.material_proxy import MaterialDataProxy
-# Create with default unit converter
-proxy = MaterialDataProxy()
-
-# Create with custom unit converter
-from torchrdit.material_proxy import UnitConverter
-converter = UnitConverter()
-proxy = MaterialDataProxy(unit_converter=converter)
+def build_wl_eps_data_from_arrays(wavelengths_um,
+                                  *,
+                                  eps=None,
+                                  n=None,
+                                  k=None) -> np.ndarray
 ```
-  
-  Keywords:
-  initialization, proxy creation, unit converter
+
+Build dispersive data from in-memory arrays.
+
+Supports one of:
+- wavelengths_um + eps (complex): complex eps is normalized to TorchRDIT's convention
+(exp(-iωt), lossy media have Im(ε) <= 0). If Im(ε) > 0, values are conjugated.
+Data is stored as eps = eps1 - 1j*eps2 with eps2 >= 0.
+- wavelengths_um + n (+ optional k): converted via (n + 1j*k)^2, then stored as above.
+
+Inputs may be Python sequences, NumPy arrays, or torch tensors. Torch
+tensors are detached, moved to CPU, and converted to NumPy (gradients are
+not preserved), because the interpolation / table representation is
+NumPy-based.
+
+**Returns**:
+
+  np.ndarray of shape (N, 3): [wavelength_um, eps1, eps2]
 
 <a id="torchrdit.material_proxy.MaterialDataProxy.load_data"></a>
 
-#### load\_data
+### MaterialDataProxy.load\_data
 
 ```python
 def load_data(file_path, data_format, data_unit, target_unit="um")
@@ -523,8 +540,11 @@ with the target wavelength unit. It handles different data formats including
 permittivity (eps) and refractive index (n,k) data, in both frequency and
 wavelength domains.
 
-The returned data is always in the format [wavelength, eps_real, eps_imag],
+The returned data is always in the format [wavelength_um, eps1, eps2],
 regardless of the input format, with wavelength values in the target_unit.
+
+TorchRDIT reconstructs complex permittivity as:
+`ε = eps1 - 1j*eps2` (with `eps2` representing a non-negative loss magnitude).
 
 **Arguments**:
 
@@ -543,7 +563,7 @@ regardless of the input format, with wavelength values in the target_unit.
 
 **Returns**:
 
-- `numpy.ndarray` - Array with shape (N, 3) containing [wavelength, eps_real, eps_imag]
+- `numpy.ndarray` - Array with shape (N, 3) containing [wavelength_um, eps1, eps2]
   for each of N data points, with wavelength values in target_unit
   and sorted in ascending order.
   
@@ -576,7 +596,7 @@ print(f"Wavelength range: {silicon_data[:, 0].min():.2f} - "
 
 <a id="torchrdit.material_proxy.MaterialDataProxy.extract_permittivity"></a>
 
-#### extract\_permittivity
+### MaterialDataProxy.extract\_permittivity
 
 ```python
 def extract_permittivity(data, wavelengths, fit_order=10)
@@ -600,8 +620,8 @@ interpolation.
 
 **Returns**:
 
-- `tuple` - (real_permittivity_func, imaginary_permittivity_func) - callable
-  interpolation functions. Call with wavelength array to get values.
+- `tuple` - (eps1_func, eps2_func) - callable interpolation functions.
+  TorchRDIT reconstructs complex permittivity as `ε = eps1 - 1j*eps2`.
   
 
 **Examples**:
@@ -616,11 +636,11 @@ data = proxy.load_data('SiO2.txt', 'wl-eps', 'um')
 
 # Extract permittivity at specific wavelengths
 operating_wl = np.array([1.31, 1.55, 1.7])
-eps_real, eps_imag = proxy.extract_permittivity(data, operating_wl)
+eps1, eps2 = proxy.extract_permittivity(data, operating_wl)
 
 # Display the results
-for wl, er, ei in zip(operating_wl, eps_real(operating_wl), eps_imag(operating_wl)):
-    print(f"At {wl} μm: ε = {er:.4f} {ei:.4f}j")
+for wl, er, e2 in zip(operating_wl, eps1(operating_wl), eps2(operating_wl)):
+    print(f"At {wl} μm: ε = {er:.4f} - 1j*{e2:.4f}")
 ```
   
   Keywords:

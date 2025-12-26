@@ -31,13 +31,14 @@ print(f"193.5 THz = {wavelength:.2f} μm")
 # Loading material data:
 from torchrdit.material_proxy import MaterialDataProxy
 import numpy as np
+import torch
 # Load silicon data from file
 proxy = MaterialDataProxy()
 # File contains wavelength (um) and permittivity data
 si_data = proxy.load_data('Si_data.txt', 'wl-eps', 'um')
 # Extract permittivity at specific wavelengths
 wavelengths = np.array([1.3, 1.55, 1.7])
-eps_real, eps_imag = proxy.extract_permittivity(si_data, wavelengths)
+eps1, eps2 = proxy.extract_permittivity(si_data, wavelengths)
 ```
 
 Keywords:
@@ -46,6 +47,7 @@ Keywords:
 """
 
 import numpy as np
+import torch
 from .constants import frequnit_dict, lengthunit_dict, C_0
 
 
@@ -317,6 +319,12 @@ class MaterialDataProxy:
     - 'freq-nk': Frequency and complex refractive index (n, k) data
     - 'wl-nk': Wavelength and complex refractive index (n, k) data
 
+    In addition to file-based loading, MaterialDataProxy can construct dispersive
+    material datasets directly from in-memory samples for use by `MaterialClass`.
+    The internal representation is a table of shape (N, 3):
+
+    `[wavelength_um, eps1, eps2]` where `ε = eps1 - 1j*eps2` and `eps2 >= 0`.
+
     This class is typically used internally by the MaterialClass to load and process
     dispersive material data, but can also be used directly for material data analysis
     and manipulation.
@@ -333,16 +341,16 @@ class MaterialDataProxy:
     data = proxy.load_data('materials/SiO2.txt', 'wl-eps', 'um')
 
     # Get the first few rows of the loaded and converted data
-    print(f"Wavelength (μm) | ε_real | ε_imag")
+    print(f"Wavelength (μm) | eps1 | eps2")
     for i in range(min(3, data.shape[0])):
         print(f"{data[i, 0]:.2f} | {data[i, 1]:.2f} | {data[i, 2]:.4f}")
 
     # Extract permittivity at specific wavelengths
     import numpy as np
     wavelengths = np.array([1.31, 1.55, 1.85])
-    eps_real, eps_imag = proxy.extract_permittivity(data, wavelengths)
-    for wl, er, ei in zip(wavelengths, eps_real(wavelengths), eps_imag(wavelengths)):
-        print(f"λ={wl}μm: ε={er:.4f}{'-' if ei < 0 else '+'}{abs(ei):.4f}j")
+    eps1, eps2 = proxy.extract_permittivity(data, wavelengths)
+    for wl, er, e2 in zip(wavelengths, eps1(wavelengths), eps2(wavelengths)):
+        print(f"λ={wl}μm: ε={er:.4f} - 1j*{e2:.4f}")
     ```
 
     Keywords:
@@ -376,6 +384,110 @@ class MaterialDataProxy:
         """
         self._converter = unit_converter or UnitConverter()
 
+    @staticmethod
+    def _validate_and_sort_wavelength_eps_table(data: np.ndarray) -> np.ndarray:
+        """Validate and sort a [wavelength_um, eps1, eps2] table.
+
+        The returned data is sorted by wavelength ascending and requires strictly
+        increasing wavelengths. eps2 is expected to be a non-negative magnitude
+        such that the complex permittivity is reconstructed as eps = eps1 - 1j*eps2.
+        """
+        if data.ndim != 2 or data.shape[1] != 3:
+            raise ValueError("In-memory dispersive data must have shape (N, 3): [wavelength_um, eps1, eps2]")
+        if data.shape[0] < 2:
+            raise ValueError("In-memory dispersive data must contain at least 2 points")
+        if not np.all(np.isfinite(data)):
+            raise ValueError("In-memory dispersive data contains NaN or inf")
+
+        wavelengths = data[:, 0]
+        if np.any(wavelengths <= 0):
+            raise ValueError("Wavelengths must be positive (in um)")
+
+        order = np.argsort(wavelengths)
+        sorted_data = data[order]
+        if np.any(np.diff(sorted_data[:, 0]) <= 0):
+            raise ValueError("Wavelengths must be strictly increasing (duplicates are not allowed)")
+
+        if np.any(sorted_data[:, 2] < -1e-12):
+            raise ValueError("eps2 (imag magnitude) must be non-negative")
+        sorted_data[:, 2] = np.maximum(sorted_data[:, 2], 0.0)
+        return sorted_data
+
+    def build_wl_eps_data_from_arrays(
+        self,
+        wavelengths_um,
+        *,
+        eps=None,
+        n=None,
+        k=None,
+    ) -> np.ndarray:
+        """Build dispersive data from in-memory arrays.
+
+        Supports one of:
+        - wavelengths_um + eps (complex): complex eps is normalized to TorchRDIT's convention
+          (exp(-iωt), lossy media have Im(ε) <= 0). If Im(ε) > 0, values are conjugated.
+          Data is stored as eps = eps1 - 1j*eps2 with eps2 >= 0.
+        - wavelengths_um + n (+ optional k): converted via (n + 1j*k)^2, then stored as above.
+
+        Inputs may be Python sequences, NumPy arrays, or torch tensors. Torch
+        tensors are detached, moved to CPU, and converted to NumPy (gradients are
+        not preserved), because the interpolation / table representation is
+        NumPy-based.
+
+        Returns:
+            np.ndarray of shape (N, 3): [wavelength_um, eps1, eps2]
+        """
+        def _to_numpy_1d(value, *, dtype, label: str) -> np.ndarray:
+            if isinstance(value, torch.Tensor):
+                value = value.detach().cpu().numpy()
+            arr = np.asarray(value, dtype=dtype)
+            if arr.ndim != 1:
+                raise ValueError(f"{label} must be a 1D sequence")
+            return arr
+
+        if wavelengths_um is None:
+            raise ValueError("wavelengths_um must be provided for in-memory dispersive materials")
+
+        wl = _to_numpy_1d(wavelengths_um, dtype=float, label="wavelengths_um")
+
+        using_eps = eps is not None
+        using_nk = n is not None or k is not None
+        if using_eps and using_nk:
+            raise ValueError("Provide either eps or (n, k), not both")
+        if not using_eps and not using_nk:
+            raise ValueError("Provide either eps or (n, k) for in-memory dispersive materials")
+
+        if using_eps:
+            eps_arr = _to_numpy_1d(eps, dtype=np.complex128, label="eps")
+            if len(eps_arr) != len(wl):
+                raise ValueError("wavelengths_um and eps must have the same length")
+
+            # Normalize complex epsilon to the existing convention:
+            # store as eps = eps1 - 1j*eps2 with eps2 >= 0.
+            eps_norm = np.where(np.imag(eps_arr) <= 0, eps_arr, np.conj(eps_arr))
+            eps1 = np.real(eps_norm)
+            eps2 = -np.imag(eps_norm)
+        else:
+            if n is None:
+                raise ValueError("n must be provided when using (n, k) in-memory dispersive materials")
+            n_arr = _to_numpy_1d(n, dtype=float, label="n")
+            if len(n_arr) != len(wl):
+                raise ValueError("wavelengths_um and n must have the same length")
+
+            if k is None:
+                k_arr = np.zeros_like(n_arr)
+            else:
+                k_arr = _to_numpy_1d(k, dtype=float, label="k")
+                if len(k_arr) != len(wl):
+                    raise ValueError("wavelengths_um and k must have the same length")
+
+            eps_complex = (n_arr + 1j * k_arr) ** 2
+            eps1 = np.real(eps_complex)
+            eps2 = np.imag(eps_complex)
+
+        table = np.column_stack([wl, eps1.astype(float), eps2.astype(float)])
+        return self._validate_and_sort_wavelength_eps_table(table)
+
     def load_data(self, file_path, data_format, data_unit, target_unit="um"):
         """Load and process material data from a file with unit conversion.
 
@@ -385,8 +497,11 @@ class MaterialDataProxy:
         permittivity (eps) and refractive index (n,k) data, in both frequency and
         wavelength domains.
 
-        The returned data is always in the format [wavelength, eps_real, eps_imag],
+        The returned data is always in the format [wavelength_um, eps1, eps2],
         regardless of the input format, with wavelength values in the target_unit.
+
+        TorchRDIT reconstructs complex permittivity as:
+        `ε = eps1 - 1j*eps2` (with `eps2` representing a non-negative loss magnitude).
 
         Args:
             file_path (str): Path to the data file containing material properties.
@@ -402,7 +517,7 @@ class MaterialDataProxy:
                          Default is 'um' (micrometers).
 
         Returns:
-            numpy.ndarray: Array with shape (N, 3) containing [wavelength, eps_real, eps_imag]
+            numpy.ndarray: Array with shape (N, 3) containing [wavelength_um, eps1, eps2]
                         for each of N data points, with wavelength values in target_unit
                         and sorted in ascending order.
 
@@ -465,7 +580,7 @@ class MaterialDataProxy:
 
         Returns:
             numpy.ndarray: Processed data with shape (N, 3) containing
-                        [wavelength, eps_real, eps_imag] for each data point.
+                        [wavelength_um, eps1, eps2] for each data point.
 
         Raises:
             ValueError: If the data format is not supported or the data is invalid.
@@ -544,8 +659,8 @@ class MaterialDataProxy:
                        Akima interpolation, this parameter is ignored. Default is 10.
 
         Returns:
-            tuple: (real_permittivity_func, imaginary_permittivity_func) - callable
-                 interpolation functions. Call with wavelength array to get values.
+            tuple: (eps1_func, eps2_func) - callable interpolation functions.
+                 TorchRDIT reconstructs complex permittivity as `ε = eps1 - 1j*eps2`.
 
         Examples:
         ```python
@@ -558,11 +673,11 @@ class MaterialDataProxy:
 
         # Extract permittivity at specific wavelengths
         operating_wl = np.array([1.31, 1.55, 1.7])
-        eps_real, eps_imag = proxy.extract_permittivity(data, operating_wl)
+        eps1, eps2 = proxy.extract_permittivity(data, operating_wl)
 
         # Display the results
-        for wl, er, ei in zip(operating_wl, eps_real(operating_wl), eps_imag(operating_wl)):
-            print(f"At {wl} μm: ε = {er:.4f} {ei:.4f}j")
+        for wl, er, e2 in zip(operating_wl, eps1(operating_wl), eps2(operating_wl)):
+            print(f"At {wl} μm: ε = {er:.4f} - 1j*{e2:.4f}")
         ```
 
         Keywords:

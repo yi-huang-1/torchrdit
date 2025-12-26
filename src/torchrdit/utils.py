@@ -1,6 +1,11 @@
-"""This file defines some helper function."""
+"""Utilities for TorchRDIT.
 
-from typing import Callable, Optional, Union, Any, Tuple, List
+This module contains helper functions used across TorchRDIT, including the
+recommended high-level factory for creating `MaterialClass` instances via
+`create_material()`.
+"""
+
+from typing import Any, Callable, List, Optional, Sequence, Tuple, Union
 from functools import partial, wraps
 
 import torch
@@ -185,6 +190,10 @@ def create_material(
     data_format: str = "freq-eps",  # format of the user-difined data
     data_unit: str = "thz",  # unit of frequency or wavelength
     max_poly_fit_order: int = 10,  # max polynomial fit order
+    user_dielectric_wavelengths_um: Optional[Sequence[float]] = None,
+    user_dielectric_eps: Optional[Sequence[complex]] = None,
+    user_dielectric_n: Optional[Sequence[float]] = None,
+    user_dielectric_k: Optional[Sequence[float]] = None,
 ):
     """Create a material object for use in electromagnetic simulations.
 
@@ -192,24 +201,50 @@ def create_material(
     in TorchRDIT simulations. Materials can be defined with either constant
     properties (non-dispersive) or wavelength-dependent properties (dispersive).
 
-    For non-dispersive materials, simple constant values for permittivity and
-    permeability are sufficient. For dispersive materials, data can be loaded
-    from a file containing wavelength or frequency-dependent properties.
+	For non-dispersive materials, simple constant values for permittivity and
+	permeability are sufficient. For dispersive materials, data can be loaded
+	from a file containing wavelength or frequency-dependent properties, or
+	provided directly as in-memory samples.
+	
+	Note on in-memory dispersive inputs: ``user_dielectric_wavelengths_um`` and
+	its companion arrays (``user_dielectric_eps`` or ``user_dielectric_n/k``)
+	accept Python sequences, NumPy arrays, or torch tensors. Internally, these
+	samples are converted to CPU NumPy arrays to build an interpolation table, so
+	autograd gradients are not preserved for these inputs.
 
-    Args:
+	    Args:
         name: Unique identifier for the material. This name is used when
               referencing the material in other functions.
               Default is 'material1'.
         permittivity: Complex relative permittivity (εᵣ) of the material for non-dispersive
-                    materials. Default is 1.0 (vacuum). Negative convention is used.
+                    materials. Default is 1.0 (vacuum).
+                    TorchRDIT uses an exp(-iωt) convention; lossy media typically have
+                    Im(ε) < 0. If a complex value is provided with Im(ε) > 0, it is
+                    conjugated internally to match the convention.
         permeability: Complex relative permeability (μᵣ) of the material for non-dispersive
-                    materials. Default is 1.0 (vacuum). Negative convention is used.
+                    materials. Default is 1.0 (vacuum).
         dielectric_dispersion: Whether the material has frequency-dependent
-                             permittivity. If True, data must be provided through
-                             user_dielectric_file. Default is False.
+                             permittivity. If True, data must be provided via exactly one of:
+                             - user_dielectric_file (file-based), or
+                             - (user_dielectric_wavelengths_um + user_dielectric_eps), or
+                             - (user_dielectric_wavelengths_um + user_dielectric_n [+ optional user_dielectric_k]).
+                             Default is False.
         user_dielectric_file: Path to a file containing the dispersive material data.
                             Required if dielectric_dispersion is True.
                             Default is None.
+	        user_dielectric_wavelengths_um: In-memory dispersive wavelength samples in microns (μm).
+	                             When provided with either user_dielectric_eps or user_dielectric_n,
+	                             this defines a dispersive material without reading a file.
+	                             Cannot be used together with user_dielectric_file.
+        user_dielectric_eps: In-memory complex permittivity samples at user_dielectric_wavelengths_um.
+                             Complex values are normalized to TorchRDIT's convention (loss has
+                             negative imaginary part). Both signs are accepted; the values are
+                             conjugated if needed so that Im(ε) <= 0.
+                             Cannot be used together with user_dielectric_n/user_dielectric_k.
+        user_dielectric_n: In-memory refractive index samples at user_dielectric_wavelengths_um.
+                             Requires dielectric_dispersion=True. Cannot be used with user_dielectric_eps.
+        user_dielectric_k: In-memory extinction coefficient samples at user_dielectric_wavelengths_um.
+                             Optional if user_dielectric_n is provided (defaults to 0).
         data_format: Format of the data in the dispersive material file.
                    Options are:
                    - 'freq-eps': Frequency and complex permittivity
@@ -242,6 +277,14 @@ def create_material(
         data_format='wl-nk',
         data_unit='um'
     )
+
+    # Create a dispersive material from in-memory data (wavelengths in um)
+    silica = create_material(
+        name='silica',
+        dielectric_dispersion=True,
+        user_dielectric_wavelengths_um=[1.0, 1.5, 2.0],
+        user_dielectric_eps=[2.1-0.0j, 2.08-0.0j, 2.05-0.0j],
+    )
     ```
     """
     return MaterialClass(
@@ -253,6 +296,10 @@ def create_material(
         data_format=data_format,
         data_unit=data_unit,
         max_poly_fit_order=max_poly_fit_order,
+        user_dielectric_wavelengths_um=user_dielectric_wavelengths_um,
+        user_dielectric_eps=user_dielectric_eps,
+        user_dielectric_n=user_dielectric_n,
+        user_dielectric_k=user_dielectric_k,
     )
 
 

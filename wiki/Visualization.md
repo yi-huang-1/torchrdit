@@ -8,7 +8,7 @@
 
 <a id="torchrdit.viz"></a>
 
-# torchrdit.viz
+# Module torchrdit.viz
 
 Visualization module for TorchRDIT electromagnetic simulations.
 
@@ -41,7 +41,7 @@ Keywords:
 
 <a id="torchrdit.viz.plot2d"></a>
 
-#### plot2d
+### plot2d
 
 ```python
 def plot2d(data: Any,
@@ -129,7 +129,7 @@ plt.show()
 
 <a id="torchrdit.viz.plot_layer"></a>
 
-#### plot\_layer
+### plot\_layer
 
 ```python
 def plot_layer(sim,
@@ -197,7 +197,7 @@ plt.show()
 
 <a id="torchrdit.viz.display_fitted_permittivity"></a>
 
-#### display\_fitted\_permittivity
+### display\_fitted\_permittivity
 
 ```python
 def display_fitted_permittivity(sim, fig_ax=None)
@@ -279,7 +279,7 @@ plt.show()
 
 <a id="torchrdit.viz.plot_cross_section"></a>
 
-#### plot\_cross\_section
+### plot\_cross\_section
 
 ```python
 def plot_cross_section(sim,

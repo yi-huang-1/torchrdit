@@ -316,8 +316,8 @@ class TestBuilderDocExamples(unittest.TestCase):
             }
         }
         
-        # Pass the unittest directory as base_path since that's where our test files are
-        materials = _create_materials(materials_spec, Path(__file__).parent)
+        # The builder/material loader should resolve relative dielectric_file paths without any base_path.
+        materials = _create_materials(materials_spec, config_dir=Path(__file__).parent)
         
         # Verify the materials were created correctly
         self.assertEqual(len(materials), 3)

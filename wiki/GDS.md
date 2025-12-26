@@ -137,7 +137,7 @@ Below is the complete API reference for the gds module, automatically generated 
 
 <a id="torchrdit.gds"></a>
 
-# torchrdit.gds
+# Module torchrdit.gds
 
 GDS (GDSII) file format support for TorchRDIT.
 
@@ -176,7 +176,7 @@ reconstructed = gds_to_mask("output.json", shape_gen)
 
 <a id="torchrdit.gds.smoothen_boundary"></a>
 
-#### smoothen\_boundary
+### smoothen\_boundary
 
 ```python
 def smoothen_boundary(boundary: List[Tuple[float, float]],
@@ -197,7 +197,7 @@ Smooth boundary points using cubic spline interpolation.
 
 <a id="torchrdit.gds.get_coord"></a>
 
-#### get\_coord
+### get\_coord
 
 ```python
 def get_coord(row, col, X0, Y0)
@@ -222,7 +222,7 @@ appropriate handler (_get_cartesian_coord or _get_non_cartesian_coord).
 
 <a id="torchrdit.gds.gds_export"></a>
 
-#### gds\_export
+### gds\_export
 
 ```python
 def gds_export(boundary_list: list,
@@ -246,7 +246,7 @@ Export boundary list to GDSII file with support for holes.
 
 <a id="torchrdit.gds.mask_to_gds"></a>
 
-#### mask\_to\_gds
+### mask\_to\_gds
 
 ```python
 def mask_to_gds(mask: Union[torch.Tensor, List[torch.Tensor], np.ndarray,
@@ -330,7 +330,7 @@ mask_to_gds(mask, (X, Y), "DEVICE", "device.gds")
 
 <a id="torchrdit.gds.load_gds_vertices"></a>
 
-#### load\_gds\_vertices
+### load\_gds\_vertices
 
 ```python
 def load_gds_vertices(
@@ -379,7 +379,7 @@ for group in vertices:
 
 <a id="torchrdit.gds.gds_to_mask"></a>
 
-#### gds\_to\_mask
+### gds\_to\_mask
 
 ```python
 def gds_to_mask(json_path: Union[str, Path],

@@ -132,17 +132,24 @@ device.update_er_with_mask(mask=mask, layer_index=0)
 ### Dispersive Materials
 
 ```python
-# Creating materials with dispersion from data files
-material_sic = create_material(
-    name='SiC',
-    dielectric_dispersion=True,
-    user_dielectric_file='Si_C-e.txt',
-    data_format='freq-eps',
-    data_unit='thz'
-)
+# Dispersive materials are typically specified via `dielectric_file` in a spec/config.
+# When running through `tr.simulate(spec)` / `tr.optimize(spec, ...)` or loading a JSON
+# config/spec file, relative `dielectric_file` paths resolve automatically:
+# spec/config directory → caller script directory → current working directory.
+#
+# Recommended usage (portable, no `base_path` required):
+import torchrdit as tr
 
-# Visualize fitted permittivity
-display_fitted_permittivity(device, fig_ax=axes)
+spec = {
+    "solver": {"algorithm": "RCWA", "wavelengths": [1.55], "grids": [64, 64], "harmonics": [3, 3]},
+    "materials": {
+        "SiC": {"dielectric_dispersion": True, "dielectric_file": "Si_C-e.txt", "data_format": "freq-eps", "data_unit": "thz"},
+    },
+    "layers": [{"material": "SiC", "thickness": 0.1, "is_homogeneous": True}],
+    "sources": {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
+}
+results = tr.simulate(spec)           # dict spec
+results2 = tr.simulate("spec.json")   # JSON spec (recommended for portability)
 ```
 
 ### Automatic Differentiation

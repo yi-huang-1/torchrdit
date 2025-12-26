@@ -557,6 +557,76 @@ class SolverResults:
         """
         return self.raw_data
 
+    def to_structured_dict(self) -> Dict:
+        """Convert results to a structured, self-describing dictionary format.
+
+        This provides a clearer, namespaced schema compared to the legacy flat
+        dictionary returned by :meth:`to_dict`. The returned structure aims to
+        make the meaning and domain of each tensor explicit (e.g., Fourier
+        coefficients in k-space vs. scalar efficiencies).
+
+        Returns:
+            Dict: Structured dictionary containing simulation results.
+        """
+
+        def _wavevectors_to_dict(wv: "WaveVectors") -> Dict:
+            return {
+                "kx": wv.kx,
+                "ky": wv.ky,
+                "incident": wv.kinc,
+                "kz": {"reflection": wv.kzref, "transmission": wv.kztrn},
+            }
+
+        wavevectors_out: Union[Dict, List[Dict]]
+        if isinstance(self.wave_vectors, list):
+            wavevectors_out = [_wavevectors_to_dict(wv) for wv in self.wave_vectors]
+        else:
+            wavevectors_out = _wavevectors_to_dict(self.wave_vectors)
+
+        return {
+            "efficiency": {
+                "reflection": self.reflection,
+                "transmission": self.transmission,
+            },
+            "diffraction_efficiency": {
+                "reflection": self.reflection_diffraction,
+                "transmission": self.transmission_diffraction,
+            },
+            "field_fourier_coefficients": {
+                "reflection": {
+                    "E": {"x": self.reflection_field.x, "y": self.reflection_field.y, "z": self.reflection_field.z},
+                    "H": {
+                        "x": self.reflection_field.mag_x,
+                        "y": self.reflection_field.mag_y,
+                        "z": self.reflection_field.mag_z,
+                    },
+                },
+                "transmission": {
+                    "E": {
+                        "x": self.transmission_field.x,
+                        "y": self.transmission_field.y,
+                        "z": self.transmission_field.z,
+                    },
+                    "H": {
+                        "x": self.transmission_field.mag_x,
+                        "y": self.transmission_field.mag_y,
+                        "z": self.transmission_field.mag_z,
+                    },
+                },
+            },
+            "scattering_matrix": {
+                "structure": {
+                    "S11": self.structure_matrix.S11,
+                    "S12": self.structure_matrix.S12,
+                    "S21": self.structure_matrix.S21,
+                    "S22": self.structure_matrix.S22,
+                }
+            },
+            "wavevectors": wavevectors_out,
+            "lattice": {"t1": self.lattice_t1, "t2": self.lattice_t2},
+            "grids": {"real_space_shape": self.default_rdim},
+        }
+
     def get_diffraction_order_indices(self, order_x: int = 0, order_y: int = 0) -> Tuple[int, int]:
         """Get the indices for a specific diffraction order.
 

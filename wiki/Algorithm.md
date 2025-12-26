@@ -5,19 +5,17 @@
     * [solve\_nonhomo\_layer](#torchrdit.algorithm.SolverAlgorithm.solve_nonhomo_layer)
     * [name](#torchrdit.algorithm.SolverAlgorithm.name)
   * [RCWAAlgorithm](#torchrdit.algorithm.RCWAAlgorithm)
-    * [\_\_init\_\_](#torchrdit.algorithm.RCWAAlgorithm.__init__)
     * [name](#torchrdit.algorithm.RCWAAlgorithm.name)
     * [solve\_nonhomo\_layer](#torchrdit.algorithm.RCWAAlgorithm.solve_nonhomo_layer)
     * [set\_rdit\_order](#torchrdit.algorithm.RCWAAlgorithm.set_rdit_order)
   * [RDITAlgorithm](#torchrdit.algorithm.RDITAlgorithm)
-    * [\_\_init\_\_](#torchrdit.algorithm.RDITAlgorithm.__init__)
     * [name](#torchrdit.algorithm.RDITAlgorithm.name)
     * [solve\_nonhomo\_layer](#torchrdit.algorithm.RDITAlgorithm.solve_nonhomo_layer)
     * [set\_rdit\_order](#torchrdit.algorithm.RDITAlgorithm.set_rdit_order)
 
 <a id="torchrdit.algorithm"></a>
 
-# torchrdit.algorithm
+# Module torchrdit.algorithm
 
 <a id="torchrdit.algorithm.SolverAlgorithm"></a>
 
@@ -62,7 +60,7 @@ print(f"Solver uses: {solver_rdit.algorithm.name}")
 
 <a id="torchrdit.algorithm.SolverAlgorithm.solve_nonhomo_layer"></a>
 
-#### solve\_nonhomo\_layer
+### SolverAlgorithm.solve\_nonhomo\_layer
 
 ```python
 @abstractmethod
@@ -101,7 +99,7 @@ this calculation.
 
 <a id="torchrdit.algorithm.SolverAlgorithm.name"></a>
 
-#### name
+### SolverAlgorithm.name
 
 ```python
 @property
@@ -169,23 +167,9 @@ solver = builder.with_algorithm(Algorithm.RCWA) \
   Keywords:
   RCWA, electromagnetic, eigendecomposition, Fourier, Maxwell, scattering
 
-<a id="torchrdit.algorithm.RCWAAlgorithm.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__(solver)
-```
-
-Initialize the RCWA algorithm instance.
-
-**Arguments**:
-
-- `solver` - Reference to the parent solver that will use this algorithm.
-
 <a id="torchrdit.algorithm.RCWAAlgorithm.name"></a>
 
-#### name
+### RCWAAlgorithm.name
 
 ```python
 @property
@@ -200,7 +184,7 @@ Return the name of the algorithm.
 
 <a id="torchrdit.algorithm.RCWAAlgorithm.solve_nonhomo_layer"></a>
 
-#### solve\_nonhomo\_layer
+### RCWAAlgorithm.solve\_nonhomo\_layer
 
 ```python
 def solve_nonhomo_layer(layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0,
@@ -241,7 +225,7 @@ Rigorous Coupled Wave Analysis (RCWA) algorithm.
 
 <a id="torchrdit.algorithm.RCWAAlgorithm.set_rdit_order"></a>
 
-#### set\_rdit\_order
+### RCWAAlgorithm.set\_rdit\_order
 
 ```python
 def set_rdit_order(rdit_order)
@@ -324,23 +308,9 @@ solver = SolverBuilder().from_config("config.json").build()
   Keywords:
   R-DIT, electromagnetic, eigendecomposition-free, optimization, speedup, scattering
 
-<a id="torchrdit.algorithm.RDITAlgorithm.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__(solver)
-```
-
-Initialize the R-DIT algorithm instance.
-
-**Arguments**:
-
-- `solver` - Reference to the parent solver that will use this algorithm.
-
 <a id="torchrdit.algorithm.RDITAlgorithm.name"></a>
 
-#### name
+### RDITAlgorithm.name
 
 ```python
 @property
@@ -358,7 +328,7 @@ Return the name of the algorithm.
 
 <a id="torchrdit.algorithm.RDITAlgorithm.solve_nonhomo_layer"></a>
 
-#### solve\_nonhomo\_layer
+### RDITAlgorithm.solve\_nonhomo\_layer
 
 ```python
 def solve_nonhomo_layer(layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0,
@@ -399,7 +369,7 @@ Interface Theory algorithm.
 
 <a id="torchrdit.algorithm.RDITAlgorithm.set_rdit_order"></a>
 
-#### set\_rdit\_order
+### RDITAlgorithm.set\_rdit\_order
 
 ```python
 def set_rdit_order(rdit_order)

@@ -16,13 +16,17 @@
 
 <a id="torchrdit.utils"></a>
 
-# torchrdit.utils
+# Module torchrdit.utils
 
-This file defines some helper function.
+Utilities for TorchRDIT.
+
+This module contains helper functions used across TorchRDIT, including the
+recommended high-level factory for creating `MaterialClass` instances via
+`create_material()`.
 
 <a id="torchrdit.utils.tensor_params_check"></a>
 
-#### tensor\_params\_check
+### tensor\_params\_check
 
 ```python
 def tensor_params_check(func: Optional[FuncType] = None,
@@ -106,7 +110,7 @@ loss.backward()
 
 <a id="torchrdit.utils.EigComplex.forward"></a>
 
-#### forward
+### EigComplex.forward
 
 ```python
 @staticmethod
@@ -131,7 +135,7 @@ the necessary tensors for the backward pass.
 
 <a id="torchrdit.utils.EigComplex.backward"></a>
 
-#### backward
+### EigComplex.backward
 
 ```python
 @staticmethod
@@ -157,17 +161,22 @@ and eigenvectors.
 
 <a id="torchrdit.utils.create_material"></a>
 
-#### create\_material
+### create\_material
 
 ```python
-def create_material(name: str = "material1",
-                    permittivity: float = 1.0,
-                    permeability: float = 1.0,
-                    dielectric_dispersion: bool = False,
-                    user_dielectric_file: str = None,
-                    data_format: str = "freq-eps",
-                    data_unit: str = "thz",
-                    max_poly_fit_order: int = 10)
+def create_material(
+        name: str = "material1",
+        permittivity: float = 1.0,
+        permeability: float = 1.0,
+        dielectric_dispersion: bool = False,
+        user_dielectric_file: str = None,
+        data_format: str = "freq-eps",
+        data_unit: str = "thz",
+        max_poly_fit_order: int = 10,
+        user_dielectric_wavelengths_um: Optional[Sequence[float]] = None,
+        user_dielectric_eps: Optional[Sequence[complex]] = None,
+        user_dielectric_n: Optional[Sequence[float]] = None,
+        user_dielectric_k: Optional[Sequence[float]] = None)
 ```
 
 Create a material object for use in electromagnetic simulations.
@@ -178,7 +187,14 @@ properties (non-dispersive) or wavelength-dependent properties (dispersive).
 
 For non-dispersive materials, simple constant values for permittivity and
 permeability are sufficient. For dispersive materials, data can be loaded
-from a file containing wavelength or frequency-dependent properties.
+from a file containing wavelength or frequency-dependent properties, or
+provided directly as in-memory samples.
+
+Note on in-memory dispersive inputs: ``user_dielectric_wavelengths_um`` and
+its companion arrays (``user_dielectric_eps`` or ``user_dielectric_n/k``)
+accept Python sequences, NumPy arrays, or torch tensors. Internally, these
+samples are converted to CPU NumPy arrays to build an interpolation table, so
+autograd gradients are not preserved for these inputs.
 
 **Arguments**:
 
@@ -186,15 +202,34 @@ from a file containing wavelength or frequency-dependent properties.
   referencing the material in other functions.
   Default is 'material1'.
 - `permittivity` - Complex relative permittivity (εᵣ) of the material for non-dispersive
-  materials. Default is 1.0 (vacuum). Negative convention is used.
+  materials. Default is 1.0 (vacuum).
+  TorchRDIT uses an exp(-iωt) convention; lossy media typically have
+  Im(ε) < 0. If a complex value is provided with Im(ε) > 0, it is
+  conjugated internally to match the convention.
 - `permeability` - Complex relative permeability (μᵣ) of the material for non-dispersive
-  materials. Default is 1.0 (vacuum). Negative convention is used.
+  materials. Default is 1.0 (vacuum).
 - `dielectric_dispersion` - Whether the material has frequency-dependent
-  permittivity. If True, data must be provided through
-  user_dielectric_file. Default is False.
+  permittivity. If True, data must be provided via exactly one of:
+  - user_dielectric_file (file-based), or
+  - (user_dielectric_wavelengths_um + user_dielectric_eps), or
+  - (user_dielectric_wavelengths_um + user_dielectric_n [+ optional user_dielectric_k]).
+  Default is False.
 - `user_dielectric_file` - Path to a file containing the dispersive material data.
   Required if dielectric_dispersion is True.
   Default is None.
+- `user_dielectric_wavelengths_um` - In-memory dispersive wavelength samples in microns (μm).
+  When provided with either user_dielectric_eps or user_dielectric_n,
+  this defines a dispersive material without reading a file.
+  Cannot be used together with user_dielectric_file.
+- `user_dielectric_eps` - In-memory complex permittivity samples at user_dielectric_wavelengths_um.
+  Complex values are normalized to TorchRDIT's convention (loss has
+  negative imaginary part). Both signs are accepted; the values are
+  conjugated if needed so that Im(ε) <= 0.
+  Cannot be used together with user_dielectric_n/user_dielectric_k.
+- `user_dielectric_n` - In-memory refractive index samples at user_dielectric_wavelengths_um.
+  Requires dielectric_dispersion=True. Cannot be used with user_dielectric_eps.
+- `user_dielectric_k` - In-memory extinction coefficient samples at user_dielectric_wavelengths_um.
+  Optional if user_dielectric_n is provided (defaults to 0).
 - `data_format` - Format of the data in the dispersive material file.
   Options are:
   - 'freq-eps': Frequency and complex permittivity
@@ -218,24 +253,32 @@ from a file containing wavelength or frequency-dependent properties.
 
 **Example**:
 
-```python
-# Create simple materials with constant properties
-air = create_material(name='air', permittivity=1.0)
-silicon = create_material(name='silicon', permittivity=11.7)
+    ```python
+    # Create simple materials with constant properties
+    air = create_material(name='air', permittivity=1.0)
+    silicon = create_material(name='silicon', permittivity=11.7)
 
-# Create a dispersive material from data file
-gold = create_material(
-    name='gold',
-    dielectric_dispersion=True,
-    user_dielectric_file='gold_data.txt',
-    data_format='wl-nk',
-    data_unit='um'
-)
-```
+    # Create a dispersive material from data file
+    gold = create_material(
+        name='gold',
+        dielectric_dispersion=True,
+        user_dielectric_file='gold_data.txt',
+        data_format='wl-nk',
+        data_unit='um'
+    )
+
+    # Create a dispersive material from in-memory data (wavelengths in um)
+    silica = create_material(
+        name='silica',
+        dielectric_dispersion=True,
+        user_dielectric_wavelengths_um=[1.0, 1.5, 2.0],
+        user_dielectric_eps=[2.1-0.0j, 2.08-0.0j, 2.05-0.0j],
+    )
+    ```
 
 <a id="torchrdit.utils.blockmat2x2"></a>
 
-#### blockmat2x2
+### blockmat2x2
 
 ```python
 def blockmat2x2(mlist: list)
@@ -291,7 +334,7 @@ block_matrix = blockmat2x2([[A, B], [C, D]])
 
 <a id="torchrdit.utils.init_smatrix"></a>
 
-#### init\_smatrix
+### init\_smatrix
 
 ```python
 def init_smatrix(shape: Tuple,
@@ -335,7 +378,7 @@ where a1, a2 are incoming waves and b1, b2 are outgoing waves.
 
 <a id="torchrdit.utils.redhstar"></a>
 
-#### redhstar
+### redhstar
 
 ```python
 def redhstar(smat_a: dict,
@@ -386,7 +429,7 @@ This optimized implementation includes:
 
 <a id="torchrdit.utils.operator_blur"></a>
 
-#### operator\_blur
+### operator\_blur
 
 ```python
 def operator_blur(rho: torch.Tensor,
@@ -444,7 +487,7 @@ blurred.shape  # Returns torch.Size([1, 1, 32, 32])
 
 <a id="torchrdit.utils.operator_proj"></a>
 
-#### operator\_proj
+### operator\_proj
 
 ```python
 def operator_proj(rho: torch.Tensor,
@@ -507,7 +550,7 @@ print(binary_result)
 
 <a id="torchrdit.utils.blur_filter"></a>
 
-#### blur\_filter
+### blur\_filter
 
 ```python
 def blur_filter(rho: torch.Tensor,
@@ -584,7 +627,7 @@ print(filtered)
 
 <a id="torchrdit.utils.to_diag_util"></a>
 
-#### to\_diag\_util
+### to\_diag\_util
 
 ```python
 def to_diag_util(input_mat: torch.Tensor, kdim: List[int]) -> torch.Tensor

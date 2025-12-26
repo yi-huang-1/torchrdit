@@ -270,6 +270,29 @@ class TestSolverResults(unittest.TestCase):
         self.assertTrue(torch.equal(dict_from_results['TRN'], self.transmission))
         self.assertTrue(torch.equal(dict_from_results['kx'], self.wave_vectors.kx))
 
+    def test_to_structured_dict(self):
+        """Test the to_structured_dict method."""
+        structured = self.results.to_structured_dict()
+
+        self.assertIn("efficiency", structured)
+        self.assertIn("diffraction_efficiency", structured)
+        self.assertIn("field_fourier_coefficients", structured)
+        self.assertIn("scattering_matrix", structured)
+        self.assertIn("wavevectors", structured)
+
+        self.assertTrue(torch.equal(structured["efficiency"]["reflection"], self.reflection))
+        self.assertTrue(torch.equal(structured["efficiency"]["transmission"], self.transmission))
+        self.assertTrue(torch.equal(structured["diffraction_efficiency"]["reflection"], self.reflection_diffraction))
+        self.assertTrue(torch.equal(structured["diffraction_efficiency"]["transmission"], self.transmission_diffraction))
+
+        self.assertTrue(torch.equal(structured["wavevectors"]["kx"], self.wave_vectors.kx))
+        self.assertTrue(torch.equal(structured["wavevectors"]["ky"], self.wave_vectors.ky))
+        self.assertTrue(torch.equal(structured["wavevectors"]["incident"], self.wave_vectors.kinc))
+        self.assertTrue(torch.equal(structured["wavevectors"]["kz"]["reflection"], self.wave_vectors.kzref))
+        self.assertTrue(torch.equal(structured["wavevectors"]["kz"]["transmission"], self.wave_vectors.kztrn))
+
+        self.assertTrue(torch.equal(structured["scattering_matrix"]["structure"]["S11"], self.structure_matrix.S11))
+
     def test_get_diffraction_order_indices(self):
         """Test the get_diffraction_order_indices method."""
         # Test zero order (center of k-space)

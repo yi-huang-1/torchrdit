@@ -1,10 +1,11 @@
 # Table of Contents
 
 * [torchrdit](#torchrdit)
+  * [simulate](#torchrdit.simulate)
 
 <a id="torchrdit"></a>
 
-# torchrdit
+# Module torchrdit
 
 TorchRDIT: GPU-accelerated electromagnetic solver for meta-optics design.
 
@@ -21,6 +22,7 @@ the design of complex meta-optics devices.
 
 Key modules:
 - solver: Core electromagnetic solvers (RCWA and R-DIT)
+- interface: Regulated public API (solve + optimize)
 - algorithm: Algorithm implementations for field calculations
 - materials: Material property definitions and management
 - material_proxy: Material data loading and processing
@@ -34,4 +36,23 @@ Key modules:
 - observers: Observer pattern implementation for progress tracking
 - results: Results containers with unified single/batched interface
 - gds: GDS file format support for mask import/export
+
+Recommended entry points:
+- `torchrdit.simulate(spec)`: forward simulation from a regulated spec
+- `torchrdit.optimize(spec, objective=..., options=...)`: gradient-based inverse design
+
+<a id="torchrdit.simulate"></a>
+
+### simulate
+
+```python
+def simulate(spec)
+```
+
+Run a forward simulation via the regulated interface.
+
+This is a package-level alias for :func:`torchrdit.interface.solve`, intended
+for the common usage pattern: ``import torchrdit as tr; tr.simulate(spec)``.
+
+``spec`` can be either an in-memory dict or a JSON spec file path.
 
