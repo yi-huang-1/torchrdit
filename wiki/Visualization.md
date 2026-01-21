@@ -253,8 +253,8 @@ solver = create_solver(
     algorithm=Algorithm.RDIT,
     lam0=[1.55],
     lengthunit='um',
-    rdim=[512, 512],
-    kdim=[5, 5],
+    grids=[512, 512],
+    harmonics=[5, 5],
     device='cpu'
 )
 gold = create_material(name='gold', dielectric_dispersion=True,
@@ -359,7 +359,7 @@ import torch
 import matplotlib.pyplot as plt
 
 # Create a solver with layered structure
-solver = create_solver(algorithm=Algorithm.RCWA, lam0=[1.55], rdim=[256, 256])
+solver = create_solver(algorithm=Algorithm.RCWA, lam0=[1.55], grids=[256, 256])
 
 # Add materials
 silicon = create_material(name="silicon", permittivity=11.7)

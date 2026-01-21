@@ -24,6 +24,13 @@ def _minimal_spec(*, output_type: str):
     }
 
 
+def _minimal_auto_spec(*, output_type: str, maxG: int = 9):
+    spec = _minimal_spec(output_type=output_type)
+    spec["solver"]["harmonics"] = "auto"
+    spec["solver"]["maxG"] = maxG
+    return spec
+
+
 def test_solve_returns_structured_dict_torch():
     from torchrdit.interface import solve
     import torch
@@ -59,6 +66,26 @@ def test_solve_multi_source_returns_dict_by_name():
     assert set(out.keys()) == {"TE", "TM"}
     assert "efficiency" in out["TE"]
     assert "efficiency" in out["TM"]
+
+
+def test_solve_auto_harmonics_adds_convergence():
+    from torchrdit.interface import solve
+
+    spec = _minimal_auto_spec(output_type="torch", maxG=9)
+    out = solve(spec)
+    assert isinstance(out, dict)
+    assert "convergence" in out
+
+    conv = out["convergence"]
+    assert "selected_harmonics" in conv
+    assert "residual" in conv
+    assert "status" in conv
+    assert "history" in conv
+
+    harmonics = tuple(conv["selected_harmonics"])
+    assert len(harmonics) == 2
+    assert harmonics[0] % 2 == 1 and harmonics[1] % 2 == 1
+    assert harmonics[0] * harmonics[1] <= spec["solver"]["maxG"]
 
 
 @pytest.mark.parametrize("shape_type", ["circle", "rectangle", "polygon"])

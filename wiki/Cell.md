@@ -15,6 +15,8 @@
     * [er2](#torchrdit.cell.Cell3D.er2)
     * [ur1](#torchrdit.cell.Cell3D.ur1)
     * [ur2](#torchrdit.cell.Cell3D.ur2)
+    * [grids](#torchrdit.cell.Cell3D.grids)
+    * [harmonics](#torchrdit.cell.Cell3D.harmonics)
     * [lengthunit](#torchrdit.cell.Cell3D.lengthunit)
     * [get\_cell\_type](#torchrdit.cell.Cell3D.get_cell_type)
 
@@ -125,8 +127,8 @@ with electromagnetic solvers.
 - `tfloat` _torch.dtype_ - Float data type used for calculations
 - `tint` _torch.dtype_ - Integer data type used for calculations
 - `nfloat` _np.dtype_ - NumPy float data type for compatibility
-- `rdim` _List[int]_ - Dimensions in real space [height, width]
-- `kdim` _List[int]_ - Dimensions in k-space [kheight, kwidth]
+- `grids` _List[int]_ - Dimensions in real space [height, width]
+- `harmonics` _List[int]_ - Dimensions in k-space [kx, ky]
 - `layer_manager` _LayerManager_ - Manager for handling material layers
   
 
@@ -144,8 +146,8 @@ from torchrdit.constants import Algorithm
 solver = create_solver(
     algorithm=Algorithm.RCWA,
     lam0=np.array([1.55]),
-    rdim=[256, 256],
-    kdim=[5, 5]
+    grids=[256, 256],
+    harmonics=[5, 5]
 )
 
 # Add materials
@@ -192,8 +194,8 @@ import torch
 from torchrdit.shapes import ShapeGenerator
 solver = create_solver(
     algorithm=Algorithm.RDIT,
-    rdim=[1024, 1024],
-    kdim=[7, 7]
+    grids=[1024, 1024],
+    harmonics=[7, 7]
 )
 params = solver.get_shape_generator_params()
 shape_gen = ShapeGenerator(**params)
@@ -233,8 +235,8 @@ from torchrdit.solver import create_solver
 from torchrdit.constants import Algorithm
 solver = create_solver(
     algorithm=Algorithm.RDIT,
-    rdim=[1024, 1024],
-    kdim=[7, 7]
+    grids=[1024, 1024],
+    harmonics=[7, 7]
 )
 # Create and add materials
 from torchrdit.utils import create_material
@@ -520,7 +522,7 @@ creating custom shape masks.
 **Returns**:
 
   Tuple[torch.Tensor, torch.Tensor]: A tuple containing (X, Y) coordinate tensors,
-  each with shape (rdim[0], rdim[1]).
+  each with shape (grids[0], grids[1]).
   
 
 **Examples**:
@@ -620,6 +622,28 @@ Get the permeability of the transmission layer.
   
   Keywords:
   permeability, transmission layer, material property, magnetic property
+
+<a id="torchrdit.cell.Cell3D.grids"></a>
+
+### Cell3D.grids
+
+```python
+@property
+def grids()
+```
+
+Real-space grid dimensions.
+
+<a id="torchrdit.cell.Cell3D.harmonics"></a>
+
+### Cell3D.harmonics
+
+```python
+@property
+def harmonics()
+```
+
+Fourier-space harmonic dimensions.
 
 <a id="torchrdit.cell.Cell3D.lengthunit"></a>
 

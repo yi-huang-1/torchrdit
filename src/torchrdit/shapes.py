@@ -12,7 +12,7 @@ class ShapeGenerator:
     Attributes:
         XO (torch.Tensor): Tensor containing the x-coordinates of each point in the grid.
         YO (torch.Tensor): Tensor containing the y-coordinates of each point in the grid.
-        rdim (Tuple[int, int]): Dimensions of the real-space grid as (height, width).
+        grids (Tuple[int, int]): Dimensions of the real-space grid as (height, width).
         lattice_t1 (torch.Tensor): First lattice vector, defaults to [1,0] if not provided.
         lattice_t2 (torch.Tensor): Second lattice vector, defaults to [0,1] if not provided.
         tcomplex (torch.dtype): Complex tensor data type.
@@ -43,7 +43,7 @@ class ShapeGenerator:
         self,
         XO: torch.Tensor,
         YO: torch.Tensor,
-        rdim: Tuple[int, int],
+        grids: Tuple[int, int],
         lattice_t1=None,
         lattice_t2=None,
         tcomplex=torch.complex128,
@@ -59,7 +59,7 @@ class ShapeGenerator:
         Args:
             XO (torch.Tensor): Tensor containing the x-coordinates of each point in the grid.
             YO (torch.Tensor): Tensor containing the y-coordinates of each point in the grid.
-            rdim (Tuple[int, int]): Dimensions of the real-space grid as (height, width).
+            grids (Tuple[int, int]): Dimensions of the real-space grid as (height, width).
             lattice_t1 (torch.Tensor, optional): First lattice vector. Defaults to [1,0].
             lattice_t2 (torch.Tensor, optional): Second lattice vector. Defaults to [0,1].
             tcomplex (torch.dtype, optional): Complex tensor data type. Defaults to torch.complex128.
@@ -91,7 +91,7 @@ class ShapeGenerator:
         self.tfloat = tfloat
         self.tint = tint
         self.nfloat = nfloat
-        self.rdim = rdim
+        self.grids = grids
 
         # Store the original real-space coordinates
         self.XO = XO
@@ -141,8 +141,8 @@ class ShapeGenerator:
         from torchrdit.shapes import ShapeGenerator
         solver = create_solver(
             algorithm=Algorithm.RDIT,
-            rdim=[1024, 1024],
-            kdim=[7, 7]
+            grids=[1024, 1024],
+            harmonics=[7, 7]
         )
         shape_gen = ShapeGenerator.from_solver(solver)
         # Now shape_gen uses the same coordinate system as solver
@@ -155,7 +155,7 @@ class ShapeGenerator:
         return cls(
             XO=solver.XO,
             YO=solver.YO,
-            rdim=tuple(solver.rdim),
+            grids=tuple(solver.grids),
             lattice_t1=solver.lattice_t1,
             lattice_t2=solver.lattice_t2,
             tcomplex=solver.tcomplex,
@@ -178,7 +178,7 @@ class ShapeGenerator:
                 Use 0 for a binary hard edge. Defaults to 0.001.
 
         Returns:
-            torch.Tensor: A tensor of shape rdim containing the circle mask.
+            torch.Tensor: A tensor of shape grids containing the circle mask.
             Values are 1.0 inside the circle and 0.0 outside,
             with a smooth transition at the edge if soft_edge > 0.
 
@@ -201,7 +201,7 @@ class ShapeGenerator:
             circle, mask, binary mask, shape generation, photonics
         """
         device = self.XO.device
-        mask = torch.zeros(self.rdim, dtype=self.tfloat, device=device)
+        mask = torch.zeros(self.grids, dtype=self.tfloat, device=device)
 
         if center is None:
             center = (0.0, 0.0)
@@ -237,7 +237,7 @@ class ShapeGenerator:
                 Use 0 for a binary hard edge. Defaults to 0.001.
 
         Returns:
-            torch.Tensor: A tensor of shape rdim containing the rectangle mask.
+            torch.Tensor: A tensor of shape grids containing the rectangle mask.
             Values are 1.0 inside the rectangle and 0.0 outside,
             with a smooth transition at the edge if soft_edge > 0.
 
@@ -260,7 +260,7 @@ class ShapeGenerator:
             rectangle, square, mask, binary mask, shape generation, photonics, rotation, x-axis, y-axis
         """
         device = self.XO.device
-        mask = torch.zeros(self.rdim, dtype=self.tfloat, device=device)
+        mask = torch.zeros(self.grids, dtype=self.tfloat, device=device)
 
         # Convert angle to radians
         if not isinstance(angle, torch.Tensor):
@@ -334,7 +334,7 @@ class ShapeGenerator:
                 Use 0 for a binary hard edge. Defaults to 0.001.
 
         Returns:
-            torch.Tensor: A tensor of shape rdim containing the polygon mask.
+            torch.Tensor: A tensor of shape grids containing the polygon mask.
             Values are 1.0 inside the polygon and 0.0 outside (unless inverted),
             with a smooth transition at the edge if soft_edge > 0.
 

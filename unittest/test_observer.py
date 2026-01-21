@@ -36,8 +36,8 @@ class TestObserverPattern(unittest.TestCase):
     nm = 1e-3 * um
     
     lam0 = np.array([0.5, 0.6, 0.7])  # Three wavelengths in um
-    rdim = [64, 64]  # Small spatial dimensions for speed
-    kdim = [3, 3]    # Small k-space for speed
+    grids = [64, 64]  # Small spatial dimensions for speed
+    harmonics = [3, 3]    # Small k-space for speed
     
     # Material properties
     er_air = 1.0
@@ -53,8 +53,8 @@ class TestObserverPattern(unittest.TestCase):
         self.solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=self.lam0,
-            rdim=self.rdim,
-            kdim=self.kdim
+            grids=self.grids,
+            harmonics=self.harmonics
         )
         
         # Create and add materials
@@ -73,8 +73,8 @@ class TestObserverPattern(unittest.TestCase):
         self.solver.update_trn_material("silica")  # Set substrate material
         
         # Add a simple pattern to the silicon layer (half/half pattern)
-        mask = torch.zeros(self.rdim)
-        mask[:, :self.rdim[1]//2] = 1.0
+        mask = torch.zeros(self.grids)
+        mask[:, :self.grids[1]//2] = 1.0
         self.solver.update_er_with_mask(mask, 0)
         
         # Create the source

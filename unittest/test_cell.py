@@ -43,14 +43,14 @@ def test_add_layer(cell_3d):
     assert len(cell_3d.layer_manager.layers) == 1
 
 
-def test_invalid_rdim():
+def test_invalid_grids():
     with pytest.raises(ValueError):
-        Cell3D(rdim=[512])
+        Cell3D(grids=[512])
 
 
-def test_invalid_kdim():
+def test_invalid_harmonics():
     with pytest.raises(ValueError):
-        Cell3D(kdim=[3])
+        Cell3D(harmonics=[3])
 
 
 def test_invalid_t1():
@@ -69,10 +69,10 @@ def test_add_invalid_material(cell_3d):
 
 
 def test_initialization_with_different_parameters():
-    cell = Cell3D(lengthunit="nm", rdim=[256, 256], kdim=[5, 5])
+    cell = Cell3D(lengthunit="nm", grids=[256, 256], harmonics=[5, 5])
     assert cell.lengthunit == "nm"
-    assert cell.rdim == [256, 256]
-    assert cell.kdim == [5, 5]
+    assert cell.grids == [256, 256]
+    assert cell.harmonics == [5, 5]
 
 
 def test_lengthunit_micrometer_conversion():

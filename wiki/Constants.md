@@ -186,15 +186,15 @@ from torchrdit.solver import create_solver
 from torchrdit.constants import Algorithm
 rcwa_solver = create_solver(
     algorithm=Algorithm.RCWA,
-    rdim=[256, 256],
-    kdim=[5, 5]
+    grids=[256, 256],
+    harmonics=[5, 5]
 )
 
 # Create solver with RDIT algorithm
 rdit_solver = create_solver(
     algorithm=Algorithm.RDIT,
-    rdim=[512, 512],
-    kdim=[7, 7]
+    grids=[512, 512],
+    harmonics=[7, 7]
 )
 
 # Check which algorithm a solver uses

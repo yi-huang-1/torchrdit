@@ -103,8 +103,8 @@ class Cell3D:
         tfloat (torch.dtype): Float data type used for calculations
         tint (torch.dtype): Integer data type used for calculations
         nfloat (np.dtype): NumPy float data type for compatibility
-        rdim (List[int]): Dimensions in real space [height, width]
-        kdim (List[int]): Dimensions in k-space [kheight, kwidth]
+        grids (List[int]): Dimensions in real space [height, width]
+        harmonics (List[int]): Dimensions in k-space [kx, ky]
         layer_manager (LayerManager): Manager for handling material layers
 
     Examples:
@@ -120,8 +120,8 @@ class Cell3D:
     solver = create_solver(
         algorithm=Algorithm.RCWA,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[5, 5]
+        grids=[256, 256],
+        harmonics=[5, 5]
     )
 
     # Add materials
@@ -159,8 +159,8 @@ class Cell3D:
     def __init__(
         self,
         lengthunit: str = "um",  # length unit used in the solver
-        rdim: List[int] = [512, 512],  # dimensions in real space: (H, W)
-        kdim: List[int] = [3, 3],  # dimensions in k space: (kH, kW)
+        grids: List[int] = [512, 512],  # dimensions in real space: (H, W)
+        harmonics: List[int] = [3, 3],  # dimensions in k space: (kH, kW)
         materiallist: List[MaterialClass] = [],  # list of materials
         t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
         t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
@@ -181,10 +181,10 @@ class Cell3D:
             lengthunit (str): Unit of length for all dimensions in the simulation.
                       Common values: 'um' (micrometers), 'nm' (nanometers).
                       Default is 'um'.
-            rdim (List[int]): Dimensions of the real-space grid as [height, width].
+            grids (List[int]): Dimensions of the real-space grid as [height, width].
                 This determines the spatial resolution of the simulation.
                 Default is [512, 512].
-            kdim (List[int]): Dimensions in Fourier space as [kheight, kwidth].
+            harmonics (List[int]): Dimensions in Fourier space as [kx, ky].
                 This determines the number of Fourier harmonics used in the simulation.
                 Default is [3, 3].
             materiallist (List[MaterialClass]): List of material objects to be used in the simulation.
@@ -209,8 +209,8 @@ class Cell3D:
         # Create an RDIT solver
         rdit_solver = create_solver(
             algorithm=Algorithm.RDIT,
-            rdim=[1024, 1024],
-            kdim=[7, 7]
+            grids=[1024, 1024],
+            harmonics=[7, 7]
         )
 
         # Create an RCWA solver with non-rectangular lattice
@@ -218,8 +218,8 @@ class Cell3D:
             algorithm=Algorithm.RCWA,
             t1=torch.tensor([[1.0, 0.0]]),
             t2=torch.tensor([[0.5, 0.866]]),  # 30-degree lattice
-            rdim=[512, 512],
-            kdim=[5, 5]
+            grids=[512, 512],
+            harmonics=[5, 5]
         )
 
         # Create a solver with GPU acceleration
@@ -235,13 +235,13 @@ class Cell3D:
         """
         self.device = device
 
-        if isinstance(rdim, list) is False or len(rdim) != 2:
-            raise ValueError(f"Invalid input rdim [{rdim}]")
-        self.rdim = rdim
+        if isinstance(grids, list) is False or len(grids) != 2:
+            raise ValueError(f"Invalid input grids [{grids}]")
+        self._grids = grids
 
-        if isinstance(kdim, list) is False or len(kdim) != 2:
-            raise ValueError(f"Invalid input kdim [{kdim}]")
-        self.kdim = kdim
+        if isinstance(harmonics, list) is False or len(harmonics) != 2:
+            raise ValueError(f"Invalid input harmonics [{harmonics}]")
+        self._harmonics = harmonics
 
         if t1 is None:
             raise ValueError(f"Invalid input t1 [{t1}]")
@@ -265,8 +265,8 @@ class Cell3D:
         self.add_materials(material_list=[_mat_air])
 
         # build device
-        self.vec_p = torch.linspace(-0.5, 0.5, rdim[0], dtype=self.tfloat, device=self.device)
-        self.vec_q = torch.linspace(-0.5, 0.5, rdim[1], dtype=self.tfloat, device=self.device)
+        self.vec_p = torch.linspace(-0.5, 0.5, grids[0], dtype=self.tfloat, device=self.device)
+        self.vec_q = torch.linspace(-0.5, 0.5, grids[1], dtype=self.tfloat, device=self.device)
 
         [mesh_q, mesh_p] = torch.meshgrid(self.vec_q, self.vec_p, indexing="xy")
 
@@ -301,8 +301,8 @@ class Cell3D:
         from torchrdit.shapes import ShapeGenerator
         solver = create_solver(
             algorithm=Algorithm.RDIT,
-            rdim=[1024, 1024],
-            kdim=[7, 7]
+            grids=[1024, 1024],
+            harmonics=[7, 7]
         )
         params = solver.get_shape_generator_params()
         shape_gen = ShapeGenerator(**params)
@@ -311,7 +311,7 @@ class Cell3D:
         return {
             "XO": self.XO,
             "YO": self.YO,
-            "rdim": tuple(self.rdim),
+            "grids": tuple(self.grids),
             "lattice_t1": self.lattice_t1,
             "lattice_t2": self.lattice_t2,
             "tcomplex": self.tcomplex,
@@ -342,8 +342,8 @@ class Cell3D:
         from torchrdit.constants import Algorithm
         solver = create_solver(
             algorithm=Algorithm.RDIT,
-            rdim=[1024, 1024],
-            kdim=[7, 7]
+            grids=[1024, 1024],
+            harmonics=[7, 7]
         )
         # Create and add materials
         from torchrdit.utils import create_material
@@ -732,7 +732,7 @@ class Cell3D:
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: A tuple containing (X, Y) coordinate tensors,
-                                            each with shape (rdim[0], rdim[1]).
+                                            each with shape (grids[0], grids[1]).
 
         Examples:
         ```python
@@ -808,6 +808,28 @@ class Cell3D:
             permeability, transmission layer, material property, magnetic property
         """
         return self._matlib[self.layer_manager.trn_material_name].ur.to(self.tcomplex).detach().clone().to(self.device)
+
+    @property
+    def grids(self):
+        """Real-space grid dimensions."""
+        return self._grids
+
+    @grids.setter
+    def grids(self, grids: List[int]) -> None:
+        if isinstance(grids, list) is False or len(grids) != 2:
+            raise ValueError(f"Invalid input grids [{grids}]")
+        self._grids = grids
+
+    @property
+    def harmonics(self):
+        """Fourier-space harmonic dimensions."""
+        return self._harmonics
+
+    @harmonics.setter
+    def harmonics(self, harmonics: List[int]) -> None:
+        if isinstance(harmonics, list) is False or len(harmonics) != 2:
+            raise ValueError(f"Invalid input harmonics [{harmonics}]")
+        self._harmonics = harmonics
 
     @property
     def lengthunit(self):

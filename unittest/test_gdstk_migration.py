@@ -20,7 +20,7 @@ class TestGdstkMigration(unittest.TestCase):
 
     def setUp(self):
         """Set up common test fixtures."""
-        self.rdim = [256, 256]
+        self.grids = [256, 256]
         self.temp_dir = tempfile.mkdtemp()
 
     def tearDown(self):
@@ -33,13 +33,13 @@ class TestGdstkMigration(unittest.TestCase):
         t1 = torch.tensor([1.0, 0.0], dtype=torch.float32)
         t2 = torch.tensor([0.0, 1.0], dtype=torch.float32)
 
-        vec_p = torch.linspace(-0.5, 0.5, self.rdim[0])
-        vec_q = torch.linspace(-0.5, 0.5, self.rdim[1])
+        vec_p = torch.linspace(-0.5, 0.5, self.grids[0])
+        vec_q = torch.linspace(-0.5, 0.5, self.grids[1])
         mesh_q, mesh_p = torch.meshgrid(vec_q, vec_p, indexing="xy")
         X = mesh_p * t1[0] + mesh_q * t2[0]
         Y = mesh_p * t1[1] + mesh_q * t2[1]
 
-        return ShapeGenerator(X, Y, self.rdim, lattice_t1=t1, lattice_t2=t2)
+        return ShapeGenerator(X, Y, self.grids, lattice_t1=t1, lattice_t2=t2)
 
     def test_circle_roundtrip_iou(self):
         """Round-trip a circle mask and assert IoU > 0.9."""

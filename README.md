@@ -56,7 +56,7 @@ tx, ty = compute_tangent_field(
     YO=solver.YO,
     lattice_t1=solver.lattice_t1,
     lattice_t2=solver.lattice_t2,
-    kdim=tuple(int(k) for k in solver.kdim),
+    harmonics=tuple(int(k) for k in solver.harmonics),
     scheme="POL",  # POL, NORMAL, JONES, or JONES_DIRECT
 )
 ```
@@ -126,7 +126,7 @@ from torchrdit.shapes import ShapeGenerator
 from torchrdit.gds import mask_to_gds, gds_to_mask
 
 # Create shape and export to GDS
-shape_gen = ShapeGenerator(X, Y, rdim)
+shape_gen = ShapeGenerator(X, Y, grids)
 mask = shape_gen.generate_circle_mask(center=(0, 0), radius=0.5)
 mask_to_gds(mask, shape_gen.get_layout(), "DEVICE", "output.gds")
 

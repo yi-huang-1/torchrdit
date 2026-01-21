@@ -7,8 +7,8 @@ def test_builder_rejects_unknown_material_keys():
     config = {
         "algorithm": "RCWA",
         "wavelengths": [1.55],
-        "rdim": [16, 16],
-        "kdim": [3, 3],
+        "grids": [16, 16],
+        "harmonics": [3, 3],
         "materials": {
             "Si": {"permittivity": 12.0, "unknown": 1},
         },
@@ -25,8 +25,8 @@ def test_builder_rejects_unknown_layer_keys():
     config = {
         "algorithm": "RCWA",
         "wavelengths": [1.55],
-        "rdim": [16, 16],
-        "kdim": [3, 3],
+        "grids": [16, 16],
+        "harmonics": [3, 3],
         "materials": {
             "Si": {"permittivity": 12.0},
         },
@@ -43,8 +43,8 @@ def test_builder_rejects_base_path_key():
     config = {
         "algorithm": "RCWA",
         "wavelengths": [1.55],
-        "rdim": [16, 16],
-        "kdim": [3, 3],
+        "grids": [16, 16],
+        "harmonics": [3, 3],
         "base_path": ".",
         "materials": {"Si": {"permittivity": 12.0}},
         "layers": [{"material": "Si", "thickness": 0.1, "is_homogeneous": True}],

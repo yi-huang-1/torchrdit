@@ -18,7 +18,7 @@ from torchrdit.solver import create_solver
 from torchrdit.constants import Algorithm
 
 # Create a solver
-solver = create_solver(algorithm=Algorithm.RDIT, rdim=[512, 512], kdim=[7, 7])
+solver = create_solver(algorithm=Algorithm.RDIT, grids=[512, 512], harmonics=[7, 7])
 
 # Create a shape generator
 shape_gen = ShapeGenerator.from_solver(solver)
@@ -71,7 +71,7 @@ non-Cartesian coordinate systems through lattice vectors.
 
 - `XO` _torch.Tensor_ - Tensor containing the x-coordinates of each point in the grid.
 - `YO` _torch.Tensor_ - Tensor containing the y-coordinates of each point in the grid.
-- `rdim` _Tuple[int, int]_ - Dimensions of the real-space grid as (height, width).
+- `grids` _Tuple[int, int]_ - Dimensions of the real-space grid as (height, width).
 - `lattice_t1` _torch.Tensor_ - First lattice vector, defaults to [1,0] if not provided.
 - `lattice_t2` _torch.Tensor_ - Second lattice vector, defaults to [0,1] if not provided.
 - `tcomplex` _torch.dtype_ - Complex tensor data type.
@@ -133,8 +133,8 @@ import torch
 from torchrdit.shapes import ShapeGenerator
 solver = create_solver(
     algorithm=Algorithm.RDIT,
-    rdim=[1024, 1024],
-    kdim=[7, 7]
+    grids=[1024, 1024],
+    harmonics=[7, 7]
 )
 shape_gen = ShapeGenerator.from_solver(solver)
 # Now shape_gen uses the same coordinate system as solver
@@ -168,7 +168,7 @@ The mask can have hard or soft edges based on the soft_edge parameter.
 
 **Returns**:
 
-- `torch.Tensor` - A tensor of shape rdim containing the circle mask.
+- `torch.Tensor` - A tensor of shape grids containing the circle mask.
   Values are 1.0 inside the circle and 0.0 outside,
   with a smooth transition at the edge if soft_edge > 0.
   
@@ -222,7 +222,7 @@ dimensions, and orientation. The mask can have hard or soft edges.
 
 **Returns**:
 
-- `torch.Tensor` - A tensor of shape rdim containing the rectangle mask.
+- `torch.Tensor` - A tensor of shape grids containing the rectangle mask.
   Values are 1.0 inside the rectangle and 0.0 outside,
   with a smooth transition at the edge if soft_edge > 0.
   
@@ -280,7 +280,7 @@ The polygon can be rotated, translated, and have soft or hard edges.
 
 **Returns**:
 
-- `torch.Tensor` - A tensor of shape rdim containing the polygon mask.
+- `torch.Tensor` - A tensor of shape grids containing the polygon mask.
   Values are 1.0 inside the polygon and 0.0 outside (unless inverted),
   with a smooth transition at the edge if soft_edge > 0.
   

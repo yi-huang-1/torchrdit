@@ -33,8 +33,8 @@ def base_solver():
         algorithm=Algorithm.RCWA,
         precision=Precision.DOUBLE,
         lam0=np.array([1.55]),
-        rdim=[64, 64],
-        kdim=[7, 7],
+        grids=[64, 64],
+        harmonics=[7, 7],
         device="cpu",
     )
     return solver
@@ -78,7 +78,7 @@ def test_tangent_field_matches_reference(vector_module):
         YO=YO,
         lattice_t1=lattice_t1,
         lattice_t2=lattice_t2,
-        kdim=(7, 7),
+        harmonics=(7, 7),
         scheme="POL",
         fourier_loss_weight=1e-2,
         smoothness_loss_weight=1e-3,
@@ -128,7 +128,7 @@ def test_tangent_field_shapes_and_unit_norm(vector_module, base_solver, circle_m
         YO=base_solver.YO,
         lattice_t1=base_solver.lattice_t1,
         lattice_t2=base_solver.lattice_t2,
-        kdim=tuple(base_solver.kdim),
+        harmonics=tuple(base_solver.harmonics),
         scheme=scheme,
     )
 
@@ -160,7 +160,7 @@ def test_tangent_field_respects_mask_dtype_and_device(vector_module, base_solver
         YO=yo,
         lattice_t1=base_solver.lattice_t1.to(dtype=mask.dtype),
         lattice_t2=base_solver.lattice_t2.to(dtype=mask.dtype),
-        kdim=tuple(base_solver.kdim),
+        harmonics=tuple(base_solver.harmonics),
         scheme="POL",
     )
 
@@ -179,7 +179,7 @@ def test_tangent_field_autograd(vector_module, base_solver, circle_mask):
         YO=base_solver.YO,
         lattice_t1=base_solver.lattice_t1,
         lattice_t2=base_solver.lattice_t2,
-        kdim=tuple(base_solver.kdim),
+        harmonics=tuple(base_solver.harmonics),
         scheme="POL",
     )
     loss = (tx.real**2 + ty.real**2).mean()
@@ -211,7 +211,7 @@ def test_tangent_field_recovers_from_nonfinite_cg(monkeypatch, vector_module, ba
         YO=base_solver.YO,
         lattice_t1=base_solver.lattice_t1,
         lattice_t2=base_solver.lattice_t2,
-        kdim=tuple(base_solver.kdim),
+        harmonics=tuple(base_solver.harmonics),
         scheme="POL",
         steps=1,
     )
@@ -257,7 +257,7 @@ def test_fourier_penalty_weights_recomputed(vector_module, base_solver, circle_m
     generator = vector_module.TangentFieldGenerator(
         lattice_t1=base_solver.lattice_t1,
         lattice_t2=base_solver.lattice_t2,
-        kdim=tuple(base_solver.kdim),
+        harmonics=tuple(base_solver.harmonics),
         fourier_loss_weight=1e-2,
         smoothness_loss_weight=1e-3,
         steps=1,
@@ -292,7 +292,7 @@ def test_tangent_field_does_not_call_dense_jacobian(vector_module, base_solver, 
         YO=base_solver.YO,
         lattice_t1=base_solver.lattice_t1,
         lattice_t2=base_solver.lattice_t2,
-        kdim=tuple(base_solver.kdim),
+        harmonics=tuple(base_solver.harmonics),
         scheme="POL",
         steps=1,
     )
@@ -324,7 +324,7 @@ def test_tangent_field_cg_fallback_uses_dense_solve(vector_module, base_solver, 
         YO=base_solver.YO,
         lattice_t1=base_solver.lattice_t1,
         lattice_t2=base_solver.lattice_t2,
-        kdim=tuple(base_solver.kdim),
+        harmonics=tuple(base_solver.harmonics),
         scheme="POL",
         steps=1,
     )
@@ -342,7 +342,7 @@ def test_invalid_grid_shapes(vector_module, base_solver, circle_mask):
             YO=base_solver.YO,
             lattice_t1=base_solver.lattice_t1,
             lattice_t2=base_solver.lattice_t2,
-            kdim=tuple(base_solver.kdim),
+            harmonics=tuple(base_solver.harmonics),
             scheme="POL",
         )
 
@@ -355,7 +355,7 @@ def test_unknown_scheme(vector_module, base_solver, circle_mask):
             YO=base_solver.YO,
             lattice_t1=base_solver.lattice_t1,
             lattice_t2=base_solver.lattice_t2,
-            kdim=tuple(base_solver.kdim),
+            harmonics=tuple(base_solver.harmonics),
             scheme="UNKNOWN",
         )
 
@@ -364,7 +364,7 @@ def test_generator_class_matches_module_function(vector_module, base_solver, cir
     generator = vector_module.TangentFieldGenerator(
         lattice_t1=base_solver.lattice_t1,
         lattice_t2=base_solver.lattice_t2,
-        kdim=tuple(base_solver.kdim),
+        harmonics=tuple(base_solver.harmonics),
         fourier_loss_weight=1e-2,
         smoothness_loss_weight=1e-3,
         steps=1,
@@ -383,7 +383,7 @@ def test_generator_class_matches_module_function(vector_module, base_solver, cir
         YO=base_solver.YO,
         lattice_t1=base_solver.lattice_t1,
         lattice_t2=base_solver.lattice_t2,
-        kdim=tuple(base_solver.kdim),
+        harmonics=tuple(base_solver.harmonics),
         scheme="POL",
         fourier_loss_weight=1e-2,
         smoothness_loss_weight=1e-3,
@@ -396,7 +396,7 @@ def test_generator_class_matches_module_function(vector_module, base_solver, cir
 def test_plot_script_creates_generator(vector_module, base_solver, circle_mask):
     class Args:
         scheme = "POL"
-        kdim = tuple(base_solver.kdim)
+        harmonics = tuple(base_solver.harmonics)
         fourier_loss_weight = 1e-2
         smoothness_loss_weight = 1e-3
         steps = 1
@@ -405,7 +405,7 @@ def test_plot_script_creates_generator(vector_module, base_solver, circle_mask):
         return vector_module.TangentFieldGenerator(
             lattice_t1=solver.lattice_t1,
             lattice_t2=solver.lattice_t2,
-            kdim=tuple(args.kdim),
+            harmonics=tuple(args.harmonics),
             fourier_loss_weight=args.fourier_loss_weight,
             smoothness_loss_weight=args.smoothness_loss_weight,
             steps=args.steps,
@@ -433,7 +433,7 @@ def test_create_solver_passes_vector_parameters(monkeypatch):
             self,
             lattice_t1,
             lattice_t2,
-            kdim,
+            harmonics,
             *,
             fourier_loss_weight,
             smoothness_loss_weight,
@@ -469,8 +469,8 @@ def test_create_solver_passes_vector_parameters(monkeypatch):
         algorithm=Algorithm.RCWA,
         precision=Precision.DOUBLE,
         lam0=np.array([1.55]),
-        rdim=[8, 8],
-        kdim=[3, 3],
+        grids=[8, 8],
+        harmonics=[3, 3],
         device="cpu",
         fff_vector_scheme="JONES_DIRECT",
         fff_fourier_weight=5e-2,
@@ -505,7 +505,7 @@ def test_builder_configures_vector_field_options(monkeypatch):
             self,
             lattice_t1,
             lattice_t2,
-            kdim,
+            harmonics,
             *,
             fourier_loss_weight,
             smoothness_loss_weight,

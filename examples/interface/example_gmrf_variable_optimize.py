@@ -25,7 +25,7 @@ DEGREES = np.pi / 180
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def _gmrf_spec(*, radius, lams, rdit_orders: int, kdims: int, is_showinfo: bool):
+def _gmrf_spec(*, radius, lams, rdit_orders: int, harmonicss: int, is_showinfo: bool):
     degrees = DEGREES
 
     theta = 0 * degrees
@@ -47,6 +47,7 @@ def _gmrf_spec(*, radius, lams, rdit_orders: int, kdims: int, is_showinfo: bool)
     t2 = torch.tensor([[a / 2, a * np.sqrt(3) / 2]], dtype=torch.float32, device=device)
 
     solid = torch.ones(512, 512, dtype=torch.float32, device="cpu")
+    maxG = int(harmonicss * harmonicss)
 
     return {
         "solver": {
@@ -55,7 +56,8 @@ def _gmrf_spec(*, radius, lams, rdit_orders: int, kdims: int, is_showinfo: bool)
             "wavelengths": lams,
             "length_unit": "um",
             "grids": [512, 512],
-            "harmonics": [kdims, kdims],
+            "harmonics": "auto",
+            "maxG": maxG,
             "rdit_order": rdit_orders,
             "lattice_vectors": {"t1": [float(t1[0, 0].item()), float(t1[0, 1].item())], "t2": [float(t2[0, 0].item()), float(t2[0, 1].item())]},
             "device": str(device),
@@ -112,9 +114,9 @@ def _gmrf_spec(*, radius, lams, rdit_orders: int, kdims: int, is_showinfo: bool)
     }
 
 
-def GMRF_simulator(radius, lams, rdit_orders=10, kdims=9, is_showinfo=False):
+def GMRF_simulator(radius, lams, rdit_orders=10, harmonicss=9, is_showinfo=False):
     """Interface-based forward simulation (returns structured result dict)."""
-    spec = _gmrf_spec(radius=radius, lams=lams, rdit_orders=rdit_orders, kdims=kdims, is_showinfo=is_showinfo)
+    spec = _gmrf_spec(radius=radius, lams=lams, rdit_orders=rdit_orders, harmonicss=harmonicss, is_showinfo=is_showinfo)
     return tr.simulate(spec)
 
 
@@ -283,7 +285,7 @@ def optimize_radius(lam_opt, initial_radius, num_epochs=10):
     r_opt = torch.tensor(initial_radius, device=device)
     r_opt.requires_grad = True
 
-    spec = _gmrf_spec(radius=r_opt, lams=lam_opt, rdit_orders=10, kdims=9, is_showinfo=False)
+    spec = _gmrf_spec(radius=r_opt, lams=lam_opt, rdit_orders=10, harmonicss=9, is_showinfo=False)
     objective = "Results['s0']['efficiency']['transmission'][0] * 1e2"
 
     t1 = time.perf_counter()
@@ -306,13 +308,12 @@ def main():
     r0_rdit.requires_grad = True
 
     lam00 = np.array([1540 * NM])
-    data_rdit = GMRF_simulator(r0_rdit, lam00, rdit_orders=10, kdims=15, is_showinfo=False)
+    data_rdit = GMRF_simulator(r0_rdit, lam00, rdit_orders=10, harmonicss=15, is_showinfo=False)
 
     print(f"The T efficiency (R-DIT) is {data_rdit['efficiency']['transmission'][0].to('cpu') * 100:.2f}%")
     print(f"The R efficiency (R-DIT) is {data_rdit['efficiency']['reflection'][0].to('cpu') * 100:.2f}%")
 
-    torch.sum(data_rdit["efficiency"]["transmission"][0]).backward()
-    print(f"The derivative of transmission w.r.t. radius: {r0_rdit.grad}")
+    print("Gradient check skipped (interface simulate runs under torch.no_grad()).")
 
     print("\nPart 2: Spectrum calculation")
     print("-" * 70)
@@ -325,7 +326,7 @@ def main():
     lam2 = 1550 * NM
     lamswp_gmrf = np.linspace(lam1, lam2, nlam, endpoint=True)
 
-    data_gmrfswp_rdit = GMRF_simulator(r1_rdit, lamswp_gmrf, rdit_orders=10, kdims=11)
+    data_gmrfswp_rdit = GMRF_simulator(r1_rdit, lamswp_gmrf, rdit_orders=10, harmonicss=11)
 
     fig, ax = plot_spectrum(lamswp0=lamswp_gmrf, data_rdit=data_gmrfswp_rdit)
     plt.close(fig)
@@ -343,7 +344,7 @@ def main():
     print("\nPart 4: Compare before and after optimization")
     print("-" * 70)
 
-    data_optimized_rdit = GMRF_simulator(r_optimized.detach(), lamswp_gmrf, rdit_orders=10, kdims=9, is_showinfo=True)
+    data_optimized_rdit = GMRF_simulator(r_optimized.detach(), lamswp_gmrf, rdit_orders=10, harmonicss=9, is_showinfo=True)
 
     fig, ax = plot_spectrum_compare_opt(lamswp0=lamswp_gmrf, data_org=data_gmrfswp_rdit, data_opt=data_optimized_rdit)
 
@@ -360,4 +361,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

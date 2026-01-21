@@ -19,8 +19,8 @@ class TestSolverDocExamples(unittest.TestCase):
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=np.array([1.55]),
-            rdim=[32, 32],
-            kdim=[3, 3],
+            grids=[32, 32],
+            harmonics=[3, 3],
             device='cpu',
         )
 

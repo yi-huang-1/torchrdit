@@ -27,8 +27,8 @@ class TestDifferentiableStability:
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=np.array([1.55]),
-            rdim=[512, 512],
-            kdim=[13, 13],
+            grids=[512, 512],
+            harmonics=[13, 13],
             device="cpu",
             precision=Precision.DOUBLE
         )

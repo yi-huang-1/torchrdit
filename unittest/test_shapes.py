@@ -21,11 +21,11 @@ class TestShapeGenerator(unittest.TestCase):
 
     def setUp(self):
         # Use a modest grid for speed while retaining fidelity
-        self.rdim = (64, 64)
-        x_grid = torch.linspace(-0.5, 0.5, self.rdim[0])
-        y_grid = torch.linspace(-0.5, 0.5, self.rdim[1])
+        self.grids = (64, 64)
+        x_grid = torch.linspace(-0.5, 0.5, self.grids[0])
+        y_grid = torch.linspace(-0.5, 0.5, self.grids[1])
         X, Y = torch.meshgrid(x_grid, y_grid, indexing="xy")
-        self.generator = ShapeGenerator(X, Y, self.rdim)
+        self.generator = ShapeGenerator(X, Y, self.grids)
         self.soft_edge = 0.01
         # Spatial weights to make loss sensitive to position/rotation
         self.weight = self.generator.XO + 2.0 * self.generator.YO
@@ -127,14 +127,14 @@ class TestShapeGenerator(unittest.TestCase):
             solver = create_solver(
                 algorithm=Algorithm.RCWA,
                 precision=precision,
-                rdim=[self.rdim[0], self.rdim[1]],
-                kdim=[3, 3],
+                grids=[self.grids[0], self.grids[1]],
+                harmonics=[3, 3],
                 lam0=np.array([1.55]),
                 t1=torch.tensor([[1.0, 0.0]]),
                 t2=torch.tensor([[0.0, 1.0]])
             )
             sg = ShapeGenerator.from_solver(solver)
-            self.assertEqual(sg.rdim, tuple(solver.rdim))
+            self.assertEqual(sg.grids, tuple(solver.grids))
             self.assertTrue(torch.allclose(sg.XO, solver.XO))
             self.assertTrue(torch.allclose(sg.YO, solver.YO))
             self.assertTrue(torch.allclose(sg.lattice_t1, solver.lattice_t1))
@@ -145,8 +145,8 @@ class TestShapeGenerator(unittest.TestCase):
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             precision=Precision.SINGLE,
-            rdim=[self.rdim[0], self.rdim[1]],
-            kdim=[3, 3],
+            grids=[self.grids[0], self.grids[1]],
+            harmonics=[3, 3],
             lam0=np.array([1.55]),
             t1=torch.tensor([[1.0, 0.5]]),
             t2=torch.tensor([[0.0, 1.0]])

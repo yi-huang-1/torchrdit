@@ -358,7 +358,7 @@ where a1, a2 are incoming waves and b1, b2 are outgoing waves.
 **Arguments**:
 
 - `shape` - Tuple specifying the dimensions of the S-matrix components.
-  For batch processing, this is typically (batch_size, kdim_0_tims_1, kdim_0_tims_1).
+  For batch processing, this is typically (batch_size, harmonics_0_tims_1, harmonics_0_tims_1).
 - `dtype` - PyTorch data type for the matrices (typically torch.complex64 or torch.complex128).
 - `device` - Device to create the tensors on ('cpu' or 'cuda').
   Default is 'cpu'.
@@ -630,7 +630,8 @@ print(filtered)
 ### to\_diag\_util
 
 ```python
-def to_diag_util(input_mat: torch.Tensor, kdim: List[int]) -> torch.Tensor
+def to_diag_util(input_mat: torch.Tensor,
+                 harmonics: List[int]) -> torch.Tensor
 ```
 
 Convert a vector to a diagonal matrix for electromagnetic calculations.
@@ -639,26 +640,26 @@ This utility function creates a diagonal matrix from a vector, which is a common
 operation in electromagnetic simulations when converting material properties or
 field components to matrix form for calculations.
 
-The function handles both regular harmonics (kdim_0_tims_1) and cases where the
-input represents both polarizations (2*kdim_0_tims_1), automatically determining
+The function handles both regular harmonics (harmonics_0_tims_1) and cases where the
+input represents both polarizations (2*harmonics_0_tims_1), automatically determining
 the appropriate size based on the input dimensions.
 
 **Arguments**:
 
 - `input_mat` - Input tensor to be converted to a diagonal matrix. This is typically
-  a vector of length kdim_0_tims_1 or 2*kdim_0_tims_1, where kdim_0_tims_1
+  a vector of length harmonics_0_tims_1 or 2*harmonics_0_tims_1, where harmonics_0_tims_1
   is the product of the k-space dimensions.
-- `kdim` - Dimensions in Fourier space as [kheight, kwidth]. These determine
+- `harmonics` - Dimensions in Fourier space as [kx, ky]. These determine
   the number of harmonics used in the calculation.
   
 
 **Returns**:
 
 - `torch.Tensor` - Diagonal matrix with the input values along the diagonal.
-  If input_mat has shape [..., kdim_0_tims_1], the output will have
-  shape [..., kdim_0_tims_1, kdim_0_tims_1]. If input_mat has shape
-  [..., 2*kdim_0_tims_1], the output will have shape
-  [..., 2*kdim_0_tims_1, 2*kdim_0_tims_1].
+  If input_mat has shape [..., harmonics_0_tims_1], the output will have
+  shape [..., harmonics_0_tims_1, harmonics_0_tims_1]. If input_mat has shape
+  [..., 2*harmonics_0_tims_1], the output will have shape
+  [..., 2*harmonics_0_tims_1, 2*harmonics_0_tims_1].
   
 
 **Examples**:
@@ -667,8 +668,8 @@ the appropriate size based on the input dimensions.
 import torch
 from torchrdit.utils import to_diag_util
 input_vector = torch.ones(5)  # A vector with 5 elements
-kdim = [1, 5]  # 1x5 k-space dimension resulting in 5 harmonics
-diagonal_matrix = to_diag_util(input_vector, kdim)
+harmonics = [1, 5]  # 1x5 k-space dimension resulting in 5 harmonics
+diagonal_matrix = to_diag_util(input_vector, harmonics)
 print(diagonal_matrix.shape)  # Outputs torch.Size([5, 5])
 print(torch.allclose(diagonal_matrix, torch.eye(5)))  # Outputs True
 ```

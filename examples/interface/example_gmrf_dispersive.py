@@ -146,7 +146,8 @@ def main() -> None:
             "wavelengths": np.array([1540 * nm, 1550 * nm, 1560 * nm, 1570 * nm]),
             "length_unit": "um",
             "grids": [512, 512],
-            "harmonics": [21, 21],
+            "harmonics": "auto",
+            "maxG": 441,
             "lattice_vectors": {"t1": [float(t1[0, 0]), float(t1[0, 1])], "t2": [float(t2[0, 0]), float(t2[0, 1])]},
             "trn_material": "FusedSilica",
         },
@@ -203,10 +204,10 @@ def main() -> None:
     # Example 1: Get zero-order field components
     print("Example 1: Getting zero-order field components")
     tx_field = result["field_fourier_coefficients"]["transmission"]["E"]["x"]
-    kdim_x = tx_field.shape[1]
-    kdim_y = tx_field.shape[2]
-    ix = kdim_x // 2
-    iy = kdim_y // 2
+    harmonics_x = tx_field.shape[1]
+    harmonics_y = tx_field.shape[2]
+    ix = harmonics_x // 2
+    iy = harmonics_y // 2
     tx = tx_field[:, ix, iy]
     ty = result["field_fourier_coefficients"]["transmission"]["E"]["y"][:, ix, iy]
     tz = result["field_fourier_coefficients"]["transmission"]["E"]["z"][:, ix, iy]
@@ -264,12 +265,12 @@ def main() -> None:
     kzref = result["wavevectors"]["kz"]["reflection"]
     for i in range(len(spec["solver"]["wavelengths"])):
         wavelength = spec["solver"]["wavelengths"][i] * 1e3
-        kz_reshaped = kzref[i].reshape(kdim_x, kdim_y)
+        kz_reshaped = kzref[i].reshape(harmonics_x, harmonics_y)
         prop_orders = []
-        for ix2 in range(kdim_x):
-            for iy2 in range(kdim_y):
+        for ix2 in range(harmonics_x):
+            for iy2 in range(harmonics_y):
                 if torch.abs(torch.imag(kz_reshaped[ix2, iy2])) < 1e-6:
-                    prop_orders.append((ix2 - kdim_x // 2, iy2 - kdim_y // 2))
+                    prop_orders.append((ix2 - harmonics_x // 2, iy2 - harmonics_y // 2))
         print(f"  Wavelength {wavelength:.1f} nm: {len(prop_orders)} propagating orders")
         print(f"    Orders: {prop_orders}")
 
@@ -286,7 +287,7 @@ def main() -> None:
     print("kzref for different wavelengths:")
     for i in range(len(spec["solver"]["wavelengths"])):
         wavelength = spec["solver"]["wavelengths"][i] * 1e3
-        kzref_val = kzref[i].reshape(kdim_x, kdim_y)[(kdim_x // 2, kdim_y // 2)]
+        kzref_val = kzref[i].reshape(harmonics_x, harmonics_y)[(harmonics_x // 2, harmonics_y // 2)]
         print(f"  Wavelength {wavelength:.1f} nm: kzref = {torch.abs(kzref_val).item():.6f}")
 
     print("\nEnergy conservation check for dispersive system:")

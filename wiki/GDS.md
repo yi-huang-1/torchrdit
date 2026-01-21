@@ -59,7 +59,7 @@ from torchrdit.shapes import ShapeGenerator
 from torchrdit.gds import mask_to_gds
 
 # Create shape generator and mask
-shape_gen = ShapeGenerator(X, Y, rdim)
+shape_gen = ShapeGenerator(X, Y, grids)
 mask = shape_gen.generate_circle_mask(center=(0, 0), radius=0.5)
 
 # Export to GDS
@@ -159,7 +159,7 @@ from torchrdit.shapes import ShapeGenerator
 from torchrdit.gds import mask_to_gds, gds_to_mask
 
 # Create shape generator
-shape_gen = ShapeGenerator(X, Y, rdim)
+shape_gen = ShapeGenerator(X, Y, grids)
 
 # Generate a mask
 mask = shape_gen.generate_circle_mask(center=(0, 0), radius=0.5)
@@ -311,7 +311,7 @@ from torchrdit.shapes import ShapeGenerator
 from torchrdit.gds import mask_to_gds
 
 # Create shape generator and mask
-shape_gen = ShapeGenerator(X, Y, rdim)
+shape_gen = ShapeGenerator(X, Y, grids)
 mask = shape_gen.generate_circle_mask(center=(0, 0), radius=0.5)
 
 # Export to GDS
@@ -427,7 +427,7 @@ from torchrdit.shapes import ShapeGenerator
 from torchrdit.gds import gds_to_mask
 
 # Create shape generator
-shape_gen = ShapeGenerator(X, Y, rdim)
+shape_gen = ShapeGenerator(X, Y, grids)
 
 # Import mask from GDS JSON
 mask = gds_to_mask("device.json", shape_gen)

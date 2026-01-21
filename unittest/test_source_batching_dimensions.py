@@ -22,7 +22,7 @@ from torchrdit.results import SolverResults
 class TestCurrentDimensionFlow:
     """Document and verify current single-source dimension flow."""
 
-    def setup_solver(self, n_freqs=3, kdim=(3, 3)):
+    def setup_solver(self, n_freqs=3, harmonics=(3, 3)):
         """Create a basic solver for testing."""
         # Create materials
         mat_air = create_material(name="air", permittivity=1.0)
@@ -32,8 +32,8 @@ class TestCurrentDimensionFlow:
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=np.linspace(0.8, 2.0, n_freqs),
-            rdim=[512, 512],
-            kdim=list(kdim),
+            grids=[512, 512],
+            harmonics=list(harmonics),
             t1=torch.tensor([[1.0, 0.0]]),
             t2=torch.tensor([[0.0, 1.0]]),
             device="cpu",
@@ -62,17 +62,17 @@ class TestCurrentDimensionFlow:
 
     def test_k_vector_dimensions(self):
         """Test dimensions in results with single source."""
-        solver = self.setup_solver(n_freqs=3, kdim=(5, 5))
+        solver = self.setup_solver(n_freqs=3, harmonics=(5, 5))
         
         source = {"theta": 0.1, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
         result = solver.solve(source)
 
         # Document diffraction order dimensions
         assert result.reflection_diffraction.shape == (3, 5, 5), (
-            "reflection_diffraction should be (n_freqs, kdim[0], kdim[1])"
+            "reflection_diffraction should be (n_freqs, harmonics[0], harmonics[1])"
         )
         assert result.transmission_diffraction.shape == (3, 5, 5), (
-            "transmission_diffraction should be (n_freqs, kdim[0], kdim[1])"
+            "transmission_diffraction should be (n_freqs, harmonics[0], harmonics[1])"
         )
 
     # Removed: test_polarization_dimensions (redundant)
@@ -83,7 +83,7 @@ class TestCurrentDimensionFlow:
 class TestBatchedSourceDimensions:
     """Test expected dimension flow with batched sources."""
 
-    def create_batched_solver(self, n_freqs=3, kdim=(3, 3)):
+    def create_batched_solver(self, n_freqs=3, harmonics=(3, 3)):
         """Create solver for batched testing."""
         # Create materials
         mat_air = create_material(name="air", permittivity=1.0)
@@ -93,8 +93,8 @@ class TestBatchedSourceDimensions:
         solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.linspace(0.8, 2.0, n_freqs),
-            rdim=[512, 512],
-            kdim=list(kdim),
+            grids=[512, 512],
+            harmonics=list(harmonics),
             device="cpu",
         )
 
@@ -110,7 +110,7 @@ class TestBatchedSourceDimensions:
 
     def test_batched_k_vector_dimensions(self):
         """Test k-vector dimensions with batched sources."""
-        solver = self.create_batched_solver(n_freqs=3, kdim=(5, 5))
+        solver = self.create_batched_solver(n_freqs=3, harmonics=(5, 5))
 
         sources = [
             {"theta": i * 0.05, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
@@ -126,7 +126,7 @@ class TestBatchedSourceDimensions:
 
     def test_batched_result_dimensions(self):
         """Test result dimensions with batched sources."""
-        solver = self.create_batched_solver(n_freqs=5, kdim=(3, 3))
+        solver = self.create_batched_solver(n_freqs=5, harmonics=(3, 3))
 
         sources = [
             {"theta": theta, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
@@ -139,15 +139,15 @@ class TestBatchedSourceDimensions:
         assert results.reflection.shape == (3, 5), "reflection should be (n_sources, n_freqs)"
         assert results.transmission.shape == (3, 5), "transmission should be (n_sources, n_freqs)"
         assert results.reflection_diffraction.shape == (3, 5, 3, 3), (
-            "reflection_diffraction should be (n_sources, n_freqs, kdim[0], kdim[1])"
+            "reflection_diffraction should be (n_sources, n_freqs, harmonics[0], harmonics[1])"
         )
         assert results.transmission_diffraction.shape == (3, 5, 3, 3), (
-            "transmission_diffraction should be (n_sources, n_freqs, kdim[0], kdim[1])"
+            "transmission_diffraction should be (n_sources, n_freqs, harmonics[0], harmonics[1])"
         )
 
     def test_backward_compatibility(self):
         """Test that single source still works with expected dimensions."""
-        solver = self.create_batched_solver(n_freqs=3, kdim=(3, 3))
+        solver = self.create_batched_solver(n_freqs=3, harmonics=(3, 3))
 
         # Single source (backward compatibility)
         source = {"theta": 0.1, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
@@ -161,7 +161,7 @@ class TestBatchedSourceDimensions:
 
     def test_dimension_consistency_with_batched_sources(self):
         """Test that dimensions are consistent across different batch sizes."""
-        solver = self.create_batched_solver(n_freqs=4, kdim=(5, 5))
+        solver = self.create_batched_solver(n_freqs=4, harmonics=(5, 5))
 
         # Test different batch sizes
         for batch_size in [1, 3]:

@@ -21,7 +21,7 @@ from torchrdit.constants import Algorithm
 class TestBatchedKVectors:
     """Test batched k-vector initialization for tensor-level source processing."""
 
-    def setup_solver(self, n_freqs=3, kdim=(3, 3)):
+    def setup_solver(self, n_freqs=3, harmonics=(3, 3)):
         """Create a basic solver for testing."""
         # Create materials
         mat_air = create_material(name="air", permittivity=1.0)
@@ -31,8 +31,8 @@ class TestBatchedKVectors:
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=np.linspace(0.8, 1.2, n_freqs),
-            rdim=[256, 256],
-            kdim=list(kdim),
+            grids=[256, 256],
+            harmonics=list(harmonics),
             t1=torch.tensor([[1.0, 0.0]]),
             t2=torch.tensor([[0.0, 1.0]]),
             device="cpu",
@@ -63,7 +63,7 @@ class TestBatchedKVectors:
 
     def test_single_source_matches_original(self):
         """Test that batched computation with single source matches original."""
-        solver = self.setup_solver(n_freqs=3, kdim=(5, 5))
+        solver = self.setup_solver(n_freqs=3, harmonics=(5, 5))
         
         source = {"theta": 0.1, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
         
@@ -83,7 +83,7 @@ class TestBatchedKVectors:
 
     def test_multiple_sources_dimensions(self):
         """Test dimensions with multiple sources."""
-        solver = self.setup_solver(n_freqs=3, kdim=(5, 5))
+        solver = self.setup_solver(n_freqs=3, harmonics=(5, 5))
         n_sources = 4
         
         # Create simple set of sources and run batched path
@@ -95,7 +95,7 @@ class TestBatchedKVectors:
         kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
         
         # Check dimensions
-        expected_shape = (n_sources, 3, 5, 5)  # (n_sources, n_freqs, kdim[0], kdim[1])
+        expected_shape = (n_sources, 3, 5, 5)  # (n_sources, n_freqs, harmonics[0], harmonics[1])
         assert kx_0.shape == expected_shape, "kx_0 shape mismatch"
         assert ky_0.shape == expected_shape, "ky_0 shape mismatch"
         assert kz_ref_0.shape == expected_shape, "kz_ref_0 shape mismatch"
@@ -103,7 +103,7 @@ class TestBatchedKVectors:
 
     def test_batched_matches_sequential(self):
         """Test that batched k-vectors match sequential computation."""
-        solver = self.setup_solver(n_freqs=5, kdim=(7, 7))
+        solver = self.setup_solver(n_freqs=5, harmonics=(7, 7))
         
         sources = [
             {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
@@ -169,7 +169,7 @@ class TestBatchedKVectors:
 
     def test_normal_incidence(self):
         """Test k-vectors for normal incidence."""
-        solver = self.setup_solver(n_freqs=2, kdim=(3, 3))
+        solver = self.setup_solver(n_freqs=2, harmonics=(3, 3))
         
         # Normal incidence
         source = {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
@@ -178,14 +178,14 @@ class TestBatchedKVectors:
         kx_0, ky_0, _, _ = solver._initialize_k_vectors()
         
         # For normal incidence, kx and ky at center should be zero
-        center_idx = solver.kdim[0] // 2, solver.kdim[1] // 2
+        center_idx = solver.harmonics[0] // 2, solver.harmonics[1] // 2
         # Numerical relaxation in solver may set exact zeros to small epsilon; allow tolerance
         assert torch.max(torch.abs(kx_0[0, :, center_idx[0], center_idx[1]])).item() <= 1e-5
         assert torch.max(torch.abs(ky_0[0, :, center_idx[0], center_idx[1]])).item() <= 1e-5
 
     def test_oblique_incidence(self):
         """Test k-vectors for oblique incidence."""
-        solver = self.setup_solver(n_freqs=3, kdim=(5, 5))
+        solver = self.setup_solver(n_freqs=3, harmonics=(5, 5))
         
         # Oblique incidence
         theta = np.pi/4  # 45 degrees
@@ -200,13 +200,13 @@ class TestBatchedKVectors:
         ky_0 = ky_0[0]
         
         # Should have non-zero values at center
-        center_idx = solver.kdim[0] // 2, solver.kdim[1] // 2
+        center_idx = solver.harmonics[0] // 2, solver.harmonics[1] // 2
         assert not torch.allclose(kx_0[:, center_idx[0], center_idx[1]], torch.zeros(3, dtype=solver.tcomplex))
         assert not torch.allclose(ky_0[:, center_idx[0], center_idx[1]], torch.zeros(3, dtype=solver.tcomplex))
 
     def test_branch_cut_handling(self):
         """Test proper handling of branch cuts in kz calculation."""
-        solver = self.setup_solver(n_freqs=2, kdim=(3, 3))
+        solver = self.setup_solver(n_freqs=2, harmonics=(3, 3))
         
         # Create cases with various incident angles
         sources = [
@@ -240,8 +240,8 @@ class TestBatchedKVectors:
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=np.array([1.0]),
-            rdim=[256, 256],
-            kdim=[3, 3],
+            grids=[256, 256],
+            harmonics=[3, 3],
             device="cpu",
         )
         

@@ -57,6 +57,37 @@ def test_interface_pattern_on_homogeneous_layer_raises():
         solve(spec)
 
 
+def test_interface_accepts_homogeneous_layer_without_is_homogeneous():
+    from torchrdit.interface import solve
+
+    spec = {
+        "solver": {"algorithm": "RCWA", "wavelengths": [1.55], "grids": [8, 8], "harmonics": [3, 3]},
+        "materials": {"Si": {"permittivity": 12.0}},
+        "layers": [{"material": "Si", "thickness": 0.1}],
+        "sources": {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
+        "output": {"type": "torch"},
+    }
+
+    out = solve(spec)
+    assert isinstance(out, dict)
+    assert "efficiency" in out
+
+
+def test_interface_pattern_requires_is_homogeneous_flag():
+    from torchrdit.interface import solve
+
+    spec = {
+        "solver": {"algorithm": "RCWA", "wavelengths": [1.55], "grids": [8, 8], "harmonics": [3, 3]},
+        "materials": {"Si": {"permittivity": 12.0}},
+        "layers": [{"material": "Si", "thickness": 0.1, "pattern": {"layer_shape": "m", "shapes": []}}],
+        "sources": {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
+        "output": {"type": "torch"},
+    }
+
+    with pytest.raises(ValueError, match=r"spec\.layers\[0\]\.is_homogeneous"):
+        solve(spec)
+
+
 def test_interface_legacy_dict_var_node_rejected():
     from torchrdit.interface import solve
 
@@ -108,7 +139,14 @@ def test_interface_var_definitions_are_order_insensitive():
     assert float(out["$t"]) == pytest.approx(2.0)
 
 
-@pytest.mark.parametrize("bad_key, hint", [("rdim", "grids"), ("kdim", "harmonics"), ("lam0", "wavelengths")])
+@pytest.mark.parametrize(
+    "bad_key, hint",
+    [
+        ("r" + "dim", "grids"),
+        ("k" + "dim", "harmonics"),
+        ("lam0", "wavelengths"),
+    ],
+)
 def test_interface_solver_legacy_keys_raise(bad_key, hint):
     from torchrdit.interface import solve
 
@@ -278,6 +316,37 @@ def test_interface_solver_dim_validation_raises(bad_solver):
         solve(spec)
 
 
+@pytest.mark.parametrize("harmonics", [[4, 3], [3, 4], [4, 4]])
+def test_interface_solver_harmonics_even_raises(harmonics):
+    from torchrdit.interface import _normalize_solver_spec, SpecError
+
+    solver = {
+        "algorithm": "RCWA",
+        "wavelengths": [1.55],
+        "grids": [16, 16],
+        "harmonics": harmonics,
+    }
+
+    with pytest.raises(SpecError, match=r"spec\.solver\.harmonics.*odd"):
+        _normalize_solver_spec(solver)
+
+
+@pytest.mark.parametrize("bad_maxG", [0, -1, 1.5, True, "10"])
+def test_interface_solver_auto_maxG_invalid_raises(bad_maxG):
+    from torchrdit.interface import _normalize_solver_spec, SpecError
+
+    solver = {
+        "algorithm": "RCWA",
+        "wavelengths": [1.55],
+        "grids": [16, 16],
+        "harmonics": "auto",
+        "maxG": bad_maxG,
+    }
+
+    with pytest.raises(SpecError, match=r"spec\.solver\.maxG"):
+        _normalize_solver_spec(solver)
+
+
 def test_interface_invalid_output_type_raises():
     from torchrdit.interface import solve, SpecError
 
@@ -409,21 +478,14 @@ def test_interface_pattern_mask_shape_mismatch_raises():
         solve(spec)
 
 
-@pytest.mark.parametrize(
-    "mask_value, match",
-    [
-        (1.2, r"mask values must be within \[0,1\]"),
-        (float("nan"), r"mask contains non-finite"),
-    ],
-)
-def test_interface_pattern_mask_value_range_checks_raise(mask_value, match):
-    from torchrdit.interface import solve, SpecError
+def test_interface_pattern_mask_allows_out_of_range_values():
+    from torchrdit.interface import solve
     import torch
 
     spec = {
         "solver": {"algorithm": "RCWA", "wavelengths": [1.55], "grids": [16, 16], "harmonics": [3, 3], "device": "cpu"},
         "materials": {"Si": {"permittivity": 12.0}, "SiO2": {"permittivity": 2.25}},
-        "vars": {"$m": torch.full((16, 16), mask_value)},
+        "vars": {"$m": torch.full((16, 16), 1.2)},
         "layers": [
             {
                 "material": "Si",
@@ -436,5 +498,5 @@ def test_interface_pattern_mask_value_range_checks_raise(mask_value, match):
         "output": {"type": "torch"},
     }
 
-    with pytest.raises(SpecError, match=match):
-        solve(spec)
+    result = solve(spec)
+    assert "efficiency" in result

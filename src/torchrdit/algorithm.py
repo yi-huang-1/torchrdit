@@ -138,7 +138,7 @@ class RCWAAlgorithm(SolverAlgorithm):
         """
         return "RCWA"
 
-    def solve_nonhomo_layer(self, layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, kdim, k_0, **kwargs):
+    def solve_nonhomo_layer(self, layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, harmonics, k_0, **kwargs):
         """RCWA implementation for solving non-homogeneous layer.
 
         This method implements the traditional approach for calculating the scattering
@@ -155,7 +155,7 @@ class RCWAAlgorithm(SolverAlgorithm):
             q_mat_i (torch.Tensor): Q matrix for the layer.
             mat_w0 (torch.Tensor): W0 matrix.
             mat_v0 (torch.Tensor): V0 matrix.
-            kdim (list): Dimensions in k-space [kheight, kwidth].
+            harmonics (list): Dimensions in k-space [kx, ky].
             k_0 (torch.Tensor): Wave number.
             **kwargs: Additional parameters.
 
@@ -170,10 +170,10 @@ class RCWAAlgorithm(SolverAlgorithm):
         smat_layer = {}
         mat_lam_i, mat_w_i = EigComplex.apply(p_mat_i @ q_mat_i)
 
-        inv_dmat_lam_i = to_diag_util(1 / torch.sqrt(mat_lam_i), kdim)
+        inv_dmat_lam_i = to_diag_util(1 / torch.sqrt(mat_lam_i), harmonics)
 
         mat_v_i = q_mat_i @ mat_w_i @ inv_dmat_lam_i
-        mat_x_i = torch.linalg.matrix_exp(to_diag_util(-torch.sqrt(mat_lam_i) * k_0[:, None] * layer_thickness, kdim))
+        mat_x_i = torch.linalg.matrix_exp(to_diag_util(-torch.sqrt(mat_lam_i) * k_0[:, None] * layer_thickness, harmonics))
 
         # Calculate Layer Scattering Matrix
         mat_a_i = tsolve(mat_w_i, mat_w0) + tsolve(mat_v_i, mat_v0)
@@ -288,7 +288,7 @@ class RDITAlgorithm(SolverAlgorithm):
         """
         return "R-DIT"
 
-    def solve_nonhomo_layer(self, layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, kdim, k_0, **kwargs):
+    def solve_nonhomo_layer(self, layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, harmonics, k_0, **kwargs):
         """R-DIT implementation for solving non-homogeneous layer.
 
         This method implements the eigendecomposition-free approach for calculating
@@ -305,7 +305,7 @@ class RDITAlgorithm(SolverAlgorithm):
             q_mat_i (torch.Tensor): Q matrix for the layer.
             mat_w0 (torch.Tensor): W0 matrix.
             mat_v0 (torch.Tensor): V0 matrix.
-            kdim (list): Dimensions in k-space [kheight, kwidth].
+            harmonics (list): Dimensions in k-space [kx, ky].
             k_0 (torch.Tensor): Wave number.
             **kwargs: Additional parameters.
 
@@ -316,13 +316,13 @@ class RDITAlgorithm(SolverAlgorithm):
         Keywords:
             R-DIT, scattering matrix, eigendecomposition-free, layer calculation, non-homogeneous
         """
-        kdim_0_tims_1 = kdim[0] * kdim[1]
+        harmonics_0_tims_1 = harmonics[0] * harmonics[1]
 
         # Pre-allocate all matrices to avoid repeated allocations
         device = p_mat_i.device
         dtype = p_mat_i.dtype
         batch_size = k_0.shape[0]
-        matrix_size = 2 * kdim_0_tims_1
+        matrix_size = 2 * harmonics_0_tims_1
 
         # smat_layer = {}
 

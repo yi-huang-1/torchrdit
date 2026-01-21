@@ -13,8 +13,8 @@ class TestTorchrditConfig:
             "precision": "DOUBLE",
             "wavelengths": [1540e-3, 1550e-3, 1560e-3, 1570e-3],
             "length_unit": "um",
-            "rdim": [512, 512],
-            "kdim": [9, 9],
+            "grids": [512, 512],
+            "harmonics": [9, 9],
             "use_FFF": True,
             "lattice_vectors": {
                 "t1": [0.5, -0.866],
@@ -53,8 +53,8 @@ class TestTorchrditConfig:
         # Verify solver was created with correct configuration
         assert getattr(solver.algorithm, 'name', None) == 'RCWA'
         assert len(solver.lam0) == 4  # 4 wavelengths
-        assert solver.rdim == [512, 512]
-        assert solver.kdim == [9, 9]
+        assert solver.grids == [512, 512]
+        assert solver.harmonics == [9, 9]
         # Verify materials were added
         assert 'SiO' in solver._matlib
         assert 'SiN' in solver._matlib
@@ -67,8 +67,8 @@ class TestTorchrditConfig:
             "precision": "DOUBLE",
             "wavelengths": [1540e-3, 1550e-3, 1560e-3, 1570e-3],
             "length_unit": "um",
-            "rdim": [512, 512],
-            "kdim": [9, 9],
+            "grids": [512, 512],
+            "harmonics": [9, 9],
             "use_FFF": True,
             "lattice_vectors": {
                 "t1": [0.5, -0.866],
@@ -112,8 +112,8 @@ class TestTorchrditConfig:
         # Verify solver was created with correct configuration from JSON
         assert getattr(solver.algorithm, 'name', None) == 'RCWA'
         assert len(solver.lam0) == 4  # 4 wavelengths
-        assert solver.rdim == [512, 512]
-        assert solver.kdim == [9, 9]
+        assert solver.grids == [512, 512]
+        assert solver.harmonics == [9, 9]
         # Verify materials were added
         assert 'SiO' in solver._matlib
         assert 'SiN' in solver._matlib

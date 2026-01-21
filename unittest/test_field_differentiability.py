@@ -39,8 +39,8 @@ class TestFieldDifferentiability:
         solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.0]),
-            kdim=[7, 7],  # Smaller for faster tests
-            rdim=[128, 128],
+            harmonics=[7, 7],  # Smaller for faster tests
+            grids=[128, 128],
             device='cpu'
         )
         return solver
@@ -51,8 +51,8 @@ class TestFieldDifferentiability:
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=np.array([1.0]),
-            kdim=[7, 7],  # Smaller for faster tests
-            rdim=[128, 128],
+            harmonics=[7, 7],  # Smaller for faster tests
+            grids=[128, 128],
             device='cpu'
         )
         return solver

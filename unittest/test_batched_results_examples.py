@@ -25,8 +25,8 @@ class TestUnifiedResultsBatchingExamples(unittest.TestCase):
         self.solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[256, 256],
-            kdim=[5, 5]
+            grids=[256, 256],
+            harmonics=[5, 5]
         )
         
         # Add materials and structure
@@ -264,8 +264,8 @@ class TestUnifiedResultsBatchingExamples(unittest.TestCase):
         solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.31, 1.55, 1.80]),
-            rdim=[256, 256],
-            kdim=[5, 5]
+            grids=[256, 256],
+            harmonics=[5, 5]
         )
         
         # Add materials and structure

@@ -34,8 +34,8 @@ class TestSourceBatchingAPI:
             algorithm=Algorithm.RCWA,
             lam0=[1.54],  # wavelength in um
             lengthunit="um",
-            rdim=[16, 16],
-            kdim=[3, 3],
+            grids=[16, 16],
+            harmonics=[3, 3],
             t1=t1,
             t2=t2,
         )
@@ -103,7 +103,7 @@ class TestSourceBatchingAPI:
             1,
             3,
             3,
-        )  # (n_sources, n_freqs, kdim[0], kdim[1])
+        )  # (n_sources, n_freqs, harmonics[0], harmonics[1])
         assert results.transmission_field.x.shape == (5, 1, 3, 3)
 
     def test_batched_results_indexing(self):

@@ -60,15 +60,15 @@ class TestConstantsDocExamples(unittest.TestCase):
         # Create solver with RCWA algorithm
         rcwa_solver = create_solver(
             algorithm=Algorithm.RCWA,
-            rdim=[256, 256],
-            kdim=[5, 5]
+            grids=[256, 256],
+            harmonics=[5, 5]
         )
         
         # Create solver with RDIT algorithm
         rdit_solver = create_solver(
             algorithm=Algorithm.RDIT,
-            rdim=[512, 512],
-            kdim=[7, 7]
+            grids=[512, 512],
+            harmonics=[7, 7]
         )
         
         # Check which algorithm a solver uses
@@ -76,10 +76,10 @@ class TestConstantsDocExamples(unittest.TestCase):
         self.assertEqual(rdit_solver.algorithm.name, "R-DIT")
         
         # Verify solver dimensions were set correctly
-        self.assertEqual(rcwa_solver.rdim, [256, 256])
-        self.assertEqual(rcwa_solver.kdim, [5, 5])
-        self.assertEqual(rdit_solver.rdim, [512, 512])
-        self.assertEqual(rdit_solver.kdim, [7, 7])
+        self.assertEqual(rcwa_solver.grids, [256, 256])
+        self.assertEqual(rcwa_solver.harmonics, [5, 5])
+        self.assertEqual(rdit_solver.grids, [512, 512])
+        self.assertEqual(rdit_solver.harmonics, [7, 7])
     
     def test_precision_enum_example(self):
         """Test the Precision enumeration examples."""

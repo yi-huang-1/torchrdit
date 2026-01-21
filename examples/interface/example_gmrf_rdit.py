@@ -29,34 +29,34 @@ import matplotlib.pyplot as plt
 
 
 def _get_diffraction_order_indices(field_x: torch.Tensor, order_x: int = 0, order_y: int = 0) -> tuple[int, int]:
-    kdim_x = field_x.shape[1]
-    kdim_y = field_x.shape[2]
-    cx = kdim_x // 2
-    cy = kdim_y // 2
+    harmonics_x = field_x.shape[1]
+    harmonics_y = field_x.shape[2]
+    cx = harmonics_x // 2
+    cy = harmonics_y // 2
     ix = cx + int(order_x)
     iy = cy + int(order_y)
-    if ix < 0 or ix >= kdim_x or iy < 0 or iy >= kdim_y:
+    if ix < 0 or ix >= harmonics_x or iy < 0 or iy >= harmonics_y:
         raise ValueError(f"Diffraction order ({order_x}, {order_y}) is out of bounds")
     return (ix, iy)
 
 
 def _get_all_diffraction_orders(field_x: torch.Tensor) -> list[tuple[int, int]]:
-    kdim_x = field_x.shape[1]
-    kdim_y = field_x.shape[2]
-    cx = kdim_x // 2
-    cy = kdim_y // 2
-    return [(ix - cx, iy - cy) for ix in range(kdim_x) for iy in range(kdim_y)]
+    harmonics_x = field_x.shape[1]
+    harmonics_y = field_x.shape[2]
+    cx = harmonics_x // 2
+    cy = harmonics_y // 2
+    return [(ix - cx, iy - cy) for ix in range(harmonics_x) for iy in range(harmonics_y)]
 
 
 def _get_propagating_orders(kz_ref: torch.Tensor, *, field_x: torch.Tensor, wavelength_idx: int = 0) -> list[tuple[int, int]]:
-    kdim_x = field_x.shape[1]
-    kdim_y = field_x.shape[2]
-    kz = kz_ref[wavelength_idx].reshape(kdim_x, kdim_y)
-    cx = kdim_x // 2
-    cy = kdim_y // 2
+    harmonics_x = field_x.shape[1]
+    harmonics_y = field_x.shape[2]
+    kz = kz_ref[wavelength_idx].reshape(harmonics_x, harmonics_y)
+    cx = harmonics_x // 2
+    cy = harmonics_y // 2
     orders: list[tuple[int, int]] = []
-    for ix in range(kdim_x):
-        for iy in range(kdim_y):
+    for ix in range(harmonics_x):
+        for iy in range(harmonics_y):
             if torch.abs(torch.imag(kz[ix, iy])) < 1e-6:
                 orders.append((ix - cx, iy - cy))
     return orders
@@ -180,7 +180,8 @@ def main() -> None:
             "wavelengths": np.array([1540 * nm, 1550 * nm, 1560 * nm, 1570 * nm]),
             "length_unit": "um",
             "grids": [512, 512],
-            "harmonics": [9, 9],
+            "harmonics": "auto",
+            "maxG": 81,
             "lattice_vectors": {"t1": [float(t1[0]), float(t1[1])], "t2": [float(t2[0]), float(t2[1])]},
             "trn_material": "FusedSilica",
         },

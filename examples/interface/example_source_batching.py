@@ -21,11 +21,11 @@ import torchrdit as tr
 from torchrdit.shapes import ShapeGenerator
 
 
-def _shape_generator_cartesian(rdim, device="cpu"):
-    vec_p = torch.linspace(-0.5, 0.5, rdim[0], device=device)
-    vec_q = torch.linspace(-0.5, 0.5, rdim[1], device=device)
+def _shape_generator_cartesian(grids, device="cpu"):
+    vec_p = torch.linspace(-0.5, 0.5, grids[0], device=device)
+    vec_q = torch.linspace(-0.5, 0.5, grids[1], device=device)
     mesh_q, mesh_p = torch.meshgrid(vec_q, vec_p, indexing="xy")
-    return ShapeGenerator(mesh_p, mesh_q, tuple(rdim))
+    return ShapeGenerator(mesh_p, mesh_q, tuple(grids))
 
 
 def example_angle_sweep():
@@ -33,8 +33,9 @@ def example_angle_sweep():
     print("\n=== Example 1: Angle Sweep ===")
 
     # Create a simple grating structure (same parameters as original)
-    rdim = [512, 512]
-    kdim = [5, 5]
+    grids = [512, 512]
+    harmonics = [5, 5]
+    maxG = harmonics[0] * harmonics[1]
     wavelengths = np.array([1.55])
     device = "cpu"
 
@@ -51,7 +52,7 @@ def example_angle_sweep():
         sources.append({"name": f"s{i}", "theta": float(theta), "phi": 0, "pte": 1.0, "ptm": 0.0})
 
     spec = {
-        "solver": {"algorithm": "RDIT", "wavelengths": wavelengths, "grids": rdim, "harmonics": kdim, "device": device},
+        "solver": {"algorithm": "RDIT", "wavelengths": wavelengths, "grids": grids, "harmonics": "auto", "maxG": maxG, "device": device},
         "materials": {
             "Si": {"permittivity": 12.25},  # n=3.5
             "SiO2": {"permittivity": 2.25},  # n=1.5
@@ -157,12 +158,13 @@ def example_polarization_sweep():
     """Demonstrate polarization state analysis with batched sources."""
     print("\n=== Example 2: Polarization State Analysis ===")
 
-    rdim = [256, 256]
-    kdim = [5, 5]
+    grids = [256, 256]
+    harmonics = [5, 5]
+    maxG = harmonics[0] * harmonics[1]
     wavelengths = np.array([1.55])
     device = "cpu"
 
-    shape_gen = _shape_generator_cartesian(rdim, device=device)
+    shape_gen = _shape_generator_cartesian(grids, device=device)
     mask = shape_gen.generate_rectangle_mask(center=(0, 0), x_size=0.3, y_size=0.5, angle=0)
 
     theta = 30 * np.pi / 180  # 30° incidence
@@ -180,7 +182,7 @@ def example_polarization_sweep():
         sources.append({"name": f"s{i}", "theta": float(theta), "phi": 0, "pte": pol["pte"], "ptm": pol["ptm"]})
 
     spec = {
-        "solver": {"algorithm": "RDIT", "wavelengths": wavelengths, "grids": rdim, "harmonics": kdim, "device": device},
+        "solver": {"algorithm": "RDIT", "wavelengths": wavelengths, "grids": grids, "harmonics": "auto", "maxG": maxG, "device": device},
         "materials": {"Si": {"permittivity": 12.25}, "air": {"permittivity": 1.0}},
         "vars": {"$mask": mask},
         "layers": [
@@ -260,14 +262,15 @@ def example_optimization_with_batched_sources():
     """Demonstrate optimization with multiple incident conditions."""
     print("\n=== Example 3: Multi-Angle Optimization ===")
 
-    rdim = [256, 256]
-    kdim = [5, 5]
+    grids = [256, 256]
+    harmonics = [5, 5]
+    maxG = harmonics[0] * harmonics[1]
     wavelengths = np.array([1.55])
     device = "cpu"
 
-    shape_gen = _shape_generator_cartesian(rdim, device=device)
+    shape_gen = _shape_generator_cartesian(grids, device=device)
 
-    solver_spec = {"algorithm": "RDIT", "wavelengths": wavelengths, "grids": rdim, "harmonics": kdim, "device": device}
+    solver_spec = {"algorithm": "RDIT", "wavelengths": wavelengths, "grids": grids, "harmonics": "auto", "maxG": maxG, "device": device}
     layers = [
         {"material": "air", "thickness": 0.5, "is_homogeneous": True},
         {"material": "Si", "thickness": 0.3, "is_homogeneous": False, "pattern": {"shapes": [{"name": "m", "type": "mask", "value": "$mask"}], "layer_shape": "m"}},
@@ -283,10 +286,6 @@ def example_optimization_with_batched_sources():
     target_angles = [0 * deg, 15 * deg, 30 * deg]
     sources = [{"name": f"s{i}", "theta": float(th), "phi": 0, "pte": 1.0, "ptm": 0.0} for i, th in enumerate(target_angles)]
 
-    optimizer = torch.optim.Adam([mask], lr=0.02)
-
-    history = {"loss": [], "transmission": []}
-
     print("\nOptimizing for uniform response across multiple angles...")
     n_iterations = 50
 
@@ -295,51 +294,61 @@ def example_optimization_with_batched_sources():
         "materials": {"Si": {"permittivity": 12.25}, "air": {"permittivity": 1.0}},
         "layers": layers,
         "sources": sources,
+        "vars": {"$mask": mask},
         "output": {"type": "torch"},
     }
 
-    for iter in range(n_iterations):
-        optimizer.zero_grad()
+    term_list = [f"Results['s{i}']['efficiency']['transmission'][0]" for i in range(len(sources))]
+    mean_term = f"mean([{', '.join(term_list)}])"
+    mean_sq_term = f"mean([{', '.join([f'({t})**2' for t in term_list])}])"
+    objective = f"-{mean_term} + 0.5*({mean_sq_term} - ({mean_term})**2)"
 
-        spec = dict(base_spec)
-        spec["vars"] = {"$mask": mask}
+    opt_out = tr.optimize(
+        base_spec,
+        objective=objective,
+        options={
+            "steps": n_iterations,
+            "optimizer": {"name": "adam", "lr": 0.02},
+            "return_best": True,
+        },
+    )
 
-        results = tr.simulate(spec)
-        trans_values = torch.stack([results[f"s{i}"]["efficiency"]["transmission"][0] for i in range(len(sources))])
-        avg_trans = trans_values.mean()
-        var_trans = trans_values.var()
+    loss_history = opt_out["loss_history"]
+    best = opt_out.get("best")
+    best_results = best["results"] if best else opt_out.get("last_results", {})
+    best_vars = best["vars"] if best else opt_out["vars"]
+    mask_opt = best_vars["$mask"].detach().clamp(0, 1)
 
-        loss = -avg_trans + 0.5 * var_trans
+    target_trans = np.array(
+        [best_results[f"s{i}"]["efficiency"]["transmission"][0].detach().cpu().numpy() for i in range(len(sources))]
+    )
 
-        loss.backward()
-        optimizer.step()
+    print("\nFinal performance verification:")
+    test_angles = np.linspace(0, 45, 10) * deg
+    test_sources = [{"name": f"t{i}", "theta": float(th), "phi": 0, "pte": 1.0, "ptm": 0.0} for i, th in enumerate(test_angles)]
 
-        with torch.no_grad():
-            mask.data = torch.clamp(mask.data, 0, 1)
+    test_spec = dict(base_spec)
+    test_spec["sources"] = test_sources
+    test_spec["vars"] = {"$mask": mask_opt}
 
-        history["loss"].append(loss.item())
-        history["transmission"].append(trans_values.detach().numpy())
-
-        if iter % 10 == 0:
-            print(f"Iteration {iter}: Loss = {loss.item():.4f}, " f"Avg T = {avg_trans.item():.4f}, " f"Std T = {var_trans.sqrt().item():.4f}")
+    final_results = tr.simulate(test_spec)
+    final_trans = np.array([final_results[f"t{i}"]["efficiency"]["transmission"][0].detach().numpy() for i in range(len(test_sources))])
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
     ax = axes[0, 0]
-    ax.plot(history["loss"], "b-", linewidth=2)
+    ax.plot(loss_history, "b-", linewidth=2)
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Loss")
     ax.set_title("Optimization Loss")
     ax.grid(True, alpha=0.3)
 
     ax = axes[0, 1]
-    trans_history = np.array(history["transmission"])
-    for i, angle in enumerate(target_angles):
-        ax.plot(trans_history[:, i], linewidth=2, label=f"{angle*180/np.pi:.0f}°")
-    ax.set_xlabel("Iteration")
+    target_angles_deg = np.array(target_angles) * 180 / np.pi
+    ax.plot(target_angles_deg, target_trans, "o-", linewidth=2)
+    ax.set_xlabel("Angle (degrees)")
     ax.set_ylabel("Transmission")
-    ax.set_title("Transmission Evolution")
-    ax.legend()
+    ax.set_title("Optimized Target Angles")
     ax.grid(True, alpha=0.3)
     ax.set_ylim(0, 1)
 
@@ -351,7 +360,7 @@ def example_optimization_with_batched_sources():
     plt.colorbar(im, ax=ax, fraction=0.046)
 
     ax = axes[1, 1]
-    im = ax.imshow(mask.detach().numpy(), cmap="binary")
+    im = ax.imshow(mask_opt.detach().cpu().numpy(), cmap="binary")
     ax.set_title("Optimized Pattern")
     ax.axis("off")
     plt.colorbar(im, ax=ax, fraction=0.046)
@@ -360,22 +369,11 @@ def example_optimization_with_batched_sources():
     plt.savefig("example_optimization_batched.png", dpi=150)
     plt.show()
 
-    print("\nFinal performance verification:")
-    test_angles = np.linspace(0, 45, 10) * deg
-    test_sources = [{"name": f"t{i}", "theta": float(th), "phi": 0, "pte": 1.0, "ptm": 0.0} for i, th in enumerate(test_angles)]
-
-    test_spec = dict(base_spec)
-    test_spec["sources"] = test_sources
-    test_spec["vars"] = {"$mask": mask.detach()}
-
-    final_results = tr.simulate(test_spec)
-    final_trans = np.array([final_results[f"t{i}"]["efficiency"]["transmission"][0].detach().numpy() for i in range(len(test_sources))])
-
     print(f"Average transmission: {final_trans.mean():.4f}")
     print(f"Standard deviation: {final_trans.std():.4f}")
     print(f"Min/Max transmission: {final_trans.min():.4f} / {final_trans.max():.4f}")
 
-    return mask, final_results
+    return mask_opt, final_results
 
 
 def example_wavelength_and_angle_sweep():
@@ -383,8 +381,9 @@ def example_wavelength_and_angle_sweep():
     print("\n=== Example 4: Combined Wavelength and Angle Sweep ===")
 
     wavelengths = np.linspace(1.5, 1.6, 5)
-    rdim = [256, 256]
-    kdim = [5, 5]
+    grids = [256, 256]
+    harmonics = [5, 5]
+    maxG = harmonics[0] * harmonics[1]
     device = "cpu"
 
     deg = np.pi / 180
@@ -392,7 +391,7 @@ def example_wavelength_and_angle_sweep():
     sources = [{"name": f"s{i}", "theta": float(th), "phi": 0, "pte": 1.0, "ptm": 0.0} for i, th in enumerate(angles)]
 
     spec = {
-        "solver": {"algorithm": "RDIT", "wavelengths": wavelengths, "grids": rdim, "harmonics": kdim, "device": device},
+        "solver": {"algorithm": "RDIT", "wavelengths": wavelengths, "grids": grids, "harmonics": "auto", "maxG": maxG, "device": device},
         "materials": {"Si": {"permittivity": 12.25}, "SiO2": {"permittivity": 2.25}},
         "layers": [
             {"material": "SiO2", "thickness": 0.5, "is_homogeneous": True},
@@ -462,4 +461,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

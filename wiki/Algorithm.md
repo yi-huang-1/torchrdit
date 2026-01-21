@@ -188,7 +188,7 @@ Return the name of the algorithm.
 
 ```python
 def solve_nonhomo_layer(layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0,
-                        kdim, k_0, **kwargs)
+                        harmonics, k_0, **kwargs)
 ```
 
 RCWA implementation for solving non-homogeneous layer.
@@ -210,7 +210,7 @@ Rigorous Coupled Wave Analysis (RCWA) algorithm.
 - `q_mat_i` _torch.Tensor_ - Q matrix for the layer.
 - `mat_w0` _torch.Tensor_ - W0 matrix.
 - `mat_v0` _torch.Tensor_ - V0 matrix.
-- `kdim` _list_ - Dimensions in k-space [kheight, kwidth].
+- `harmonics` _list_ - Dimensions in k-space [kx, ky].
 - `k_0` _torch.Tensor_ - Wave number.
 - `**kwargs` - Additional parameters.
   
@@ -332,7 +332,7 @@ Return the name of the algorithm.
 
 ```python
 def solve_nonhomo_layer(layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0,
-                        kdim, k_0, **kwargs)
+                        harmonics, k_0, **kwargs)
 ```
 
 R-DIT implementation for solving non-homogeneous layer.
@@ -354,7 +354,7 @@ Interface Theory algorithm.
 - `q_mat_i` _torch.Tensor_ - Q matrix for the layer.
 - `mat_w0` _torch.Tensor_ - W0 matrix.
 - `mat_v0` _torch.Tensor_ - V0 matrix.
-- `kdim` _list_ - Dimensions in k-space [kheight, kwidth].
+- `harmonics` _list_ - Dimensions in k-space [kx, ky].
 - `k_0` _torch.Tensor_ - Wave number.
 - `**kwargs` - Additional parameters.
   

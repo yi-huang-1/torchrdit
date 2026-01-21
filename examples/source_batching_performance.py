@@ -32,8 +32,8 @@ def benchmark_scaling():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[7, 7],
+        grids=[256, 256],
+        harmonics=[7, 7],
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     
@@ -127,7 +127,7 @@ def benchmark_complexity():
     """Benchmark performance with different structure complexities."""
     print("\n=== Benchmark 2: Impact of Structure Complexity ===")
     
-    kdim_values = [3, 5, 7, 9, 11]
+    harmonics_values = [3, 5, 7, 9, 11]
     speedups = []
     
     # Fixed number of sources
@@ -135,13 +135,13 @@ def benchmark_complexity():
     deg = np.pi / 180
     angles = np.linspace(0, 60, n_sources) * deg
     
-    for kdim in kdim_values:
+    for harmonics in harmonics_values:
         # Create solver with varying complexity
         solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[256, 256],
-            kdim=[kdim, kdim],
+            grids=[256, 256],
+            harmonics=[harmonics, harmonics],
             device='cuda' if torch.cuda.is_available() else 'cpu'
         )
         
@@ -175,13 +175,13 @@ def benchmark_complexity():
         speedup = seq_time / batch_time
         speedups.append(speedup)
         
-        print(f"kdim={kdim}x{kdim}: Sequential≈{seq_time:.3f}s, "
+        print(f"harmonics={harmonics}x{harmonics}: Sequential≈{seq_time:.3f}s, "
               f"Batched={batch_time:.3f}s, Speedup={speedup:.2f}x")
     
     # Plot
     plt.figure(figsize=(8, 6))
-    plt.plot(kdim_values, speedups, 'bo-', linewidth=2, markersize=8)
-    plt.xlabel('Fourier Harmonics (kdim)')
+    plt.plot(harmonics_values, speedups, 'bo-', linewidth=2, markersize=8)
+    plt.xlabel('Fourier Harmonics (harmonics)')
     plt.ylabel('Speedup Factor')
     plt.title(f'Speedup vs Structure Complexity ({n_sources} sources)')
     plt.grid(True, alpha=0.3)
@@ -198,8 +198,8 @@ def benchmark_wavelength_angle_sweep():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=wavelengths,
-        rdim=[256, 256],
-        kdim=[5, 5],
+        grids=[256, 256],
+        harmonics=[5, 5],
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     
@@ -268,8 +268,8 @@ def benchmark_memory_usage():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[512, 512],
-        kdim=[9, 9],
+        grids=[512, 512],
+        harmonics=[9, 9],
         device='cuda'
     )
     
@@ -370,8 +370,8 @@ def benchmark_optimization_overhead():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[5, 5],
+        grids=[256, 256],
+        harmonics=[5, 5],
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     

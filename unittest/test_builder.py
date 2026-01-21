@@ -34,7 +34,7 @@ class TestSolverBuilder(unittest.TestCase):
         # Check that the solver was created properly
         self.assertIsInstance(solver, RCWASolver)
         self.assertAlmostEqual(solver.lam0[0], 1.55, places=6)
-        self.assertEqual(solver.kdim, [5, 5])
+        self.assertEqual(solver.harmonics, [5, 5])
         self.assertIsInstance(solver.algorithm, RCWAAlgorithm)
     
     def test_trn_ref_material_builder(self):
@@ -99,8 +99,8 @@ class TestSolverBuilder(unittest.TestCase):
         valid_config = {
             "algorithm": "RCWA",
             "wavelengths": [1.55],
-            "rdim": [512, 512],
-            "kdim": [3, 3]
+            "grids": [512, 512],
+            "harmonics": [3, 3]
         }
         
         # Test that valid configuration works
@@ -130,8 +130,8 @@ class TestSolverBuilder(unittest.TestCase):
         mixed_case_config = {
             "Algorithm": "RCWA",
             "WaVeLeNgThS": [1.55],
-            "RDIM": [512, 512],
-            "kdim": [3, 3],
+            "GRIDS": [512, 512],
+            "harmonics": [3, 3],
             "DevICE": "cpu"
         }
         
@@ -142,8 +142,8 @@ class TestSolverBuilder(unittest.TestCase):
         # Check that the solver was created properly
         self.assertIsInstance(solver, RCWASolver)
         self.assertAlmostEqual(solver.lam0[0], 1.55, places=6)
-        self.assertEqual(solver.rdim, [512, 512])
-        self.assertEqual(solver.kdim, [3, 3])
+        self.assertEqual(solver.grids, [512, 512])
+        self.assertEqual(solver.harmonics, [3, 3])
         
         # Check that we still get error for unknown keys regardless of case
         invalid_config = mixed_case_config.copy()
@@ -165,8 +165,8 @@ class TestSolverBuilder(unittest.TestCase):
         config = {
             "algorithm": "RCWA",
             "wavelengths": [1.55],
-            "rdim": [512, 512],
-            "kdim": [3, 3],
+            "grids": [512, 512],
+            "harmonics": [3, 3],
             "materials": materials_dict,
             "trn_material": "air",
             "ref_material": "silicon",
@@ -228,8 +228,8 @@ class TestSolverBuilder(unittest.TestCase):
         config = {
             "algorithm": "RCWA",
             "wavelengths": [1.55],
-            "rdim": [32, 32],
-            "kdim": [3, 3],
+            "grids": [32, 32],
+            "harmonics": [3, 3],
             "materials": {
                 "air": {"permittivity": 1.0},
                 "silicon": {"permittivity": 11.7},
@@ -343,8 +343,8 @@ class TestBuilderDocExamples(unittest.TestCase):
         # Create a solver
         solver = RCWASolver(
             lam0=np.array([1.55]),
-            rdim=[32, 32],
-            kdim=[3, 3]
+            grids=[32, 32],
+            harmonics=[3, 3]
         )
         
         # Example from _add_layers docstring
@@ -449,7 +449,7 @@ class TestBuilderDocExamples(unittest.TestCase):
         config_dict = {
             "algorithm": "RDIT",
             "wavelengths": [1.55],
-            "kdim": [5, 5],
+            "harmonics": [5, 5],
             "materials": {
                 "Air": {"permittivity": 1.0},
                 "Si": {"permittivity": 12.0}
@@ -466,7 +466,7 @@ class TestBuilderDocExamples(unittest.TestCase):
         
         self.assertEqual(solver.algorithm.name, "R-DIT")
         self.assertAlmostEqual(solver.lam0[0], 1.55, places=6)
-        self.assertEqual(solver.kdim, [5, 5])
+        self.assertEqual(solver.harmonics, [5, 5])
         self.assertEqual(solver.layer_manager.nlayer, 2)
         
         # Example from from_config docstring - Load and flip

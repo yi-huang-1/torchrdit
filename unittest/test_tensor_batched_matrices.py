@@ -21,7 +21,7 @@ from torchrdit.constants import Algorithm
 class TestBatchedMatrices:
     """Test batched matrix operations for tensor-level source processing."""
 
-    def setup_solver(self, n_freqs=3, kdim=(3, 3)):
+    def setup_solver(self, n_freqs=3, harmonics=(3, 3)):
         """Create a basic solver for testing."""
         # Create materials
         mat_air = create_material(name="air", permittivity=1.0)
@@ -31,8 +31,8 @@ class TestBatchedMatrices:
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=np.linspace(0.8, 1.2, n_freqs),
-            rdim=[256, 256],
-            kdim=list(kdim),
+            grids=[256, 256],
+            harmonics=list(harmonics),
             t1=torch.tensor([[1.0, 0.0]]),
             t2=torch.tensor([[0.0, 1.0]]),
             device="cpu",
@@ -59,7 +59,7 @@ class TestBatchedMatrices:
 
     def test_setup_common_matrices_single_matches_batched(self):
         """Single-source matrices equal the first slice of batched matrices."""
-        solver = self.setup_solver(n_freqs=3, kdim=(5, 5))
+        solver = self.setup_solver(n_freqs=3, harmonics=(5, 5))
         source = {"theta": 0.1, "phi": 0.2, "pte": 1.0, "ptm": 0.0}
 
         # Sequential
@@ -83,7 +83,7 @@ class TestBatchedMatrices:
 
     def test_setup_common_matrices_multi_sources_consistency(self):
         """Batched matrices match sequential per-source results for multiple sources."""
-        solver = self.setup_solver(n_freqs=4, kdim=(3, 3))
+        solver = self.setup_solver(n_freqs=4, harmonics=(3, 3))
         sources = [
             {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
             {"theta": np.pi/6, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
@@ -100,7 +100,7 @@ class TestBatchedMatrices:
         # Sanity: shapes
         n_sources = len(sources)
         n_freqs = solver.n_freqs
-        n_harm = solver.kdim[0] * solver.kdim[1]
+        n_harm = solver.harmonics[0] * solver.harmonics[1]
         assert mats_b["mat_kx"].shape == (n_sources, n_freqs, n_harm)
         assert mats_b["mat_w0"].shape == (n_sources, n_freqs, 2 * n_harm, 2 * n_harm)
 

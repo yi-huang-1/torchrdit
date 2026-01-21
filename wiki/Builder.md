@@ -301,14 +301,14 @@ builder = SolverBuilder().with_length_unit('nm')
 ### SolverBuilder.with\_real\_dimensions
 
 ```python
-def with_real_dimensions(rdim: List[int]) -> "SolverBuilder"
+def with_real_dimensions(grids: List[int]) -> "SolverBuilder"
 ```
 
 Set the dimensions in real space for discretization.
 
 **Arguments**:
 
-- `rdim` _List[int]_ - The dimensions in real space as [height, width].
+- `grids` _List[int]_ - The dimensions in real space as [height, width].
   
 
 **Returns**:
@@ -334,14 +334,14 @@ builder = SolverBuilder().with_real_dimensions([1024, 1024])
 ### SolverBuilder.with\_k\_dimensions
 
 ```python
-def with_k_dimensions(kdim: List[int]) -> "SolverBuilder"
+def with_k_dimensions(harmonics: List[int]) -> "SolverBuilder"
 ```
 
 Set the dimensions in k-space (Fourier space) for harmonics.
 
 **Arguments**:
 
-- `kdim` _List[int]_ - The dimensions in k-space as [height, width].
+- `harmonics` _List[int]_ - The dimensions in k-space as [height, width].
   Higher values include more harmonics for better accuracy at
   the cost of computational complexity.
   
@@ -780,6 +780,14 @@ dictionary, which is useful for storing and sharing complex configurations.
 - `SolverBuilder` - The builder instance for method chaining.
   
 
+**Notes**:
+
+  Fast Fourier Factorization (FFF) options in JSON configs use the
+  solver-style keys: ``is_use_fff``, ``fff_vector_scheme``,
+  ``fff_fourier_weight``, ``fff_smoothness_weight``, and
+  ``fff_vector_steps``.
+  
+
 **Examples**:
 
 ```python
@@ -792,7 +800,9 @@ builder = SolverBuilder().from_config("config.json", flip=True)
 config_dict = {
     "algorithm": "RDIT",
     "wavelengths": [1.55],
-    "kdim": [5, 5],
+    "harmonics": [5, 5],
+    "is_use_fff": True,
+    "fff_vector_scheme": "POL",
     "materials": {...},
     "layers": [...]
 }

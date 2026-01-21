@@ -23,8 +23,8 @@ class TestExtremeGrazingIncidence:
             algorithm=algo,
             precision=Precision.SINGLE,
             lam0=np.array([1.55]),
-            rdim=[128, 128],
-            kdim=[5, 5],
+            grids=[128, 128],
+            harmonics=[5, 5],
             device="cpu",
         )
 
@@ -57,8 +57,8 @@ class TestExtremeGrazingIncidence:
             algorithm=Algorithm.RDIT,
             precision=Precision.SINGLE,
             lam0=np.array([1.55]),
-            rdim=[128, 128],
-            kdim=[5, 5],
+            grids=[128, 128],
+            harmonics=[5, 5],
             device="cpu",
         )
 

@@ -25,8 +25,8 @@ class TestNaNPreventionCoverage:
         solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=lam0,
-            rdim=[64, 64],  # Smaller for faster testing
-            kdim=[3, 3],    # Small kdim to focus on specific harmonics
+            grids=[64, 64],  # Smaller for faster testing
+            harmonics=[3, 3],    # Small harmonics to focus on specific harmonics
             device='cpu'
         )
         
@@ -85,8 +85,8 @@ class TestNaNPreventionCoverage:
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=lam0,
-            rdim=[64, 64],
-            kdim=[3, 3],
+            grids=[64, 64],
+            harmonics=[3, 3],
             device='cpu'
         )
         

@@ -46,18 +46,18 @@ um = 1.0
 nm = 1e-3 * um
 
 # Create coordinate grid
-rdim = [256, 256]  # Resolution
+grids = [256, 256]  # Resolution
 size = 2.0 * um    # Physical size
 
 # Cartesian coordinate system
 X, Y = torch.meshgrid(
-    torch.linspace(-size/2, size/2, rdim[0]),
-    torch.linspace(-size/2, size/2, rdim[1]),
+    torch.linspace(-size/2, size/2, grids[0]),
+    torch.linspace(-size/2, size/2, grids[1]),
     indexing='xy'
 )
 
 # Initialize shape generator
-shape_gen = ShapeGenerator(X, Y, rdim)
+shape_gen = ShapeGenerator(X, Y, grids)
 
 print("\n1. Simple Shapes Export")
 print("-" * 40)
@@ -118,7 +118,7 @@ print("-" * 40)
 # - One hole contains a triangular island (nested structure)
 
 # Initialize mask
-complex_mask = torch.zeros(rdim)
+complex_mask = torch.zeros(grids)
 
 # Step 1: Create main rectangle
 # This could represent a photonic device or waveguide section
@@ -131,8 +131,8 @@ complex_mask[rect_top:rect_bottom, rect_left:rect_right] = 1
 hole1_center_row, hole1_center_col = 128, 80
 hole1_radius = 20
 
-for i in range(rdim[0]):
-    for j in range(rdim[1]):
+for i in range(grids[0]):
+    for j in range(grids[1]):
         if rect_top <= i < rect_bottom and rect_left <= j < rect_right:
             dist = np.sqrt((i - hole1_center_row)**2 + (j - hole1_center_col)**2)
             if dist < hole1_radius:
@@ -143,8 +143,8 @@ for i in range(rdim[0]):
 hole2_center_row, hole2_center_col = 128, 150
 hole2_radius = 35
 
-for i in range(rdim[0]):
-    for j in range(rdim[1]):
+for i in range(grids[0]):
+    for j in range(grids[1]):
         if rect_top <= i < rect_bottom and rect_left <= j < rect_right:
             dist = np.sqrt((i - hole2_center_row)**2 + (j - hole2_center_col)**2)
             if dist < hole2_radius:
@@ -178,8 +178,8 @@ def point_in_triangle(px, py, v0, v1, v2):
     return not (has_neg and has_pos)
 
 # Add triangle inside Hole 2
-for i in range(rdim[0]):
-    for j in range(rdim[1]):
+for i in range(grids[0]):
+    for j in range(grids[1]):
         dist_to_hole2 = np.sqrt((i - hole2_center_row)**2 + (j - hole2_center_col)**2)
         if dist_to_hole2 < hole2_radius:
             if point_in_triangle(i, j, triangle_vertices[0], triangle_vertices[1], triangle_vertices[2]):
@@ -301,8 +301,8 @@ lattice_t1 = torch.tensor([a/2, -a*np.sqrt(3)/2])
 lattice_t2 = torch.tensor([a/2, a*np.sqrt(3)/2])
 
 # Create parametric coordinates
-vec_p = torch.linspace(-0.5, 0.5, rdim[0])
-vec_q = torch.linspace(-0.5, 0.5, rdim[1])
+vec_p = torch.linspace(-0.5, 0.5, grids[0])
+vec_q = torch.linspace(-0.5, 0.5, grids[1])
 mesh_q, mesh_p = torch.meshgrid(vec_q, vec_p, indexing="xy")
 
 # Transform to physical coordinates using lattice vectors
@@ -310,7 +310,7 @@ X_hex = mesh_p * lattice_t1[0] + mesh_q * lattice_t2[0]
 Y_hex = mesh_p * lattice_t1[1] + mesh_q * lattice_t2[1]
 
 # Create shape generator for hexagonal lattice
-shape_gen_hex = ShapeGenerator(X_hex, Y_hex, rdim, lattice_t1=lattice_t1, lattice_t2=lattice_t2)
+shape_gen_hex = ShapeGenerator(X_hex, Y_hex, grids, lattice_t1=lattice_t1, lattice_t2=lattice_t2)
 
 # Create a pattern on hexagonal lattice
 hex_mask = shape_gen_hex.generate_circle_mask(

@@ -21,7 +21,7 @@ from torchrdit.constants import Algorithm
 import numpy as np
 
 # Create solver
-solver = create_solver(algorithm=Algorithm.RDIT, rdim=[512, 512], kdim=[7, 7])
+solver = create_solver(algorithm=Algorithm.RDIT, grids=[512, 512], harmonics=[7, 7])
 
 # Create multiple sources for angle sweep
 deg = np.pi / 180

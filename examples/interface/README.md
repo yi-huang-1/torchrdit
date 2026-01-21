@@ -17,3 +17,5 @@ From repo root:
 Notes:
 - Examples are written to be readable first; default parameters may be slow on CPU.
 - Output images are saved next to the script (same behavior as the original examples).
+- Interface examples use `harmonics="auto"` with `maxG` derived from original `harmonics` values.
+- `source_batching_advanced.py` skips gradient validation because interface `solve` runs under `torch.no_grad()`.

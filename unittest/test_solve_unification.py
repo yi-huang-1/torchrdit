@@ -28,8 +28,8 @@ class TestSolveUnification:
         solver = create_solver(
             algorithm=algo,
             lam0=np.array([1.0, 1.5]),  # Multiple wavelengths
-            rdim=[64, 64],  # Smaller for faster tests
-            kdim=[3, 3],
+            grids=[64, 64],  # Smaller for faster tests
+            harmonics=[3, 3],
             device="cpu",
         )
 

@@ -869,7 +869,7 @@ from torchrdit.solver import create_solver
 from torchrdit.constants import Algorithm
 
 # Create a solver
-solver = create_solver(algorithm=Algorithm.RDIT, rdim=[512, 512], kdim=[7, 7])
+solver = create_solver(algorithm=Algorithm.RDIT, grids=[512, 512], harmonics=[7, 7])
 
 # Create a shape generator
 shape_gen = ShapeGenerator.from_solver(solver)
@@ -986,7 +986,7 @@ YO, XO = torch.meshgrid(coords, coords, indexing="ij")
 generator = TangentFieldGenerator(
     lattice_t1=torch.tensor([1.0, 0.0], dtype=mask.dtype, device=device),
     lattice_t2=torch.tensor([0.0, 1.0], dtype=mask.dtype, device=device),
-    kdim=(9, 9),
+    harmonics=(9, 9),
     fourier_loss_weight=1e-2,
     smoothness_loss_weight=1e-3,
     steps=2,
@@ -1137,9 +1137,9 @@ Organizes the x, y, and z components of electromagnetic fields:
 @dataclass
 class FieldComponents:
     \"\"\"Field components in x, y, z directions\"\"\"
-    x: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
-    y: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
-    z: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
+    x: torch.Tensor  # (n_freqs, harmonics[0], harmonics[1])
+    y: torch.Tensor  # (n_freqs, harmonics[0], harmonics[1])
+    z: torch.Tensor  # (n_freqs, harmonics[0], harmonics[1])
 ```
 
 ### WaveVectors
@@ -1150,11 +1150,11 @@ Stores wave vector components for the simulation:
 @dataclass
 class WaveVectors:
     \"\"\"Wave vector components for the simulation\"\"\"
-    kx: torch.Tensor  # (kdim[0], kdim[1])
-    ky: torch.Tensor  # (kdim[0], kdim[1])
+    kx: torch.Tensor  # (harmonics[0], harmonics[1])
+    ky: torch.Tensor  # (harmonics[0], harmonics[1])
     kinc: torch.Tensor  # (n_freqs, 3)
-    kzref: torch.Tensor  # (n_freqs, kdim[0]*kdim[1])
-    kztrn: torch.Tensor  # (n_freqs, kdim[0]*kdim[1])
+    kzref: torch.Tensor  # (n_freqs, harmonics[0]*harmonics[1])
+    kztrn: torch.Tensor  # (n_freqs, harmonics[0]*harmonics[1])
 ```
 
 ### SolverResults
@@ -1394,7 +1394,7 @@ from torchrdit.constants import Algorithm
 import numpy as np
 
 # Create solver
-solver = create_solver(algorithm=Algorithm.RDIT, rdim=[512, 512], kdim=[7, 7])
+solver = create_solver(algorithm=Algorithm.RDIT, grids=[512, 512], harmonics=[7, 7])
 
 # Create multiple sources for angle sweep
 deg = np.pi / 180
@@ -1641,7 +1641,7 @@ from torchrdit.shapes import ShapeGenerator
 from torchrdit.gds import mask_to_gds
 
 # Create shape generator and mask
-shape_gen = ShapeGenerator(X, Y, rdim)
+shape_gen = ShapeGenerator(X, Y, grids)
 mask = shape_gen.generate_circle_mask(center=(0, 0), radius=0.5)
 
 # Export to GDS

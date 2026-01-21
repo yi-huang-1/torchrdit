@@ -341,8 +341,8 @@ class SolverBuilder:
         self._precision = Precision.SINGLE
         self._lam0 = np.array([1.0])
         self._lengthunit = "um"
-        self._rdim = [512, 512]
-        self._kdim = [3, 3]
+        self._grids = [512, 512]
+        self._harmonics = [3, 3]
         self._materials = []
         self._materials_dict = {}
         self._t1 = torch.tensor([[1.0, 0.0]])
@@ -490,11 +490,11 @@ class SolverBuilder:
         self._lengthunit = unit
         return self
 
-    def with_real_dimensions(self, rdim: List[int]) -> "SolverBuilder":
+    def with_real_dimensions(self, grids: List[int]) -> "SolverBuilder":
         """Set the dimensions in real space for discretization.
 
         Args:
-            rdim (List[int]): The dimensions in real space as [height, width].
+            grids (List[int]): The dimensions in real space as [height, width].
 
         Returns:
             SolverBuilder: The builder instance for method chaining.
@@ -511,14 +511,14 @@ class SolverBuilder:
         Keywords:
             real dimensions, discretization, spatial resolution, grid size
         """
-        self._rdim = rdim
+        self._grids = grids
         return self
 
-    def with_k_dimensions(self, kdim: List[int]) -> "SolverBuilder":
+    def with_k_dimensions(self, harmonics: List[int]) -> "SolverBuilder":
         """Set the dimensions in k-space (Fourier space) for harmonics.
 
         Args:
-            kdim (List[int]): The dimensions in k-space as [height, width].
+            harmonics (List[int]): The dimensions in k-space as [height, width].
                 Higher values include more harmonics for better accuracy at
                 the cost of computational complexity.
 
@@ -537,7 +537,7 @@ class SolverBuilder:
         Keywords:
             k-space, Fourier harmonics, diffraction orders, computational accuracy
         """
-        self._kdim = kdim
+        self._harmonics = harmonics
         return self
 
     def with_materials(self, materials: List[Any]) -> "SolverBuilder":
@@ -892,6 +892,12 @@ class SolverBuilder:
         Returns:
             SolverBuilder: The builder instance for method chaining.
 
+        Notes:
+            Fast Fourier Factorization (FFF) options in JSON configs use the
+            solver-style keys: ``is_use_fff``, ``fff_vector_scheme``,
+            ``fff_fourier_weight``, ``fff_smoothness_weight``, and
+            ``fff_vector_steps``.
+
         Examples:
         ```python
         from torchrdit.builder import SolverBuilder
@@ -903,7 +909,9 @@ class SolverBuilder:
         config_dict = {
             "algorithm": "RDIT",
             "wavelengths": [1.55],
-            "kdim": [5, 5],
+            "harmonics": [5, 5],
+            "is_use_fff": True,
+            "fff_vector_scheme": "POL",
             "materials": {...},
             "layers": [...]
         }
@@ -916,17 +924,29 @@ class SolverBuilder:
         Keywords:
             configuration, JSON, file loading, serialization, flip
         """
-        import json
+        import warnings
+
+        from .config_io import detect_config_shape, load_config
 
         # Store original config path if it's a string
-        if isinstance(config, str):
-            self._config_path = config
-            with open(config, "r") as f:
-                config = json.load(f)
+        if isinstance(config, (str, os.PathLike)):
+            self._config_path = str(config)
+
+        config, config_dir = load_config(config)
 
         # Apply flip if needed
         if flip:
             config = flip_config(config)
+
+        shape = detect_config_shape(config)
+        if shape == "interface":
+            solver_spec = config.get("solver")
+            if not isinstance(solver_spec, dict):
+                raise ValueError("solver must be a dictionary when provided at top level")
+            flat_config = dict(config)
+            flat_config.pop("solver", None)
+            flat_config.update(solver_spec)
+            config = flat_config
 
         # Define valid configuration keys
         valid_keys = {
@@ -934,22 +954,50 @@ class SolverBuilder:
             "precision",
             "wavelengths",
             "length_unit",
-            "rdim",
-            "kdim",
+            "grids",
+            "harmonics",
+            "maxG",
             "lattice_vectors",
             "use_fff",
+            "is_use_fff",
+            "fff_vector_scheme",
+            "fff_fourier_weight",
+            "fff_smoothness_weight",
+            "fff_vector_steps",
             "device",
             "rdit_order",
             "materials",
             "layers",
             "trn_material",
             "ref_material",
+            "sources",
+            "vars",
+            "output",
         }
 
         # Create case-insensitive mapping of keys
         case_insensitive_config = {}
         for key, value in config.items():
             case_insensitive_config[key.lower()] = (key, value)
+
+        if "harmonics" in case_insensitive_config:
+            harmonics_value = case_insensitive_config["harmonics"][1]
+            if isinstance(harmonics_value, str) and harmonics_value.lower() == "auto":
+                raise ValueError("harmonics='auto' is only supported by torchrdit/src/torchrdit/interface.py")
+
+        interface_only_keys = {
+            "sources",
+            "vars",
+            "output",
+            "maxg",
+        }
+        ignored_keys = [case_insensitive_config[key][0] for key in interface_only_keys if key in case_insensitive_config]
+        if ignored_keys:
+            warnings.warn(
+                f"Builder ignores interface-only keys {sorted(ignored_keys)}. "
+                "Use torchrdit/src/torchrdit/interface.py for these options.",
+                UserWarning,
+            )
 
         # Check for unknown keys (case insensitive)
         unknown_keys = set()
@@ -958,7 +1006,10 @@ class SolverBuilder:
                 unknown_keys.add(case_insensitive_config[key][0])  # Add original key to unknown keys
 
         if unknown_keys:
-            raise ValueError(f"Unknown configuration keys detected: {unknown_keys}. Valid keys are: {valid_keys}")
+            raise ValueError(
+                f"Unknown configuration keys detected: {unknown_keys}. "
+                f"Valid keys are: {valid_keys}. Use grids/harmonics for dimensions."
+            )
 
         # Extract parameters from config (case insensitive)
         if "algorithm" in case_insensitive_config:
@@ -969,42 +1020,40 @@ class SolverBuilder:
             self._lam0 = np.array(case_insensitive_config["wavelengths"][1])
         if "length_unit" in case_insensitive_config:
             self._lengthunit = case_insensitive_config["length_unit"][1]
-        if "rdim" in case_insensitive_config:
-            self._rdim = case_insensitive_config["rdim"][1]
-        if "kdim" in case_insensitive_config:
-            self._kdim = case_insensitive_config["kdim"][1]
+        if "grids" in case_insensitive_config:
+            self._grids = case_insensitive_config["grids"][1]
+        if "harmonics" in case_insensitive_config:
+            self._harmonics = case_insensitive_config["harmonics"][1]
         if "lattice_vectors" in case_insensitive_config:
             lattice_vectors = case_insensitive_config["lattice_vectors"][1]
             t1_data = lattice_vectors["t1"]
             t2_data = lattice_vectors["t2"]
             self._t1 = t1_data if isinstance(t1_data, torch.Tensor) else torch.as_tensor(t1_data)
             self._t2 = t2_data if isinstance(t2_data, torch.Tensor) else torch.as_tensor(t2_data)
-        if "use_fff" in case_insensitive_config:
+        if "is_use_fff" in case_insensitive_config:
+            self._is_use_FFF = case_insensitive_config["is_use_fff"][1]
+        elif "use_fff" in case_insensitive_config:
             self._is_use_FFF = case_insensitive_config["use_fff"][1]
         if "device" in case_insensitive_config:
             self._device = case_insensitive_config["device"][1]
         if "rdit_order" in case_insensitive_config:
             self._rdit_order = case_insensitive_config["rdit_order"][1]
-        vector_option_key = None
-        if "fff_vector" in case_insensitive_config:
-            vector_option_key = "fff_vector"
-        elif "vector_field" in case_insensitive_config:
-            vector_option_key = "vector_field"
 
-        if vector_option_key is not None:
-            vector_options = case_insensitive_config[vector_option_key][1]
-            if not isinstance(vector_options, dict):
-                raise ValueError(f"{vector_option_key} configuration must be a dictionary.")
-            self.with_fff_vector_options(
-                scheme=vector_options.get("scheme"),
-                fourier_weight=vector_options.get("fourier_weight", vector_options.get("fourier_loss_weight")),
-                smoothness_weight=vector_options.get("smoothness_weight", vector_options.get("smoothness_loss_weight")),
-                steps=vector_options.get("steps"),
-            )
+        fff_vector_opts = {}
+        if "fff_vector_scheme" in case_insensitive_config:
+            fff_vector_opts["scheme"] = case_insensitive_config["fff_vector_scheme"][1]
+        if "fff_fourier_weight" in case_insensitive_config:
+            fff_vector_opts["fourier_weight"] = case_insensitive_config["fff_fourier_weight"][1]
+        if "fff_smoothness_weight" in case_insensitive_config:
+            fff_vector_opts["smoothness_weight"] = case_insensitive_config["fff_smoothness_weight"][1]
+        if "fff_vector_steps" in case_insensitive_config:
+            fff_vector_opts["steps"] = case_insensitive_config["fff_vector_steps"][1]
+
+        if fff_vector_opts:
+            self.with_fff_vector_options(**fff_vector_opts)
 
         # Process materials and layers
-        config_dir = None
-        if getattr(self, "_config_path", None):
+        if config_dir is None and getattr(self, "_config_path", None):
             try:
                 config_dir = str(Path(self._config_path).resolve().parent)
             except OSError:
@@ -1062,8 +1111,8 @@ class SolverBuilder:
             solver = RCWASolver(
                 lam0=self._lam0,
                 lengthunit=self._lengthunit,
-                rdim=self._rdim,
-                kdim=self._kdim,
+                grids=self._grids,
+                harmonics=self._harmonics,
                 materiallist=self._materials,
                 t1=self._t1,
                 t2=self._t2,
@@ -1084,8 +1133,8 @@ class SolverBuilder:
             solver = RDITSolver(
                 lam0=self._lam0,
                 lengthunit=self._lengthunit,
-                rdim=self._rdim,
-                kdim=self._kdim,
+                grids=self._grids,
+                harmonics=self._harmonics,
                 materiallist=self._materials,
                 t1=self._t1,
                 t2=self._t2,

@@ -12,7 +12,8 @@ opt = tr.optimize(spec, objective="...", options={...})  # inverse design (minim
 
 This module provides a strict, user-facing API:
 - Unknown keys raise :class:`SpecError` with a full dotted path.
-- Spec values accept Python / NumPy / torch; torch values preserve autograd where the underlying implementation is torch-based (e.g. vars/layers), but in-memory dispersive material samples are converted to CPU NumPy (no grads).
+- Spec values accept Python / NumPy / torch; in-memory dispersive material samples are converted to CPU NumPy (no grads).
+- Autograd policy: ``solve`` and auto-harmonics selection run under ``torch.no_grad()``; ``optimize`` builds gradients only during the training loop.
 - Variables are defined only in ``spec["vars"]`` (keys start with ``$``) and referenced elsewhere as strings (e.g., ``"$t"``).
 - For file-based dispersive materials, relative ``materials[*].dielectric_file`` paths resolve from the spec file directory (if loaded from JSON), then caller script directory, then CWD.
 
@@ -41,6 +42,9 @@ Each ``result_dict`` contains:
 - ``lattice``: ``{"t1","t2"}``
 - ``grids``: ``{"real_space_shape": (H,W)}``
 
+Ordering note: harmonics are `[kx, ky]` (`harmonics[0] -> kx`, `harmonics[1] -> ky`); internal
+transposes in the solver are for storage order only and do not swap axes.
+
 Output conversion (applies to all returned dicts, including optimize outputs):
 - ``spec["output"]["type"] == "torch"`` → torch tensors
 - ``spec["output"]["type"] == "numpy"`` → NumPy arrays (torch tensors detached + moved to CPU)
@@ -58,14 +62,15 @@ Top-level ``spec``:
 - ``wavelengths``: non-empty ``list|tuple|numpy.ndarray|torch.Tensor``
 - ``length_unit``: ``"m"|"dm"|"cm"|"mm"|"um"|"nm"|"pm"|"angstrom"`` (optional)
 - ``grids``: ``[Ny,Nx]`` (2 positive ints; real-space grid size)
-- ``harmonics``: ``[Ky,Kx]`` (2 positive ints; Fourier harmonics)
+- ``harmonics``: ``[kx, ky]`` (2 positive odd ints; Fourier harmonics) or ``"auto"``
+- ``maxG``: positive int (optional; only used when ``harmonics == "auto"``)
 - ``lattice_vectors``: ``{"t1":[x,y], "t2":[x,y]}`` (optional)
 - ``use_fff``: ``bool`` (optional)
 - ``device``: torch device string (optional; e.g. ``"cpu"``, ``"cuda:0"``)
 - ``rdit_order``: ``int`` (optional; meaningful for ``algorithm="RDIT"``)
 - ``trn_material`` / ``ref_material``: ``str`` (optional; names of external media materials)
 
-Interface isolation: internal keys ``lam0/rdim/kdim`` are rejected (use ``wavelengths/grids/harmonics``).
+Interface isolation: legacy/internal solver keys are rejected (use ``wavelengths/grids/harmonics``).
 
 ``spec["vars"]`` (optional; the only variable entry point):
 - Keys must start with ``$``. Values can be primitives/NumPy/torch, or expression strings referencing other vars.
@@ -93,7 +98,8 @@ Complex ε convention:
 - For ``dispersion.eps``, both ``eps1 - 1j*eps2`` and ``eps1 + 1j*eps2`` inputs are accepted; the implementation normalizes to the internal convention.
 
 ``spec["layers"]`` (optional; list):
-- Each layer: ``{"material": str, "thickness": scalar|"$var", "is_homogeneous": bool, "is_optimize": bool?, "slice_count": int?, "pattern": {...}?}``
+- Each layer: ``{"material": str, "thickness": scalar|"$var", "is_homogeneous": bool?, "is_optimize": bool?, "slice_count": int?, "pattern": {...}?}``
+- ``is_homogeneous`` defaults to True when omitted (builder-style homogeneous layers).
 - ``pattern`` is required iff ``is_homogeneous == False`` and forbidden iff ``is_homogeneous == True``.
 
 Patterned layers: ``pattern = {"bg_material": str?, "method": "FFT|Analytical"?, "soft_edge": float?, "shapes": [...], "layer_shape": str}``
@@ -101,7 +107,7 @@ Patterned layers: ``pattern = {"bg_material": str?, "method": "FFT|Analytical"?,
   - ``type=="circle"``: ``{"center":[x,y], "radius": r, "soft_edge": float?}``
   - ``type=="rectangle"``: ``{"center":[x,y], "x_size": a, "y_size": b, "angle": rad?, "soft_edge": float?}``
   - ``type=="polygon"``: ``{"points":[[x,y],...], "center":[x,y]?, "angle": rad?, "invert": bool?, "soft_edge": float?}``
-  - ``type=="mask"``: ``{"value": 2D mask|"$var"}`` with shape == ``grids`` and values in ``[0,1]`` (strict)
+  - ``type=="mask"``: ``{"value": 2D mask|"$var"}`` with shape == ``grids``; values are passed through (no range check)
   - ``type=="op"``: ``{"expr": "union(a,b)|intersection(a,b)|difference(a,b)|subtract(a,b)"}`` (nested calls allowed; args must reference prior node names)
   - ``type=="gds"``: not supported (raises)
 
@@ -147,7 +153,7 @@ spec = {
     "wavelengths": [1.55],            # required: list/array of wavelengths
     "length_unit": "um",              # optional
     "grids": [64, 64],                # required: (Ny, Nx) real-space grid size
-    "harmonics": [3, 3],              # required: (Ky, Kx) Fourier harmonics
+    "harmonics": [3, 3],              # required: (kx, ky) Fourier harmonics
     "device": "cpu",                  # optional: "cpu" / "cuda" / ...
   },
 
@@ -156,7 +162,7 @@ spec = {
     "$s": 0.10,                       # scalar constant
     "$t": "$s + 0.10",                # expression var (derived; re-evaluated during optimization)
     "$r": torch.tensor(0.15, requires_grad=True),  # trainable leaf tensor (optimization will update it)
-    # Optional: user-provided mask (must match grids exactly and values must be within [0,1])
+    # Optional: user-provided mask (must match grids exactly; values are not range-checked)
     # If you want it trainable, parameterize it to stay in [0,1] (e.g., torch.sigmoid(raw)) before passing here.
     "$user_mask": torch.rand(64, 64), # custom mask input (not trainable in this example)
   },
@@ -203,7 +209,7 @@ spec = {
           {"name": "r1", "type": "rectangle", "center": [0.0, 0.0], "x_size": 0.40, "y_size": 0.20, "angle": 0.0},
           {"name": "p1", "type": "polygon",   "points": [[-0.2,-0.2],[0.2,-0.2],[0.0,0.2]], "soft_edge": 0.0},
 
-          # user-provided mask node (must have shape == grids and values within [0,1])
+          # user-provided mask node (must have shape == grids; values are not range-checked)
           {"name": "m_user", "type": "mask", "value": "$user_mask"},
 
           # op nodes can be nested:
@@ -238,8 +244,10 @@ from __future__ import annotations
 
 import ast
 import json
+import math
 import os
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple, Union
@@ -248,6 +256,7 @@ import numpy as np
 import torch
 
 from .builder import SolverBuilder
+from .config_io import load_config
 from .observers import ConsoleProgressObserver
 from .path_utils import infer_caller_dir, resolve_data_path
 from .shapes import ShapeGenerator
@@ -703,11 +712,13 @@ def _parse_layers(spec_layers: Any) -> List[Dict[str, Any]]:
         path = f"spec.layers[{i}]"
         _require_type(path, layer, dict)
         _check_keys(path, layer, allowed={"material", "thickness", "is_homogeneous", "is_optimize", "slice_count", "pattern"})
-        if "material" not in layer or "thickness" not in layer or "is_homogeneous" not in layer:
-            raise SpecError(f"{path} requires keys: material, thickness, is_homogeneous")
+        if "material" not in layer or "thickness" not in layer:
+            raise SpecError(f"{path} requires keys: material, thickness")
+        if "pattern" in layer and "is_homogeneous" not in layer:
+            raise SpecError(f"{path}.is_homogeneous is required when pattern is provided")
         if not isinstance(layer["material"], str):
             raise SpecError(f"{path}.material must be str")
-        if not isinstance(layer["is_homogeneous"], bool):
+        if "is_homogeneous" in layer and not isinstance(layer["is_homogeneous"], bool):
             raise SpecError(f"{path}.is_homogeneous must be bool")
         if "is_optimize" in layer and not isinstance(layer["is_optimize"], bool):
             raise SpecError(f"{path}.is_optimize must be bool")
@@ -718,12 +729,16 @@ def _parse_layers(spec_layers: Any) -> List[Dict[str, Any]]:
             if int(sc) < 1:
                 raise SpecError(f"{path}.slice_count must be >= 1")
 
-        if layer["is_homogeneous"] and "pattern" in layer:
+        is_homogeneous = layer.get("is_homogeneous", True)
+        normalized = dict(layer)
+        normalized["is_homogeneous"] = is_homogeneous
+
+        if normalized["is_homogeneous"] and "pattern" in normalized:
             raise SpecError(f"{path}.pattern is not allowed when is_homogeneous is True")
-        if not layer["is_homogeneous"] and "pattern" not in layer:
+        if not normalized["is_homogeneous"] and "pattern" not in normalized:
             raise SpecError(f"{path} requires pattern when is_homogeneous is False")
 
-        parsed.append(layer)
+        parsed.append(normalized)
     return parsed
 
 
@@ -739,19 +754,12 @@ def _normalize_solver_spec(spec_solver: Any, *, path: str = "spec.solver") -> Di
 
     Interface-level naming:
     - ``wavelengths``: list/array of wavelengths.
-    - ``grids``: real-space grid size (mapped to builder key ``rdim``).
-    - ``harmonics``: Fourier harmonics (mapped to builder key ``kdim``).
+    - ``grids``: real-space grid size.
+    - ``harmonics``: Fourier harmonics.
 
-    Legacy/low-level keys like ``rdim``/``kdim``/``lam0`` are rejected to keep the
-    interface spec isolated from internal implementation details.
+    Unknown solver keys are rejected to keep the interface spec strict and stable.
     """
     _require_type(path, spec_solver, dict)
-
-    legacy_map = {"lam0": "wavelengths", "rdim": "grids", "kdim": "harmonics"}
-    legacy_present = [k for k in spec_solver.keys() if k in legacy_map]
-    if legacy_present:
-        details = ", ".join(f"{_path_join(path, k)} (use '{legacy_map[k]}')" for k in sorted(legacy_present))
-        raise SpecError(f"Unsupported solver key(s): {details}")
 
     allowed_keys = {
         "algorithm",
@@ -760,6 +768,7 @@ def _normalize_solver_spec(spec_solver: Any, *, path: str = "spec.solver") -> Di
         "length_unit",
         "grids",
         "harmonics",
+        "maxG",
         "lattice_vectors",
         "use_fff",
         "device",
@@ -767,7 +776,14 @@ def _normalize_solver_spec(spec_solver: Any, *, path: str = "spec.solver") -> Di
         "trn_material",
         "ref_material",
     }
-    _check_keys(path, spec_solver, allowed=allowed_keys)
+    unknown_keys = [k for k in spec_solver.keys() if k not in allowed_keys]
+    if unknown_keys:
+        unknown_sorted = ", ".join(sorted(_path_join(path, k) for k in unknown_keys))
+        allowed_sorted = ", ".join(sorted(allowed_keys))
+        raise SpecError(
+            f"Unknown key(s): {unknown_sorted}. Allowed keys at {path}: {allowed_sorted}. "
+            "Use wavelengths/grids/harmonics for solver setup."
+        )
 
     for required in ("algorithm", "wavelengths", "grids", "harmonics"):
         if required not in spec_solver:
@@ -826,11 +842,31 @@ def _normalize_solver_spec(spec_solver: Any, *, path: str = "spec.solver") -> Di
             raise SpecError(f"{dim_path} values must be > 0, got {tuple(out)}")
         return out[0], out[1]
 
-    cfg["grids"] = list(_require_int_pair(_path_join(path, "grids"), cfg.get("grids")))
-    cfg["harmonics"] = list(_require_int_pair(_path_join(path, "harmonics"), cfg.get("harmonics")))
+    def _require_odd_int_pair(dim_path: str, value: Any) -> Tuple[int, int]:
+        kx, ky = _require_int_pair(dim_path, value)
+        if (kx % 2) == 0 or (ky % 2) == 0:
+            raise SpecError(f"{dim_path} values must be odd, got {(kx, ky)}")
+        return kx, ky
 
-    cfg["rdim"] = cfg.pop("grids")
-    cfg["kdim"] = cfg.pop("harmonics")
+    cfg["grids"] = list(_require_int_pair(_path_join(path, "grids"), cfg.get("grids")))
+    harmonics = cfg.get("harmonics")
+    if isinstance(harmonics, str):
+        if harmonics.lower() != "auto":
+            raise SpecError(f"Expected {_path_join(path, 'harmonics')} to be a 2-item sequence or 'auto'")
+        cfg["harmonics"] = "auto"
+        if "maxG" in cfg:
+            maxG = cfg["maxG"]
+            if isinstance(maxG, bool) or not isinstance(maxG, (int, np.integer)):
+                raise SpecError(f"Expected {_path_join(path, 'maxG')} to be a positive int, got {type(maxG)}")
+            maxG = int(maxG)
+            if maxG <= 0:
+                raise SpecError(f"Expected {_path_join(path, 'maxG')} to be > 0, got {maxG}")
+            cfg["maxG"] = maxG
+    else:
+        cfg["harmonics"] = list(_require_odd_int_pair(_path_join(path, "harmonics"), harmonics))
+        if "maxG" in cfg:
+            raise SpecError(f"{_path_join(path, 'maxG')} is only valid when harmonics == 'auto'")
+
     return cfg
 
 
@@ -875,20 +911,9 @@ def _build_mask_from_pattern(
         raise SpecError(f"{path}.shapes must not be empty")
 
     soft_edge_default = float(pattern.get("soft_edge", 0.001))
-    expected_dim = tuple(int(x) for x in getattr(shape_gen, "rdim", ()))
+    expected_dim = tuple(int(x) for x in getattr(shape_gen, "grids", ()))
     mask_device = shape_gen.XO.device
     mask_dtype = getattr(shape_gen, "tfloat", torch.float32)
-
-    def _mask_range_check(mask: torch.Tensor, *, node_path: str) -> None:
-        if torch.is_complex(mask):
-            raise SpecError(f"{node_path} mask must be real-valued")
-        with torch.no_grad():
-            if not torch.isfinite(mask).all().item():
-                raise SpecError(f"{node_path} mask contains non-finite values")
-            m_min = float(mask.amin().detach().cpu().item())
-            m_max = float(mask.amax().detach().cpu().item())
-        if m_min < 0.0 or m_max > 1.0:
-            raise SpecError(f"{node_path} mask values must be within [0,1], got min={m_min:.6g}, max={m_max:.6g}")
 
     class _SafeMaskExprEvaluator:
         def __init__(self, expr: str, *, node_path: str) -> None:
@@ -986,7 +1011,6 @@ def _build_mask_from_pattern(
             if mask_t.ndim != 2 or tuple(mask_t.shape) != expected_dim:
                 raise SpecError(f"{npath}.value must have shape {expected_dim}, got {tuple(mask_t.shape)}")
             mask_t = mask_t.to(dtype=mask_dtype)
-            _mask_range_check(mask_t, node_path=npath)
             masks[name] = mask_t
         elif ntype == "op":
             _check_keys(npath, node, allowed={"name", "type", "expr"})
@@ -1056,6 +1080,239 @@ def _apply_layers_to_solver(
             solver.update_er_with_mask(mask=mask, layer_index=i, bg_material=bg_material, method=method)
 
 
+def _default_auto_harmonics_cfg() -> Dict[str, Any]:
+    return {
+        "maxG_default": 225,
+        "start": 3,
+        "step": 2,
+        "tol": 1e-3,
+        "max_steps": 10,
+        "max_runtime_s": 30.0,
+    }
+
+
+def _maxG_to_harmonics(maxG: int) -> int:
+    k = int(math.floor(math.sqrt(maxG)))
+    if k < 1:
+        k = 1
+    if (k % 2) == 0:
+        k -= 1
+    if k < 1:
+        k = 1
+    return k
+
+
+def _iter_harmonics_schedule(start: int, cap: int, step: int) -> Iterable[List[int]]:
+    k = int(max(1, start))
+    if (k % 2) == 0:
+        k -= 1
+    if k < 1:
+        k = 1
+    if k > cap:
+        k = cap
+    while k <= cap:
+        yield [k, k]
+        k += int(step)
+
+
+def _default_convergence_orders(harmonics: Sequence[int]) -> List[Tuple[int, int]]:
+    orders = [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)]
+    kx_half = int(harmonics[0]) // 2
+    ky_half = int(harmonics[1]) // 2
+    return [(ox, oy) for (ox, oy) in orders if abs(ox) <= kx_half and abs(oy) <= ky_half]
+
+
+def _reduce_max_abs(value: Any) -> float:
+    t = value if isinstance(value, torch.Tensor) else torch.as_tensor(value)
+    if t.numel() == 0:
+        return 0.0
+    t = torch.abs(t)
+    return float(t.max().detach().cpu().item())
+
+
+def _compute_residual(prev_obs: Mapping[str, float], obs: Mapping[str, float]) -> float:
+    deltas = []
+    for key, cur in obs.items():
+        prev = prev_obs.get(key, cur)
+        deltas.append(abs(cur - prev))
+    if not deltas:
+        return 0.0
+    return float(max(deltas))
+
+
+def _compute_result_observables(result, *, orders: Sequence[Tuple[int, int]]) -> Dict[str, float]:
+    obs: Dict[str, float] = {
+        "reflection": _reduce_max_abs(result.reflection),
+        "transmission": _reduce_max_abs(result.transmission),
+        "balance": _reduce_max_abs(result.reflection + result.transmission),
+    }
+    for ox, oy in orders:
+        obs[f"R_{ox}_{oy}"] = _reduce_max_abs(result.get_order_reflection_efficiency(ox, oy))
+        obs[f"T_{ox}_{oy}"] = _reduce_max_abs(result.get_order_transmission_efficiency(ox, oy))
+    return obs
+
+
+def _evaluate_objective_scalar(
+    evaluator: "_SafeObjectiveEvaluator",
+    *,
+    results_by_name: Mapping[str, Any],
+    vars_map: Mapping[str, Any],
+    device: Union[str, torch.device],
+) -> float:
+    structured = {name: res.to_structured_dict() for name, res in results_by_name.items()}
+    vars_env: Dict[str, Any] = {}
+    for k, v in vars_map.items():
+        vars_env[k] = v
+        vars_env[_strip_var_prefix(k)] = v
+    env = {
+        "Results": structured,
+        "Vars": vars_env,
+        "S": structured,
+        "V": vars_env,
+        **{k: v for k, v in vars_env.items() if not k.startswith("$")},
+    }
+    value = evaluator.eval(env)
+    if not isinstance(value, torch.Tensor):
+        value = torch.as_tensor(value, device=device)
+    if value.numel() != 1:
+        raise SpecError("Objective must evaluate to a scalar tensor")
+    if torch.is_complex(value):
+        value = torch.abs(value)
+    return float(value.detach().cpu().item())
+
+
+def _compute_convergence_observables(
+    results_by_name: Mapping[str, Any],
+    *,
+    orders: Sequence[Tuple[int, int]],
+    objective_eval: Optional["_SafeObjectiveEvaluator"] = None,
+    vars_map: Optional[Mapping[str, Any]] = None,
+    device: Optional[Union[str, torch.device]] = None,
+) -> Dict[str, float]:
+    if objective_eval is not None:
+        if vars_map is None or device is None:
+            raise SpecError("Objective evaluation requires vars_map and device")
+        value = _evaluate_objective_scalar(objective_eval, results_by_name=results_by_name, vars_map=vars_map, device=device)
+        return {"objective": value}
+
+    agg: Dict[str, float] = {}
+    for result in results_by_name.values():
+        obs = _compute_result_observables(result, orders=orders)
+        for key, val in obs.items():
+            agg[key] = val if key not in agg else max(agg[key], val)
+    return agg
+
+
+def _solve_sources(solver, sources: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    if len(sources) == 1:
+        s0 = sources[0]
+        src = solver.add_source(
+            theta=s0["theta"], phi=s0["phi"], pte=s0["pte"], ptm=s0["ptm"], norm_te_dir=s0["norm_te_dir"]
+        )
+        return {s0["name"]: solver.solve(src)}
+
+    source_objs = [
+        solver.add_source(theta=s["theta"], phi=s["phi"], pte=s["pte"], ptm=s["ptm"], norm_te_dir=s["norm_te_dir"])
+        for s in sources
+    ]
+    batched = solver.solve(source_objs)
+    results_by_name: Dict[str, Any] = {}
+    for i, s in enumerate(sources):
+        results_by_name[s["name"]] = batched[i]
+    return results_by_name
+
+
+def _auto_select_harmonics(
+    solver_spec: Mapping[str, Any],
+    *,
+    materials: Mapping[str, Any],
+    layers: Sequence[Mapping[str, Any]],
+    sources: Sequence[Mapping[str, Any]],
+    vars_map: Mapping[str, Any],
+    objective: Optional[str] = None,
+) -> Tuple[List[int], Dict[str, Any], Dict[str, Any]]:
+    cfg = _default_auto_harmonics_cfg()
+    maxG = int(solver_spec.get("maxG", cfg["maxG_default"]))
+    cap = _maxG_to_harmonics(maxG)
+    start = min(int(cfg["start"]), cap)
+    step = int(cfg["step"])
+    tol = float(cfg["tol"])
+    max_steps = int(cfg["max_steps"])
+    max_runtime_s = float(cfg["max_runtime_s"])
+
+    evaluator = _SafeObjectiveEvaluator(objective, functions=_objective_functions()) if objective else None
+
+    history: List[Dict[str, Any]] = []
+    prev_obs: Optional[Dict[str, float]] = None
+    selected_harmonics: Optional[List[int]] = None
+    selected_results: Optional[Dict[str, Any]] = None
+    status = "maxG"
+    start_time = time.monotonic()
+    steps_used = 0
+
+    for harmonics in _iter_harmonics_schedule(start, cap, step):
+        if steps_used >= max_steps:
+            status = "max_steps"
+            break
+        if (time.monotonic() - start_time) > max_runtime_s:
+            status = "max_runtime"
+            break
+
+        step_start = time.monotonic()
+        build_spec = dict(solver_spec)
+        build_spec["harmonics"] = list(harmonics)
+        build_spec.pop("maxG", None)
+        if "trn_material" in build_spec:
+            build_spec["trn_material"] = "air"
+        if "ref_material" in build_spec:
+            build_spec["ref_material"] = "air"
+        solver = _build_solver(build_spec)
+        solver.add_observer(_DEFAULT_SOLVER_OBSERVER_FACTORY())
+        _apply_materials_to_solver(solver, materials)
+        _apply_external_media_to_solver(solver, solver_spec=solver_spec, materials=materials)
+        _apply_layers_to_solver(solver, layers, vars_map=vars_map)
+
+        results_by_name = _solve_sources(solver, sources)
+        orders = _default_convergence_orders(harmonics)
+        obs = _compute_convergence_observables(
+            results_by_name,
+            orders=orders,
+            objective_eval=evaluator,
+            vars_map=vars_map,
+            device=solver.device,
+        )
+
+        residual = _compute_residual(prev_obs, obs) if prev_obs is not None else None
+        history.append(
+            {
+                "harmonics": list(harmonics),
+                "residual": residual,
+                "runtime_s": float(time.monotonic() - step_start),
+            }
+        )
+        selected_harmonics = list(harmonics)
+        selected_results = results_by_name
+        steps_used += 1
+
+        if residual is not None and residual <= tol:
+            status = "converged"
+            break
+        prev_obs = obs
+
+    if selected_harmonics is None or selected_results is None:
+        raise SpecError("Auto-harmonics failed to select harmonics")
+
+    final_residual = history[-1]["residual"]
+    convergence = {
+        "selected_harmonics": selected_harmonics,
+        "maxG": maxG,
+        "residual": float(0.0 if final_residual is None else final_residual),
+        "status": status,
+        "history": history,
+    }
+    return selected_harmonics, convergence, selected_results
+
+
 def _load_spec(spec: Any) -> Tuple[Dict[str, Any], Optional[str]]:
     """Load a spec from an in-memory dict or a JSON file path.
 
@@ -1063,20 +1320,10 @@ def _load_spec(spec: Any) -> Tuple[Dict[str, Any], Optional[str]]:
         (spec_dict, config_dir): config_dir is the directory containing the JSON file
         when loaded from disk; otherwise None.
     """
-    if isinstance(spec, (str, os.PathLike)):
-        path = Path(spec).expanduser()
-        try:
-            with open(path, "r") as f:
-                loaded = json.load(f)
-        except FileNotFoundError as e:
-            raise SpecError(f"Spec file not found: {spec}") from e
-        except json.JSONDecodeError as e:
-            raise SpecError(f"Invalid JSON spec at {spec}: {e}") from e
-        _require_type("spec", loaded, dict)
-        return loaded, str(path.resolve().parent)
-
-    _require_type("spec", spec, dict)
-    return spec, None
+    try:
+        return load_config(spec)
+    except (TypeError, ValueError) as e:
+        raise SpecError(str(e)) from e
 
 
 def solve(spec: Any) -> Any:
@@ -1093,6 +1340,11 @@ def solve(spec: Any) -> Any:
 
         If ``spec["output"]["type"] == "numpy"``, any torch tensors inside the
         returned dict(s) are converted to NumPy arrays (detached, moved to CPU).
+        When ``harmonics == "auto"``, each returned result dict includes a
+        ``convergence`` block with the selected ``harmonics`` and residual history.
+
+    Notes:
+        This function runs under ``torch.no_grad()``; gradients are not tracked.
 
     Raises:
         SpecError: If the spec contains unknown keys, missing required fields,
@@ -1102,54 +1354,71 @@ def solve(spec: Any) -> Any:
     spec, config_dir = _load_spec(spec)
     _validate_spec(spec)
 
-    output_type = _parse_output(spec.get("output"))
+    with torch.no_grad():
+        output_type = _parse_output(spec.get("output"))
 
-    solver_spec = _normalize_solver_spec(spec["solver"])
+        solver_spec = _normalize_solver_spec(spec["solver"])
 
-    compiled_vars = _compile_vars(spec.get("vars"), device=solver_spec.get("device", "cpu"))
-    _validate_var_refs_in_spec(spec, vars_keys=compiled_vars.raw.keys())
-    vars_map = compiled_vars.evaluate()
+        compiled_vars = _compile_vars(spec.get("vars"), device=solver_spec.get("device", "cpu"))
+        _validate_var_refs_in_spec(spec, vars_keys=compiled_vars.raw.keys())
+        vars_map = compiled_vars.evaluate()
 
-    build_spec = dict(solver_spec)
-    # Builder validates ref/trn materials at build-time, but interface materials are added post-build.
-    # Build with default air and update external media after materials are applied.
-    if "trn_material" in build_spec:
-        build_spec["trn_material"] = "air"
-    if "ref_material" in build_spec:
-        build_spec["ref_material"] = "air"
-    solver = _build_solver(build_spec)
-    solver.add_observer(_DEFAULT_SOLVER_OBSERVER_FACTORY())
+        caller_dir = infer_caller_dir(skip_files=("interface.py", "__init__.py", "path_utils.py"))
+        materials = _parse_materials(
+            spec.get("materials"),
+            config_dir=config_dir,
+            caller_dir=str(caller_dir) if caller_dir is not None else None,
+        )
+        layers = _parse_layers(spec.get("layers"))
+        sources = _parse_sources(spec.get("sources"))
 
-    caller_dir = infer_caller_dir(skip_files=("interface.py", "__init__.py", "path_utils.py"))
-    materials = _parse_materials(
-        spec.get("materials"),
-        config_dir=config_dir,
-        caller_dir=str(caller_dir) if caller_dir is not None else None,
-    )
-    _apply_materials_to_solver(solver, materials)
-    _apply_external_media_to_solver(solver, solver_spec=solver_spec, materials=materials)
+        if solver_spec.get("harmonics") == "auto":
+            _, convergence, results_by_name = _auto_select_harmonics(
+                solver_spec,
+                materials=materials,
+                layers=layers,
+                sources=sources,
+                vars_map=vars_map,
+            )
+            structured = {name: res.to_structured_dict() for name, res in results_by_name.items()}
+            for res in structured.values():
+                res["convergence"] = convergence
+            if len(sources) == 1:
+                return _postprocess_output(structured[sources[0]["name"]], output_type=output_type)
+            return {name: _postprocess_output(res, output_type=output_type) for name, res in structured.items()}
 
-    layers = _parse_layers(spec.get("layers"))
-    _apply_layers_to_solver(solver, layers, vars_map=vars_map)
+        build_spec = dict(solver_spec)
+        # Builder validates ref/trn materials at build-time, but interface materials are added post-build.
+        # Build with default air and update external media after materials are applied.
+        if "trn_material" in build_spec:
+            build_spec["trn_material"] = "air"
+        if "ref_material" in build_spec:
+            build_spec["ref_material"] = "air"
+        solver = _build_solver(build_spec)
+        solver.add_observer(_DEFAULT_SOLVER_OBSERVER_FACTORY())
 
-    sources = _parse_sources(spec.get("sources"))
+        _apply_materials_to_solver(solver, materials)
+        _apply_external_media_to_solver(solver, solver_spec=solver_spec, materials=materials)
+        _apply_layers_to_solver(solver, layers, vars_map=vars_map)
 
-    if len(sources) == 1:
-        s0 = sources[0]
-        src = solver.add_source(theta=s0["theta"], phi=s0["phi"], pte=s0["pte"], ptm=s0["ptm"], norm_te_dir=s0["norm_te_dir"])
-        res = solver.solve(src).to_structured_dict()
-        return _postprocess_output(res, output_type=output_type)
+        if len(sources) == 1:
+            s0 = sources[0]
+            src = solver.add_source(
+                theta=s0["theta"], phi=s0["phi"], pte=s0["pte"], ptm=s0["ptm"], norm_te_dir=s0["norm_te_dir"]
+            )
+            res = solver.solve(src).to_structured_dict()
+            return _postprocess_output(res, output_type=output_type)
 
-    source_objs = [
-        solver.add_source(theta=s["theta"], phi=s["phi"], pte=s["pte"], ptm=s["ptm"], norm_te_dir=s["norm_te_dir"])
-        for s in sources
-    ]
-    batched = solver.solve(source_objs)
-    results_by_name: Dict[str, Any] = {}
-    for i, s in enumerate(sources):
-        res = batched[i].to_structured_dict()
-        results_by_name[s["name"]] = _postprocess_output(res, output_type=output_type)
-    return results_by_name
+        source_objs = [
+            solver.add_source(theta=s["theta"], phi=s["phi"], pte=s["pte"], ptm=s["ptm"], norm_te_dir=s["norm_te_dir"])
+            for s in sources
+        ]
+        batched = solver.solve(source_objs)
+        results_by_name: Dict[str, Any] = {}
+        for i, s in enumerate(sources):
+            res = batched[i].to_structured_dict()
+            results_by_name[s["name"]] = _postprocess_output(res, output_type=output_type)
+        return results_by_name
 
 
 class _SafeObjectiveEvaluator:
@@ -1285,12 +1554,14 @@ def optimize(spec: Any, *, objective: str, options: Optional[Dict[str, Any]] = N
     Notes:
         ``optimize`` is isolated from ``solve`` and builds its own solver instance
         which is reused across optimization steps.
+        If ``harmonics == "auto"``, the harmonics selection runs once under
+        ``torch.no_grad()`` before training; gradients are tracked only during the
+        optimization loop at the fixed ``harmonics``.
 
     Args:
         spec: Either a spec dictionary describing solver/materials/layers/sources, or a
             path to a JSON spec file.
-            The interface expects user-facing solver keys (``wavelengths/grids/harmonics``),
-            and rejects internal keys like ``rdim/kdim/lam0``.
+            The interface expects user-facing solver keys (``wavelengths/grids/harmonics``).
         objective: String expression to minimize. Must evaluate to a scalar.
         options: Optimization options (strictly validated). Supported keys:
             ``steps``, ``optimizer`` (currently ``adam``), ``grad_clip``,
@@ -1302,6 +1573,8 @@ def optimize(spec: Any, *, objective: str, options: Optional[Dict[str, Any]] = N
         - ``vars``: final variable values (torch tensors or NumPy arrays per output type).
         - ``best`` (optional): best loss/vars/results if ``return_best=True``.
         - ``last_results`` (otherwise): last-step results by source.
+        If ``harmonics == "auto"``, the output also includes ``opt_harmonics`` and
+        a ``convergence`` diagnostics block.
 
     Raises:
         SpecError: If the spec/options are invalid or the objective expression
@@ -1340,6 +1613,31 @@ def optimize(spec: Any, *, objective: str, options: Optional[Dict[str, Any]] = N
     if not trainable_params:
         raise SpecError("No trainable variables found in spec.vars")
 
+    caller_dir = infer_caller_dir(skip_files=("interface.py", "__init__.py", "path_utils.py"))
+    materials = _parse_materials(
+        spec.get("materials"),
+        config_dir=config_dir,
+        caller_dir=str(caller_dir) if caller_dir is not None else None,
+    )
+    layers = _parse_layers(spec.get("layers"))
+    sources = _parse_sources(spec.get("sources"))
+
+    auto_harmonics: Optional[List[int]] = None
+    auto_convergence: Optional[Dict[str, Any]] = None
+    if solver_spec.get("harmonics") == "auto":
+        with torch.no_grad():
+            auto_harmonics, auto_convergence, _ = _auto_select_harmonics(
+                solver_spec,
+                materials=materials,
+                layers=layers,
+                sources=sources,
+                vars_map=vars_map,
+                objective=objective,
+            )
+        solver_spec = dict(solver_spec)
+        solver_spec.pop("maxG", None)
+        solver_spec["harmonics"] = auto_harmonics
+
     if opt_name.lower() == "adam":
         optimizer = torch.optim.Adam(trainable_params, lr=lr)
     else:
@@ -1357,17 +1655,9 @@ def optimize(spec: Any, *, objective: str, options: Optional[Dict[str, Any]] = N
         total_steps=steps,
     )
     solver.add_observer(throttled_observer)
-    caller_dir = infer_caller_dir(skip_files=("interface.py", "__init__.py", "path_utils.py"))
-    materials = _parse_materials(
-        spec.get("materials"),
-        config_dir=config_dir,
-        caller_dir=str(caller_dir) if caller_dir is not None else None,
-    )
     _apply_materials_to_solver(solver, materials)
     _apply_external_media_to_solver(solver, solver_spec=solver_spec, materials=materials)
-    layers = _parse_layers(spec.get("layers"))
     _apply_layers_to_solver(solver, layers, vars_map=vars_map)
-    sources = _parse_sources(spec.get("sources"))
     source_objs = [
         (
             s["name"],
@@ -1477,6 +1767,9 @@ def optimize(spec: Any, *, objective: str, options: Optional[Dict[str, Any]] = N
         "loss_history": loss_history,
         "vars": final_vars,
     }
+    if auto_harmonics is not None:
+        out["opt_harmonics"] = auto_harmonics
+        out["convergence"] = auto_convergence
     if best["loss"] is not None:
         out["best"] = {
             "loss": best["loss"],
