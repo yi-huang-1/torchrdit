@@ -207,18 +207,23 @@ def _add_layers(
         if "material" not in layer or "thickness" not in layer:
             raise ValueError(f"Layer configuration at layers[{idx}] must include 'material' and 'thickness'")
 
-        if isinstance(layer["material"], str):
-            material_name = layer["material"]
-        elif isinstance(layer["material"], MaterialClass):
-            material_name = layer["material"].name
+        material_value = layer["material"]
+        if isinstance(material_value, MaterialClass):
+            material_name = material_value.name
+            material_obj = material_value
+        elif isinstance(material_value, str):
+            material_name = material_value
+            if material_name not in materials:
+                raise ValueError(f"Unknown material {material_name!r} at layers[{idx}]")
+            material_obj = materials[material_name]
         else:
             raise ValueError(f"Invalid material type: {type(layer['material'])}")
 
         thickness_val = layer["thickness"]
         if isinstance(thickness_val, torch.Tensor):
-            thickness = thickness_val
+            thickness = thickness_val.to(device=solver.device, dtype=solver.tfloat)
         else:
-            thickness = torch.as_tensor(thickness_val, dtype=torch.float32)
+            thickness = torch.as_tensor(thickness_val, dtype=solver.tfloat, device=solver.device)
         is_homogeneous = layer.get("is_homogeneous", True)
         is_optimize = layer.get("is_optimize", False)
 
@@ -231,7 +236,7 @@ def _add_layers(
             slice_count = 1
 
         solver.add_layer(
-            material_name=materials[material_name],
+            material_name=material_obj,
             thickness=thickness,
             is_homogeneous=is_homogeneous,
             is_optimize=is_optimize,
@@ -1013,9 +1018,21 @@ class SolverBuilder:
 
         # Extract parameters from config (case insensitive)
         if "algorithm" in case_insensitive_config:
-            self._algorithm_type = Algorithm[case_insensitive_config["algorithm"][1]]
+            algo_value = case_insensitive_config["algorithm"][1]
+            if isinstance(algo_value, Algorithm):
+                self._algorithm_type = algo_value
+            elif isinstance(algo_value, str):
+                self._algorithm_type = Algorithm[algo_value.upper()]
+            else:
+                raise ValueError(f"algorithm must be a string or Algorithm, got {type(algo_value)}")
         if "precision" in case_insensitive_config:
-            self._precision = Precision[case_insensitive_config["precision"][1]]
+            prec_value = case_insensitive_config["precision"][1]
+            if isinstance(prec_value, Precision):
+                self._precision = prec_value
+            elif isinstance(prec_value, str):
+                self._precision = Precision[prec_value.upper()]
+            else:
+                raise ValueError(f"precision must be a string or Precision, got {type(prec_value)}")
         if "wavelengths" in case_insensitive_config:
             self._lam0 = np.array(case_insensitive_config["wavelengths"][1])
         if "length_unit" in case_insensitive_config:
@@ -1156,7 +1173,11 @@ class SolverBuilder:
                 solver.set_rdit_order(self._rdit_order)
 
         # Add layers if specified
-        if self._layers and self._materials_dict:
+        if self._layers:
+            if not self._materials_dict:
+                has_str_material = any(isinstance(layer.get("material"), str) for layer in self._layers)
+                if has_str_material:
+                    raise ValueError("layers specified but no materials provided")
             _add_layers(solver, self._layers, self._materials_dict)
 
         # Set transmission and reflection materials if specified

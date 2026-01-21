@@ -1,6 +1,7 @@
 import unittest
 import numpy as np
 from pathlib import Path
+import torch
 
 from torchrdit.constants import Algorithm, Precision
 from torchrdit.utils import create_material
@@ -152,6 +153,22 @@ class TestSolverBuilder(unittest.TestCase):
         builder = get_solver_builder()
         with self.assertRaises(ValueError):
             builder.from_config(invalid_config)
+
+    def test_case_insensitive_values(self):
+        """Test that configuration values for algorithm/precision are case-insensitive."""
+        config = {
+            "algorithm": "rdit",
+            "precision": "double",
+            "wavelengths": [1.55],
+            "grids": [16, 16],
+            "harmonics": [3, 3],
+        }
+
+        builder = get_solver_builder()
+        solver = builder.from_config(config).build()
+
+        self.assertIsInstance(solver, RDITSolver)
+        self.assertEqual(solver.tfloat, torch.float64)
     
     def test_trn_ref_materials_config(self):
         """Test the transmission and reflection material configuration."""
@@ -222,6 +239,24 @@ class TestSolverBuilder(unittest.TestCase):
         layer = solver.layer_manager.layers[0]
         self.assertEqual(layer.material_name, "silicon")
         self.assertEqual(layer.slice_count, 4)
+
+    def test_builder_layer_thickness_matches_solver_dtype(self):
+        """Builder layer thickness should match solver precision."""
+        builder = get_solver_builder()
+        solver = (
+            builder.with_algorithm(Algorithm.RCWA)
+            .with_precision(Precision.DOUBLE)
+            .with_wavelengths(1.55)
+            .with_real_dimensions([8, 8])
+            .with_k_dimensions([3, 3])
+            .with_materials([self.air, self.silicon])
+            .add_layer({"material": "silicon", "thickness": 0.2, "is_homogeneous": True})
+            .build()
+        )
+
+        thickness = solver.layer_manager.layers[0].thickness
+        self.assertIsInstance(thickness, torch.Tensor)
+        self.assertEqual(thickness.dtype, solver.tfloat)
 
     def test_config_layer_slice_count_defaults(self):
         """from_config should accept per-layer slice_count and sanitize invalid values."""

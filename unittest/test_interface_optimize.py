@@ -113,3 +113,57 @@ def test_optimize_auto_harmonics_reports_convergence():
     assert len(opt_harmonics) == 2
     assert opt_harmonics[0] % 2 == 1 and opt_harmonics[1] % 2 == 1
     assert opt_harmonics[0] * opt_harmonics[1] <= spec["solver"]["maxG"]
+
+
+def test_optimize_invalid_objective_syntax_raises_spec_error():
+    from torchrdit.interface import optimize, SpecError
+    import torch
+
+    spec = {
+        "solver": {
+            "algorithm": "RCWA",
+            "precision": "SINGLE",
+            "wavelengths": [1.55],
+            "length_unit": "um",
+            "grids": [8, 8],
+            "harmonics": [3, 3],
+            "device": "cpu",
+        },
+        "materials": {"Si": {"permittivity": 12.0}},
+        "vars": {"$t": torch.tensor(0.2, requires_grad=True)},
+        "layers": [{"material": "Si", "thickness": "$t", "is_homogeneous": True}],
+        "sources": {"name": "s0", "theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
+        "output": {"type": "torch"},
+    }
+
+    with pytest.raises(SpecError, match=r"objective"):
+        optimize(spec, objective="Results['s0'", options={"steps": 1})
+
+
+def test_optimize_allows_complex_objective_with_implicit_abs():
+    from torchrdit.interface import optimize
+    import torch
+
+    spec = {
+        "solver": {
+            "algorithm": "RCWA",
+            "precision": "SINGLE",
+            "wavelengths": [1.55],
+            "length_unit": "um",
+            "grids": [16, 16],
+            "harmonics": [3, 3],
+            "device": "cpu",
+        },
+        "materials": {"Si": {"permittivity": 12.0}},
+        "vars": {"$t": torch.tensor(0.2, requires_grad=True)},
+        "layers": [{"material": "Si", "thickness": "$t", "is_homogeneous": True}],
+        "sources": {"name": "s0", "theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
+        "output": {"type": "torch"},
+    }
+
+    objective = "Results['s0']['field_fourier_coefficients']['reflection']['E']['x'][0,0,0]"
+    out = optimize(spec, objective=objective, options={"steps": 1, "optimizer": {"name": "adam", "lr": 1e-2}})
+
+    assert isinstance(out, dict)
+    assert len(out["loss_history"]) == 1
+    assert isinstance(out["loss_history"][0], float)

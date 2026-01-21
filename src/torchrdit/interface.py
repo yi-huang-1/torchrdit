@@ -75,7 +75,9 @@ Interface isolation: legacy/internal solver keys are rejected (use ``wavelengths
 ``spec["vars"]`` (optional; the only variable entry point):
 - Keys must start with ``$``. Values can be primitives/NumPy/torch, or expression strings referencing other vars.
 - References elsewhere in spec use string form (e.g., ``"thickness": "$t"``).
-- Expressions: arithmetic only; no attribute access and no function calls; order-insensitive evaluation with cycle/missing-var errors.
+- Expressions: arithmetic + a small set of safe functions (abs, real, imag, mean, sum, min, max, sin, cos, tan, sqrt, exp, log);
+  no attribute access; order-insensitive evaluation with cycle/missing-var errors.
+- Reserved variable names: ``Results``, ``Vars``, ``S``, ``V``, and any function name in the allowlist above.
 
 ``spec["materials"]`` (optional):
 - ``{name: {"permittivity": ...}}`` for non-dispersive materials, or:
@@ -124,7 +126,7 @@ Patterned layers: ``pattern = {"bg_material": str?, "method": "FFT|Analytical"?,
 
 ``objective``:
 - ``str`` expression; supports arithmetic, indexing/slicing, and function calls to:
-  ``abs, real, imag, mean, sum, min, max``.
+  ``abs, real, imag, mean, sum, min, max, sin, cos, tan, sqrt, exp, log``.
 - Environment:
   - ``Results``/``S``: per-source structured results dicts
   - ``Vars``/``V``: variables (also injected as plain names without the ``$`` prefix)
@@ -242,21 +244,19 @@ opt_out = tr.optimize(spec, objective=objective, options={"steps": 10, "optimize
 
 from __future__ import annotations
 
-import ast
-import json
 import math
 import os
 import re
 import time
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
 
 from .builder import SolverBuilder
 from .config_io import load_config
+from .expr import ParseRules, evaluate_expression, parse_expression
 from .observers import ConsoleProgressObserver
 from .path_utils import infer_caller_dir, resolve_data_path
 from .shapes import ShapeGenerator
@@ -269,7 +269,8 @@ class SpecError(ValueError):
     pass
 
 
-_DEFAULT_SOLVER_OBSERVER_FACTORY = lambda: ConsoleProgressObserver(verbose=False)
+def _DEFAULT_SOLVER_OBSERVER_FACTORY() -> ConsoleProgressObserver:
+    return ConsoleProgressObserver(verbose=False)
 
 
 class _OptimizeStepThrottledObserver:
@@ -347,46 +348,133 @@ def _strip_var_prefix(name: str) -> str:
     return name[1:] if name.startswith("$") else name
 
 
-class _SafeVarExprEvaluator:
-    def __init__(self, expr: str, *, path: str) -> None:
-        self._expr = expr
-        self._path = path
-        self._tree = ast.parse(expr, mode="eval")
+def _is_numeric_constant(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, (int, float, complex))
 
-    def eval(self, env: Mapping[str, Any]) -> Any:
-        return self._eval_node(self._tree.body, env)
 
-    def _eval_node(self, node: ast.AST, env: Mapping[str, Any]) -> Any:
-        if isinstance(node, ast.Constant):
-            return node.value
-        if isinstance(node, ast.Name):
-            if node.id in env:
-                return env[node.id]
-            raise SpecError(f"Unknown name in var expression at {self._path}: {node.id!r}")
-        if isinstance(node, ast.BinOp):
-            left = self._eval_node(node.left, env)
-            right = self._eval_node(node.right, env)
-            if isinstance(node.op, ast.Add):
-                return left + right
-            if isinstance(node.op, ast.Sub):
-                return left - right
-            if isinstance(node.op, ast.Mult):
-                return left * right
-            if isinstance(node.op, ast.Div):
-                return left / right
-            if isinstance(node.op, ast.Pow):
-                return left**right
-            raise SpecError(f"Unsupported binary operator in var expression at {self._path}: {type(node.op)}")
-        if isinstance(node, ast.UnaryOp):
-            operand = self._eval_node(node.operand, env)
-            if isinstance(node.op, ast.USub):
-                return -operand
-            if isinstance(node.op, ast.UAdd):
-                return +operand
-            raise SpecError(f"Unsupported unary operator in var expression at {self._path}: {type(node.op)}")
-        if isinstance(node, (ast.Tuple, ast.List, ast.Dict, ast.Subscript, ast.Call, ast.Attribute, ast.Lambda)):
-            raise SpecError(f"Unsupported syntax in var expression at {self._path}: {type(node).__name__}")
-        raise SpecError(f"Unsupported syntax in var expression at {self._path}: {type(node).__name__}")
+def _expression_functions():
+    def _to_tensor(x: Any) -> torch.Tensor:
+        if isinstance(x, torch.Tensor):
+            return x
+        return torch.as_tensor(x)
+
+    def _to_tensor_list(x: Any) -> torch.Tensor:
+        if isinstance(x, (list, tuple)):
+            return torch.stack([_to_tensor(v) for v in x])
+        return _to_tensor(x)
+
+    def abs_(x: Any):
+        return torch.abs(_to_tensor_list(x))
+
+    def real(x: Any):
+        return torch.real(_to_tensor_list(x))
+
+    def imag(x: Any):
+        t = _to_tensor_list(x)
+        if not torch.is_complex(t):
+            return t * 0
+        return torch.imag(t)
+
+    def mean(x: Any):
+        return _to_tensor_list(x).mean()
+
+    def sum_(x: Any):
+        return _to_tensor_list(x).sum()
+
+    def min_(x: Any):
+        return _to_tensor_list(x).min()
+
+    def max_(x: Any):
+        return _to_tensor_list(x).max()
+
+    def sin(x: Any):
+        return torch.sin(_to_tensor_list(x))
+
+    def cos(x: Any):
+        return torch.cos(_to_tensor_list(x))
+
+    def tan(x: Any):
+        return torch.tan(_to_tensor_list(x))
+
+    def sqrt(x: Any):
+        return torch.sqrt(_to_tensor_list(x))
+
+    def exp(x: Any):
+        return torch.exp(_to_tensor_list(x))
+
+    def log(x: Any):
+        return torch.log(_to_tensor_list(x))
+
+    return {
+        "abs": abs_,
+        "real": real,
+        "imag": imag,
+        "mean": mean,
+        "sum": sum_,
+        "min": min_,
+        "max": max_,
+        "sin": sin,
+        "cos": cos,
+        "tan": tan,
+        "sqrt": sqrt,
+        "exp": exp,
+        "log": log,
+    }
+
+
+_EXPR_FUNCTIONS = _expression_functions()
+_EXPR_FUNCTION_NAMES = set(_EXPR_FUNCTIONS)
+_RESERVED_VAR_NAMES = {"Results", "Vars", "S", "V"} | _EXPR_FUNCTION_NAMES
+_MASK_OPS = {"union", "intersection", "difference", "subtract"}
+
+_VAR_EXPR_RULES = ParseRules(
+    context="var expression",
+    allow_constants=True,
+    allow_names=True,
+    allow_binops=True,
+    allow_unaryops=True,
+    allow_calls=True,
+    allow_call_kwargs=False,
+    allow_subscript=False,
+    allow_lists=True,
+    allow_tuples=True,
+    allow_dicts=False,
+    allowed_functions=_EXPR_FUNCTION_NAMES,
+    constant_predicate=_is_numeric_constant,
+)
+
+_OBJECTIVE_EXPR_RULES = ParseRules(
+    context="objective",
+    allow_constants=True,
+    allow_names=True,
+    allow_binops=True,
+    allow_unaryops=True,
+    allow_calls=True,
+    allow_call_kwargs=True,
+    allow_subscript=True,
+    allow_lists=True,
+    allow_tuples=True,
+    allow_dicts=True,
+    allowed_functions=_EXPR_FUNCTION_NAMES,
+)
+
+_MASK_EXPR_RULES = ParseRules(
+    context="op expr",
+    allow_constants=False,
+    allow_names=True,
+    allow_binops=False,
+    allow_unaryops=False,
+    allow_calls=True,
+    allow_call_kwargs=False,
+    allow_subscript=False,
+    allow_lists=False,
+    allow_tuples=False,
+    allow_dicts=False,
+    allowed_functions=_MASK_OPS,
+    call_arity=2,
+)
 
 
 def _transform_var_expr(expr: str) -> Tuple[str, Dict[str, str]]:
@@ -405,7 +493,7 @@ def _transform_var_expr(expr: str) -> Tuple[str, Dict[str, str]]:
 @dataclass(frozen=True)
 class _CompiledVars:
     raw: Dict[str, Any]
-    exprs: Dict[str, Tuple[_SafeVarExprEvaluator, Dict[str, str]]]
+    exprs: Dict[str, Tuple[Any, Dict[str, str]]]
     device: torch.device
 
     def evaluate(self) -> Dict[str, Any]:
@@ -423,9 +511,16 @@ class _CompiledVars:
             visiting.add(name)
             raw_val = self.raw[name]
             if name in self.exprs:
-                evaluator, ident_to_var = self.exprs[name]
+                expr_node, ident_to_var = self.exprs[name]
                 env = {ident: resolve(var_name) for ident, var_name in ident_to_var.items()}
-                val = evaluator.eval(env)
+                val = evaluate_expression(
+                    expr_node,
+                    env,
+                    functions=_EXPR_FUNCTIONS,
+                    path=f"spec.vars.{name}",
+                    context="var expression",
+                    error_cls=SpecError,
+                )
             else:
                 val = raw_val
 
@@ -459,24 +554,26 @@ def _compile_vars(spec_vars: Any, *, device: Union[str, torch.device]) -> _Compi
     _require_type("spec.vars", spec_vars, dict)
 
     raw: Dict[str, Any] = {}
-    exprs: Dict[str, Tuple[_SafeVarExprEvaluator, Dict[str, str]]] = {}
+    exprs: Dict[str, Tuple[Any, Dict[str, str]]] = {}
     dev = torch.device(device)
 
     for name, val in spec_vars.items():
         if not isinstance(name, str) or not _is_var_name(name):
             raise SpecError(f"spec.vars keys must be '$<identifier>' strings, got {name!r}")
+        if _strip_var_prefix(name) in _RESERVED_VAR_NAMES:
+            raise SpecError(f"spec.vars.{name} is reserved and cannot be used as a variable name")
         raw[name] = val
 
     for name, val in raw.items():
         path = f"spec.vars.{name}"
         if isinstance(val, str):
             expr_py, ident_to_var = _transform_var_expr(val)
-            evaluator = _SafeVarExprEvaluator(expr_py, path=path)
+            expr_node = parse_expression(expr_py, path=path, rules=_VAR_EXPR_RULES, error_cls=SpecError)
             # Validate referenced vars exist
             for dep in ident_to_var.values():
                 if dep not in raw:
                     raise SpecError(f"Unknown variable {dep!r} referenced at {path}")
-            exprs[name] = (evaluator, ident_to_var)
+            exprs[name] = (expr_node, ident_to_var)
         elif isinstance(val, torch.Tensor):
             if val.device != dev:
                 if val.requires_grad:
@@ -915,34 +1012,9 @@ def _build_mask_from_pattern(
     mask_device = shape_gen.XO.device
     mask_dtype = getattr(shape_gen, "tfloat", torch.float32)
 
-    class _SafeMaskExprEvaluator:
-        def __init__(self, expr: str, *, node_path: str) -> None:
-            self._expr = expr
-            self._path = node_path
-            self._tree = ast.parse(expr, mode="eval")
-
-        def eval(self, masks: Mapping[str, torch.Tensor]) -> torch.Tensor:
-            return self._eval_node(self._tree.body, masks)
-
-        def _eval_node(self, node: ast.AST, masks: Mapping[str, torch.Tensor]) -> torch.Tensor:
-            if isinstance(node, ast.Name):
-                if node.id not in masks:
-                    raise SpecError(f"Unknown shape name {node.id!r} referenced at {self._path}")
-                return masks[node.id]
-            if isinstance(node, ast.Call):
-                if not isinstance(node.func, ast.Name):
-                    raise SpecError(f"Only simple op(a,b) calls are allowed at {self._path}")
-                op = node.func.id
-                if op not in {"union", "intersection", "difference", "subtract"}:
-                    raise SpecError(f"Unsupported op {op!r} at {self._path}")
-                if len(node.args) != 2 or node.keywords:
-                    raise SpecError(f"op calls must be op(a, b) with 2 positional args at {self._path}")
-                a = self._eval_node(node.args[0], masks)
-                b = self._eval_node(node.args[1], masks)
-                return shape_gen.combine_masks(a, b, operation=op)
-            if isinstance(node, (ast.Constant, ast.BinOp, ast.UnaryOp, ast.Subscript, ast.Attribute, ast.Dict, ast.List, ast.Tuple)):
-                raise SpecError(f"Unsupported syntax in op expr at {self._path}: {type(node).__name__}")
-            raise SpecError(f"Unsupported syntax in op expr at {self._path}: {type(node).__name__}")
+    mask_functions = {
+        op: (lambda a, b, op=op: shape_gen.combine_masks(a, b, operation=op)) for op in _MASK_OPS
+    }
 
     masks: Dict[str, torch.Tensor] = {}
     for i, node in enumerate(nodes):
@@ -1019,8 +1091,16 @@ def _build_mask_from_pattern(
             expr = node["expr"]
             if "$" in expr:
                 raise SpecError(f"{npath}.expr must not contain '$' variable references")
-            evaluator = _SafeMaskExprEvaluator(expr, node_path=npath)
-            masks[name] = evaluator.eval(masks)
+            expr_node = parse_expression(expr, path=npath, rules=_MASK_EXPR_RULES, error_cls=SpecError)
+            masks[name] = evaluate_expression(
+                expr_node,
+                masks,
+                functions=mask_functions,
+                path=npath,
+                context="op expr",
+                error_cls=SpecError,
+                name_label="shape name",
+            )
         elif ntype == "gds":
             raise SpecError(f"Unsupported shape type at {npath}.type: 'gds' (not supported in interface)")
         else:
@@ -1153,7 +1233,7 @@ def _compute_result_observables(result, *, orders: Sequence[Tuple[int, int]]) ->
 
 
 def _evaluate_objective_scalar(
-    evaluator: "_SafeObjectiveEvaluator",
+    expr_node: Any,
     *,
     results_by_name: Mapping[str, Any],
     vars_map: Mapping[str, Any],
@@ -1171,7 +1251,14 @@ def _evaluate_objective_scalar(
         "V": vars_env,
         **{k: v for k, v in vars_env.items() if not k.startswith("$")},
     }
-    value = evaluator.eval(env)
+    value = evaluate_expression(
+        expr_node,
+        env,
+        functions=_EXPR_FUNCTIONS,
+        path="objective",
+        context="objective",
+        error_cls=SpecError,
+    )
     if not isinstance(value, torch.Tensor):
         value = torch.as_tensor(value, device=device)
     if value.numel() != 1:
@@ -1185,14 +1272,14 @@ def _compute_convergence_observables(
     results_by_name: Mapping[str, Any],
     *,
     orders: Sequence[Tuple[int, int]],
-    objective_eval: Optional["_SafeObjectiveEvaluator"] = None,
+    objective_expr: Optional[Any] = None,
     vars_map: Optional[Mapping[str, Any]] = None,
     device: Optional[Union[str, torch.device]] = None,
 ) -> Dict[str, float]:
-    if objective_eval is not None:
+    if objective_expr is not None:
         if vars_map is None or device is None:
             raise SpecError("Objective evaluation requires vars_map and device")
-        value = _evaluate_objective_scalar(objective_eval, results_by_name=results_by_name, vars_map=vars_map, device=device)
+        value = _evaluate_objective_scalar(objective_expr, results_by_name=results_by_name, vars_map=vars_map, device=device)
         return {"objective": value}
 
     agg: Dict[str, float] = {}
@@ -1240,7 +1327,11 @@ def _auto_select_harmonics(
     max_steps = int(cfg["max_steps"])
     max_runtime_s = float(cfg["max_runtime_s"])
 
-    evaluator = _SafeObjectiveEvaluator(objective, functions=_objective_functions()) if objective else None
+    objective_expr = (
+        parse_expression(objective, path="objective", rules=_OBJECTIVE_EXPR_RULES, error_cls=SpecError)
+        if objective
+        else None
+    )
 
     history: List[Dict[str, Any]] = []
     prev_obs: Optional[Dict[str, float]] = None
@@ -1277,7 +1368,7 @@ def _auto_select_harmonics(
         obs = _compute_convergence_observables(
             results_by_name,
             orders=orders,
-            objective_eval=evaluator,
+            objective_expr=objective_expr,
             vars_map=vars_map,
             device=solver.device,
         )
@@ -1421,125 +1512,6 @@ def solve(spec: Any) -> Any:
         return results_by_name
 
 
-class _SafeObjectiveEvaluator:
-    def __init__(self, expr: str, *, functions: Mapping[str, Callable[..., Any]]) -> None:
-        self._expr = expr
-        self._functions = dict(functions)
-        self._tree = ast.parse(expr, mode="eval")
-
-    def eval(self, env: Mapping[str, Any]) -> Any:
-        return self._eval_node(self._tree.body, env)
-
-    def _eval_node(self, node: ast.AST, env: Mapping[str, Any]) -> Any:
-        if isinstance(node, ast.Constant):
-            return node.value
-        if isinstance(node, ast.Name):
-            if node.id in env:
-                return env[node.id]
-            if node.id in self._functions:
-                return self._functions[node.id]
-            raise SpecError(f"Unknown name in objective: {node.id!r}")
-        if isinstance(node, ast.BinOp):
-            left = self._eval_node(node.left, env)
-            right = self._eval_node(node.right, env)
-            if isinstance(node.op, ast.Add):
-                return left + right
-            if isinstance(node.op, ast.Sub):
-                return left - right
-            if isinstance(node.op, ast.Mult):
-                return left * right
-            if isinstance(node.op, ast.Div):
-                return left / right
-            if isinstance(node.op, ast.Pow):
-                return left**right
-            raise SpecError(f"Unsupported binary operator in objective: {type(node.op)}")
-        if isinstance(node, ast.UnaryOp):
-            operand = self._eval_node(node.operand, env)
-            if isinstance(node.op, ast.USub):
-                return -operand
-            if isinstance(node.op, ast.UAdd):
-                return +operand
-            raise SpecError(f"Unsupported unary operator in objective: {type(node.op)}")
-        if isinstance(node, ast.Subscript):
-            value = self._eval_node(node.value, env)
-            slc = node.slice
-            if isinstance(slc, ast.Constant):
-                key = slc.value
-            elif isinstance(slc, ast.Slice):
-                lower = self._eval_node(slc.lower, env) if slc.lower is not None else None
-                upper = self._eval_node(slc.upper, env) if slc.upper is not None else None
-                step = self._eval_node(slc.step, env) if slc.step is not None else None
-                key = slice(lower, upper, step)
-            else:
-                key = self._eval_node(slc, env)
-            return value[key]
-        if isinstance(node, ast.Call):
-            func = self._eval_node(node.func, env)
-            if not callable(func):
-                raise SpecError("Objective call target is not callable")
-            if isinstance(node.func, ast.Attribute):
-                raise SpecError("Attribute calls are not allowed in objective")
-            args = [self._eval_node(a, env) for a in node.args]
-            kwargs = {kw.arg: self._eval_node(kw.value, env) for kw in node.keywords}
-            return func(*args, **kwargs)
-        if isinstance(node, (ast.Tuple, ast.List)):
-            elts = [self._eval_node(e, env) for e in node.elts]
-            return elts if isinstance(node, ast.List) else tuple(elts)
-        if isinstance(node, ast.Dict):
-            keys = [self._eval_node(k, env) for k in node.keys]
-            vals = [self._eval_node(v, env) for v in node.values]
-            return dict(zip(keys, vals))
-        if isinstance(node, ast.Attribute):
-            raise SpecError("Attribute access is not allowed in objective")
-        raise SpecError(f"Unsupported syntax in objective: {type(node).__name__}")
-
-
-def _objective_functions():
-    def _to_tensor(x: Any) -> torch.Tensor:
-        if isinstance(x, torch.Tensor):
-            return x
-        return torch.as_tensor(x)
-
-    def abs_(x: Any):
-        return torch.abs(_to_tensor(x))
-
-    def real(x: Any):
-        return torch.real(_to_tensor(x))
-
-    def imag(x: Any):
-        return torch.imag(_to_tensor(x))
-
-    def mean(x: Any):
-        if isinstance(x, (list, tuple)):
-            return torch.stack([_to_tensor(v) for v in x]).mean()
-        return _to_tensor(x).mean()
-
-    def sum_(x: Any):
-        if isinstance(x, (list, tuple)):
-            return torch.stack([_to_tensor(v) for v in x]).sum()
-        return _to_tensor(x).sum()
-
-    def min_(x: Any):
-        if isinstance(x, (list, tuple)):
-            return torch.stack([_to_tensor(v) for v in x]).min()
-        return _to_tensor(x).min()
-
-    def max_(x: Any):
-        if isinstance(x, (list, tuple)):
-            return torch.stack([_to_tensor(v) for v in x]).max()
-        return _to_tensor(x).max()
-
-    return {
-        "abs": abs_,
-        "real": real,
-        "imag": imag,
-        "mean": mean,
-        "sum": sum_,
-        "min": min_,
-        "max": max_,
-    }
-
-
 def optimize(spec: Any, *, objective: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Minimize a string objective by optimizing variables defined in ``spec["vars"]``.
 
@@ -1666,7 +1638,7 @@ def optimize(spec: Any, *, objective: str, options: Optional[Dict[str, Any]] = N
         for s in sources
     ]
 
-    evaluator = _SafeObjectiveEvaluator(objective, functions=_objective_functions())
+    objective_expr = parse_expression(objective, path="objective", rules=_OBJECTIVE_EXPR_RULES, error_cls=SpecError)
 
     best = {"loss": None, "vars": None, "results": None}
     loss_history: List[float] = []
@@ -1736,11 +1708,22 @@ def optimize(spec: Any, *, objective: str, options: Optional[Dict[str, Any]] = N
             "V": vars_env,
             **{k: v for k, v in vars_env.items() if not k.startswith("$")},
         }
-        loss = evaluator.eval(env)
+        loss = evaluate_expression(
+            objective_expr,
+            env,
+            functions=_EXPR_FUNCTIONS,
+            path="objective",
+            context="objective",
+            error_cls=SpecError,
+        )
         if not isinstance(loss, torch.Tensor):
-            loss = torch.as_tensor(loss, device=solver.device, dtype=torch.float32)
+            loss = torch.as_tensor(loss, device=solver.device)
         if loss.numel() != 1:
             raise SpecError("Objective must evaluate to a scalar tensor")
+        if torch.is_complex(loss):
+            loss = torch.abs(loss)
+        if loss.dtype != solver.tfloat:
+            loss = loss.to(dtype=solver.tfloat)
         loss.backward()
 
         grad_clip = options.get("grad_clip")

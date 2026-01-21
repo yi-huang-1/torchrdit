@@ -871,6 +871,19 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             self.tint = torch.int64
             self.nfloat = np.float64
 
+        if grids is None:
+            grids = [512, 512]
+        else:
+            grids = list(grids)
+        if harmonics is None:
+            harmonics = [3, 3]
+        else:
+            harmonics = list(harmonics)
+        if materiallist is None:
+            materiallist = []
+        else:
+            materiallist = list(materiallist)
+
         Cell3D.__init__(self, lengthunit, grids, harmonics, materiallist, t1, t2, device)
         SolverSubjectMixin.__init__(self)
 
@@ -878,14 +891,6 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         self.debug_batching = debug_batching
         self.debug_tensorization = debug_tensorization
         self.debug_unification = debug_unification
-
-        # Initialize default values for mutable parameters
-        if grids is None:
-            grids = [512, 512]
-        if harmonics is None:
-            harmonics = [3, 3]
-        if materiallist is None:
-            materiallist = []
 
         # Initialize tensors that were previously class variables
         self.mesh_fp = torch.empty((3, 3), device=self.device, dtype=self.tfloat)
@@ -896,12 +901,20 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         self.k_0 = torch.empty((1,), device=self.device, dtype=self.tfloat)
 
         # Set free space wavelength
-        if isinstance(lam0, float):
-            self._lam0 = np.array([lam0], dtype=self.nfloat)
+        if lam0 is None:
+            lam0 = np.array([1.0], dtype=self.nfloat)
+        if isinstance(lam0, (float, int)):
+            self._lam0 = np.array([float(lam0)], dtype=self.nfloat)
         elif isinstance(lam0, np.ndarray):
             self._lam0 = lam0.astype(self.nfloat)
         else:
-            raise TypeError(f"lam0 must be float or numpy.ndarray, got {type(lam0)}")
+            try:
+                self._lam0 = np.array(lam0, dtype=self.nfloat)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(f"lam0 must be float or numpy.ndarray, got {type(lam0)}") from exc
+
+        if self._lam0.size == 0:
+            raise ValueError("lam0 must be non-empty")
 
         self.n_freqs = len(self._lam0)
         self.kinc = torch.zeros((1, 3), device=self.device, dtype=self.tfloat)
@@ -3591,7 +3604,7 @@ class RCWASolver(FourierBaseSolver):
 
     def __init__(
         self,
-        lam0: np.ndarray = np.ndarray([]),
+        lam0: Optional[Union[float, np.ndarray]] = None,
         lengthunit: str = "um",
         grids: list = [512, 512],  # dimensions in real space: (H, W)
         harmonics: list = [3, 3],  # dimensions in k space: (kH, kW)
@@ -3727,7 +3740,7 @@ class RDITSolver(FourierBaseSolver):
 
     def __init__(
         self,
-        lam0: np.ndarray = np.ndarray([]),
+        lam0: Optional[Union[float, np.ndarray]] = None,
         lengthunit: str = "um",
         grids: list = [512, 512],  # dimensions in real space: (H, W)
         harmonics: list = [3, 3],  # dimensions in k space: (kH, kW)

@@ -52,3 +52,18 @@ def test_builder_rejects_base_path_key():
 
     with pytest.raises(ValueError, match=r"base_path"):
         create_solver_from_config(config)
+
+
+def test_builder_rejects_layers_without_materials():
+    from torchrdit.solver import create_solver_from_config
+
+    config = {
+        "algorithm": "RCWA",
+        "wavelengths": [1.55],
+        "grids": [16, 16],
+        "harmonics": [3, 3],
+        "layers": [{"material": "Si", "thickness": 0.1, "is_homogeneous": True}],
+    }
+
+    with pytest.raises(ValueError, match=r"materials"):
+        create_solver_from_config(config)

@@ -666,3 +666,32 @@ def test_dispersive_nonhomogeneous_layer_energy_and_values():
     expected_T, expected_R = 0.43316791878804345, 0.5431967324784357
     assert expected_T - 0.1 <= T <= expected_T + 0.1
     assert expected_R - 0.1 <= R <= expected_R + 0.1
+
+
+def test_solver_default_wavelengths_nonempty():
+    from torchrdit.solver import RCWASolver, RDITSolver
+
+    rcwa = RCWASolver()
+    rdit = RDITSolver()
+
+    assert rcwa.lam0.size > 0
+    assert rdit.lam0.size > 0
+
+
+def test_solver_rejects_empty_wavelengths():
+    from torchrdit.solver import RCWASolver, RDITSolver
+
+    with pytest.raises(ValueError, match=r"lam0"):
+        RCWASolver(lam0=np.array([]))
+    with pytest.raises(ValueError, match=r"lam0"):
+        RDITSolver(lam0=np.array([]))
+
+
+def test_solver_defaults_do_not_share_mutable_state():
+    from torchrdit.solver import RCWASolver
+
+    s1 = RCWASolver()
+    s2 = RCWASolver()
+
+    assert s1.grids is not s2.grids
+    assert s1.harmonics is not s2.harmonics
