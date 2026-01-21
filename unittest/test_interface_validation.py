@@ -378,6 +378,14 @@ def test_interface_var_key_without_dollar_raises():
         solve(spec)
 
 
+@pytest.mark.parametrize("name", ["$Results", "$Vars", "$S", "$V", "$abs", "$sin"])
+def test_interface_var_reserved_names_raise(name):
+    from torchrdit.interface import _compile_vars, SpecError
+
+    with pytest.raises(SpecError, match=r"reserved"):
+        _compile_vars({name: 1.0}, device="cpu")
+
+
 def test_interface_var_cycles_raise():
     from torchrdit.interface import _compile_vars, SpecError
 
@@ -386,12 +394,28 @@ def test_interface_var_cycles_raise():
         compiled.evaluate()
 
 
-def test_interface_var_disallows_function_calls():
+def test_interface_var_allows_known_function_calls():
+    from torchrdit.interface import _compile_vars
+    import torch
+
+    compiled = _compile_vars({"$s": torch.tensor(0.5), "$t": "sin($s)"}, device="cpu")
+    out = compiled.evaluate()
+    assert torch.is_tensor(out["$t"])
+    assert float(out["$t"]) == pytest.approx(float(torch.sin(torch.tensor(0.5))))
+
+
+def test_interface_var_unknown_function_raises():
     from torchrdit.interface import _compile_vars, SpecError
 
-    compiled = _compile_vars({"$s": 1.0, "$t": "sin($s)"}, device="cpu")
-    with pytest.raises(SpecError, match=r"Unsupported syntax in var expression"):
-        compiled.evaluate()
+    with pytest.raises(SpecError, match=r"Unknown function"):
+        _compile_vars({"$s": 1.0, "$t": "nope($s)"}, device="cpu")
+
+
+def test_interface_var_expression_invalid_syntax_raises_spec_error():
+    from torchrdit.interface import _compile_vars, SpecError
+
+    with pytest.raises(SpecError, match=r"var expression"):
+        _compile_vars({"$s": 1.0, "$t": "$s +"}, device="cpu")
 
 
 def test_interface_pattern_op_references_unknown_name_raises():
@@ -500,3 +524,29 @@ def test_interface_pattern_mask_allows_out_of_range_values():
 
     result = solve(spec)
     assert "efficiency" in result
+
+
+def test_interface_pattern_op_invalid_syntax_raises_spec_error():
+    from torchrdit.interface import solve, SpecError
+
+    spec = {
+        "solver": {"algorithm": "RCWA", "wavelengths": [1.55], "grids": [8, 8], "harmonics": [3, 3]},
+        "materials": {"Si": {"permittivity": 12.0}, "SiO2": {"permittivity": 2.25}},
+        "layers": [
+            {
+                "material": "Si",
+                "thickness": 0.2,
+                "is_homogeneous": False,
+                "pattern": {
+                    "bg_material": "SiO2",
+                    "shapes": [{"name": "m1", "type": "op", "expr": "union("}],
+                    "layer_shape": "m1",
+                },
+            }
+        ],
+        "sources": {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
+        "output": {"type": "torch"},
+    }
+
+    with pytest.raises(SpecError, match=r"op expr"):
+        solve(spec)
