@@ -50,7 +50,7 @@ def load_config(config: Any) -> Tuple[Dict[str, Any], Optional[str]]:
 
 
 def detect_config_shape(obj: Dict[str, Any]) -> str:
-    """Detect whether config is interface-shaped or a flat solver config."""
+    """Detect whether config is a flat solver config."""
     if not isinstance(obj, dict):
         raise TypeError(f"Config must be a dict, got {type(obj)}")
 
@@ -60,13 +60,8 @@ def detect_config_shape(obj: Dict[str, Any]) -> str:
             raise TypeError(f"Config keys must be strings, got {type(key)}")
         lowered_keys.add(key.lower())
 
-    has_solver = "solver" in lowered_keys
     has_setup_keys = bool(lowered_keys & _SOLVER_SETUP_KEYS)
 
-    if has_solver and has_setup_keys:
-        raise ValueError("mixed config: 'solver' with top-level solver keys")
-    if has_solver:
-        return "interface"
     if has_setup_keys:
         return "flat_solver"
     if lowered_keys & {"materials", "layers"}:

@@ -158,5 +158,150 @@ class TestShapeGenerator(unittest.TestCase):
         self.assertTrue(torch.allclose(sg.YO, solver.YO))
 
 
+class TestShapeGeneratorDirectSolverInit(unittest.TestCase):
+    """Tests for ShapeGenerator(solver) direct initialization (Task 041)."""
+
+    def _make_solver(self, algorithm=Algorithm.RCWA, precision=Precision.SINGLE,
+                     grids=None, t1=None, t2=None):
+        if grids is None:
+            grids = [64, 64]
+        if t1 is None:
+            t1 = torch.tensor([[1.0, 0.0]])
+        if t2 is None:
+            t2 = torch.tensor([[0.0, 1.0]])
+        return create_solver(
+            algorithm=algorithm, precision=precision,
+            grids=grids, harmonics=[3, 3],
+            lam0=np.array([1.55]), t1=t1, t2=t2,
+        )
+
+    # ── Milestone 1: Solver-Based Init ──
+
+    def test_init_from_solver_rcwa(self):
+        solver = self._make_solver(algorithm=Algorithm.RCWA)
+        sg = ShapeGenerator(solver)
+        ref = ShapeGenerator.from_solver(solver)
+        self.assertEqual(sg.grids, tuple(solver.grids))
+        self.assertTrue(torch.allclose(sg.XO, solver.XO))
+        self.assertTrue(torch.allclose(sg.YO, solver.YO))
+        self.assertTrue(torch.allclose(sg.lattice_t1, solver.lattice_t1))
+        self.assertTrue(torch.allclose(sg.lattice_t2, solver.lattice_t2))
+        self.assertEqual(sg.tfloat, solver.tfloat)
+        self.assertEqual(sg.tcomplex, solver.tcomplex)
+        self.assertEqual(sg.tint, solver.tint)
+        self.assertEqual(sg.nfloat, solver.nfloat)
+        # Must be identical to from_solver result
+        self.assertTrue(torch.allclose(sg.XO, ref.XO))
+        self.assertTrue(torch.allclose(sg.YO, ref.YO))
+        self.assertEqual(sg.grids, ref.grids)
+
+    def test_init_from_solver_rdit(self):
+        solver = self._make_solver(algorithm=Algorithm.RDIT)
+        sg = ShapeGenerator(solver)
+        self.assertEqual(sg.grids, tuple(solver.grids))
+        self.assertTrue(torch.allclose(sg.XO, solver.XO))
+        self.assertTrue(torch.allclose(sg.YO, solver.YO))
+        self.assertEqual(sg.tfloat, solver.tfloat)
+
+    def test_init_from_solver_non_cartesian(self):
+        solver = self._make_solver(
+            t1=torch.tensor([[1.0, 0.5]]),
+            t2=torch.tensor([[0.0, 1.0]]),
+        )
+        sg = ShapeGenerator(solver)
+        self.assertFalse(sg.is_cartesian)
+        self.assertTrue(torch.allclose(sg.lattice_t1, solver.lattice_t1))
+        self.assertTrue(torch.allclose(sg.lattice_t2, solver.lattice_t2))
+        self.assertTrue(torch.allclose(sg.XO, solver.XO))
+        self.assertTrue(torch.allclose(sg.YO, solver.YO))
+
+    def test_init_from_solver_precisions(self):
+        for precision, expected_tfloat, expected_tcomplex in (
+            (Precision.SINGLE, torch.float32, torch.complex64),
+            (Precision.DOUBLE, torch.float64, torch.complex128),
+        ):
+            solver = self._make_solver(precision=precision)
+            sg = ShapeGenerator(solver)
+            self.assertEqual(sg.tfloat, expected_tfloat)
+            self.assertEqual(sg.tcomplex, expected_tcomplex)
+
+    # ── Milestone 2: Backward Compatibility ──
+
+    def test_init_direct_still_works(self):
+        x = torch.linspace(-0.5, 0.5, 64)
+        y = torch.linspace(-0.5, 0.5, 64)
+        X, Y = torch.meshgrid(x, y, indexing='xy')
+        sg = ShapeGenerator(X, Y, (64, 64))
+        self.assertTrue(torch.allclose(sg.XO, X))
+        self.assertTrue(torch.allclose(sg.YO, Y))
+        self.assertEqual(sg.grids, (64, 64))
+        self.assertTrue(sg.is_cartesian)
+
+    def test_init_direct_with_lattice_still_works(self):
+        x = torch.linspace(-0.5, 0.5, 64)
+        y = torch.linspace(-0.5, 0.5, 64)
+        X, Y = torch.meshgrid(x, y, indexing='xy')
+        t1 = torch.tensor([1.0, 0.5])
+        t2 = torch.tensor([0.0, 1.0])
+        sg = ShapeGenerator(X, Y, (64, 64), lattice_t1=t1, lattice_t2=t2)
+        self.assertFalse(sg.is_cartesian)
+        self.assertTrue(torch.allclose(sg.lattice_t1, t1))
+        self.assertTrue(torch.allclose(sg.lattice_t2, t2))
+
+    def test_init_kwargs_still_works(self):
+        solver = self._make_solver()
+        params = solver.get_shape_generator_params()
+        sg = ShapeGenerator(**params)
+        self.assertEqual(sg.grids, tuple(solver.grids))
+        self.assertTrue(torch.allclose(sg.XO, solver.XO))
+        self.assertTrue(torch.allclose(sg.YO, solver.YO))
+
+    def test_invalid_first_arg_raises(self):
+        with self.assertRaises(TypeError):
+            ShapeGenerator("not a solver")
+        with self.assertRaises(TypeError):
+            ShapeGenerator(42)
+        with self.assertRaises(TypeError):
+            ShapeGenerator([1, 2, 3])
+        with self.assertRaises(TypeError):
+            ShapeGenerator({"XO": 1})  # dict with XO key but not solver-like
+
+    # ── Milestone 3: Functional Equivalence ──
+
+    def test_solver_init_masks_match_from_solver(self):
+        solver = self._make_solver()
+        sg_direct = ShapeGenerator(solver)
+        sg_factory = ShapeGenerator.from_solver(solver)
+        # Circle
+        c1 = sg_direct.generate_circle_mask(center=(0.1, -0.1), radius=0.2)
+        c2 = sg_factory.generate_circle_mask(center=(0.1, -0.1), radius=0.2)
+        self.assertTrue(torch.allclose(c1, c2))
+        # Rectangle
+        r1 = sg_direct.generate_rectangle_mask(x_size=0.3, y_size=0.2, angle=30)
+        r2 = sg_factory.generate_rectangle_mask(x_size=0.3, y_size=0.2, angle=30)
+        self.assertTrue(torch.allclose(r1, r2))
+        # Polygon
+        pts = [(-0.1, -0.1), (0.1, -0.1), (0.0, 0.1)]
+        p1 = sg_direct.generate_polygon_mask(pts)
+        p2 = sg_factory.generate_polygon_mask(pts)
+        self.assertTrue(torch.allclose(p1, p2))
+
+    def test_solver_init_gradient_flow(self):
+        solver = self._make_solver()
+        sg = ShapeGenerator(solver)
+        radius = torch.tensor(0.2, requires_grad=True)
+        cx = torch.tensor(0.05, requires_grad=True)
+        cy = torch.tensor(-0.05, requires_grad=True)
+        mask = sg.generate_circle_mask(center=(cx, cy), radius=radius, soft_edge=0.01)
+        weight = sg.XO + 2.0 * sg.YO
+        loss = (mask * weight).sum()
+        loss.backward()
+        self.assertIsNotNone(radius.grad)
+        self.assertGreater(radius.grad.abs().sum().item(), 0.0)
+        self.assertIsNotNone(cx.grad)
+        self.assertGreater(cx.grad.abs().sum().item(), 0.0)
+        self.assertIsNotNone(cy.grad)
+        self.assertGreater(cy.grad.abs().sum().item(), 0.0)
+
 if __name__ == "__main__":
     unittest.main()

@@ -187,8 +187,8 @@ loss.backward()  # Computes gradients for all sources
 ## Examples
 
 For complete examples, see:
-- `examples/source_batching_basic.py` - Basic usage patterns
-- `examples/source_batching_advanced.py` - Optimization examples
-- `examples/source_batching_performance.py` - Performance benchmarks
-- `examples/example_source_batching.py` - Comprehensive demos
+- `torchrdit/examples/source_batching_basic.py` - Basic usage patterns
+- `torchrdit/examples/source_batching_advanced.py` - Optimization examples
+- `torchrdit/examples/source_batching_performance.py` - Performance benchmarks
+- `torchrdit/examples/example_source_batching.py` - Comprehensive demos
 

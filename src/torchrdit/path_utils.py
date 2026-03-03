@@ -30,8 +30,6 @@ def infer_caller_dir(*, skip_files: Optional[Sequence[str]] = None) -> Optional[
         base = os.path.basename(filename)
         if base in skip_files_set:
             continue
-        if base.startswith("interface"):
-            continue
         try:
             return Path(filename).resolve().parent
         except OSError:

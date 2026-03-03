@@ -64,7 +64,7 @@ def test_invalid_t2():
 
 
 def test_add_invalid_material(cell_3d):
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match=r"No materials named \[InvalidMaterial\] exists in the material lib\."):
         cell_3d.add_layer(material_name="InvalidMaterial", thickness=torch.tensor(3.0e-3))
 
 
@@ -127,9 +127,9 @@ def test_update_trn_material_air():
 
 
 def test_update_trn_material_invalid():
-    # Test missing lines 592-593: invalid material error
+    # Test invalid material error with corrected bracket format and available materials list
     cell = Cell3D()
-    with pytest.raises(RuntimeError, match="No materials named \\[invalid_material exists in the material lib.\\]"):
+    with pytest.raises(RuntimeError, match=r"No materials named \[invalid_material\] exists in the material lib\."):
         cell.update_trn_material("invalid_material")
 
 
@@ -141,11 +141,48 @@ def test_update_ref_material_air():
 
 
 def test_update_ref_material_invalid():
-    # Test missing lines 642-643: invalid material error
+    # Test invalid material error with corrected bracket format and available materials list
     cell = Cell3D()
-    with pytest.raises(RuntimeError, match="No materials named \\[invalid_material exists in the material lib.\\]"):
+    with pytest.raises(RuntimeError, match=r"No materials named \[invalid_material\] exists in the material lib\."):
         cell.update_ref_material("invalid_material")
 
+
+def test_add_layer_error_message_lists_available_materials():
+    # Error message should list available materials when material not found
+    cell = Cell3D()
+    silicon = create_material(name="silicon", permittivity=11.7)
+    sio2 = create_material(name="sio2", permittivity=2.25)
+    cell.add_materials([silicon, sio2])
+    with pytest.raises(RuntimeError, match=r"Available materials:") as exc_info:
+        cell.add_layer(material_name="nonexistent", thickness=torch.tensor(0.1))
+    error_msg = str(exc_info.value)
+    assert "[nonexistent]" in error_msg
+    assert "silicon" in error_msg
+    assert "sio2" in error_msg
+
+
+def test_update_trn_material_error_message_lists_available_materials():
+    # Error message should list available materials when material not found
+    cell = Cell3D()
+    silicon = create_material(name="silicon", permittivity=11.7)
+    cell.add_materials([silicon])
+    with pytest.raises(RuntimeError, match=r"Available materials:") as exc_info:
+        cell.update_trn_material("nonexistent")
+    error_msg = str(exc_info.value)
+    assert "[nonexistent]" in error_msg
+    assert "silicon" in error_msg
+
+
+def test_update_ref_material_error_message_lists_available_materials():
+    # Error message should list available materials when material not found
+    cell = Cell3D()
+    silicon = create_material(name="silicon", permittivity=11.7)
+    cell.add_materials([silicon])
+    with pytest.raises(RuntimeError, match=r"Available materials:") as exc_info:
+        cell.update_ref_material("nonexistent")
+    error_msg = str(exc_info.value)
+    assert "[nonexistent]" in error_msg
+    assert "silicon" in error_msg
 
 def test_get_layer_structure(capsys):
     # Test missing lines 675-699: get_layer_structure print statements

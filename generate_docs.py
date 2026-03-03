@@ -266,7 +266,7 @@ Please check that the module exists and is properly installed.
     create_getting_started_guide(docs_dir)
 
     # Create an Examples page
-    create_examples_page(docs_dir)
+    create_examples_page(docs_dir, script_dir=script_dir, repo_root=repo_root)
 
     # Create a Shapes page
     create_shapes_page(docs_dir)
@@ -328,6 +328,7 @@ Welcome to the `TorchRDIT` documentation. `TorchRDIT` is an advanced software pa
 
 - [API Overview](API-Overview)
 - [Algorithm Module](Algorithm) - Implementation of electromagnetic solvers
+- [Algorithm Module](Algorithm) - Implementation of electromagnetic solvers
 - [Builder Module](Builder) - Fluent API for creating simulations
 - [Cell Module](Cell) - Cell geometry definitions
 - [Constants Module](Constants) - Physical constants and enumerations
@@ -351,7 +352,7 @@ TorchRDIT now includes industry-standard GDS file format support:
 - Batch processing for multiple designs
 - See the [GDS](GDS) page for details
 
-## New in v0.1.27: Unified Interface & Field APIs
+## New in v0.1.27: Unified Field APIs
 
 TorchRDIT v0.1.27 introduces major improvements:
 - **Unified SolverResults**: Single class handles both single and batched sources
@@ -366,7 +367,7 @@ Recent features include:
 
 ## Examples
 
-TorchRDIT comes with several example files in the `examples/` directory
+TorchRDIT comes with several example files in the `torchrdit/examples/` directory
 
 For more detailed explanations of each example, see the [Examples](Examples) page.
 """)
@@ -387,6 +388,7 @@ def create_sidebar(docs_dir):
     - [Performance](Examples#demo-04-performance-benchmark)
 - API Reference
   - [Overview](API-Overview)
+  - [Algorithm](Algorithm)
   - [Algorithm](Algorithm)
   - [Builder](Builder)
   - [Cell](Cell)
@@ -437,24 +439,10 @@ pip install -e .
 
 ## Basic Usage
 
-TorchRDIT provides a regulated, spec-driven interface (recommended) and a lower-level builder API.
+TorchRDIT provides a builder API for constructing and running electromagnetic simulations.
 
-### Recommended: regulated interface
+### Builder API
 
-```python
-import torchrdit as tr
-
-# `spec` can be a dict or a JSON spec file path.
-results = tr.simulate(spec)
-results2 = tr.simulate("spec.json")
-```
-
-For dispersive materials, relative `materials[*].dielectric_file` paths are resolved automatically:
-spec/config directory (when loaded from JSON) → caller script directory → current working directory.
-
-TorchRDIT also supports in-memory dispersive materials via `materials[*].dispersion` in the regulated interface.
-These arrays can be provided as Python / NumPy / torch values, but torch tensors are converted to CPU NumPy
-internally to build the interpolation table (no autograd gradients for these samples).
 
 ### Builder API (lower-level)
 
@@ -587,28 +575,45 @@ For more detailed examples, see the [Examples](Examples) section.
 """)
         print("  -> Created Getting-Started.md")
 
-def create_examples_page(docs_dir):
+def create_examples_page(docs_dir, *, script_dir, repo_root):
     """Create the Examples page for the wiki."""
-    # Get the examples directory
-    examples_dir = Path("examples")
+    # Prefer the package examples directory but keep legacy fallbacks.
+    candidate_dirs = [
+        script_dir / "examples",
+        repo_root / "examples",
+        repo_root / "src" / "examples",
+    ]
+    examples_dirs = []
+    seen_dirs = set()
+    for candidate in candidate_dirs:
+        if candidate.is_dir():
+            resolved = candidate.resolve()
+            if resolved not in seen_dirs:
+                seen_dirs.add(resolved)
+                examples_dirs.append(candidate)
 
-    # Check if examples directory exists
-    examples_exists = examples_dir.exists()
     example_files = []
+    seen_files = set()
+    for examples_dir in examples_dirs:
+        for example_file in sorted(examples_dir.rglob("*.py")):
+            if not example_file.is_file():
+                continue
+            resolved = example_file.resolve()
+            if resolved in seen_files:
+                continue
+            seen_files.add(resolved)
+            try:
+                rel_path = resolved.relative_to(repo_root.resolve())
+            except ValueError:
+                rel_path = example_file.name
+            example_files.append((Path(rel_path), example_file))
 
-    # If examples not found in root, try src directory structure
-    if not examples_exists:
-        examples_dir = Path("src/examples")
-        examples_exists = examples_dir.exists()
-
-    if examples_exists:
-        # Find all Python example files
-        example_files = sorted([f for f in examples_dir.glob("*.py") if f.is_file()])
+    examples_found = len(example_files) > 0
 
     # Create base examples content
     content = """# TorchRDIT Examples
 
-This page contains examples showing how to use TorchRDIT for common electromagnetic simulation tasks. The official repository includes many examples in the `examples/` folder that demonstrate different aspects of the library.
+This page contains examples showing how to use TorchRDIT for common electromagnetic simulation tasks. The official repository includes many examples in the `torchrdit/examples/` folder that demonstrate different aspects of the library.
 
 ## Example Categories
 
@@ -638,7 +643,7 @@ The examples are organized into several categories:
 To run any of the examples, navigate to the repository root and run:
 
 ```bash
-python examples/example_gmrf_variable_optimize.py
+uv run python torchrdit/examples/example_gmrf_variable_optimize.py
 ```
 
 Most examples generate visualization outputs automatically, which are saved to the same directory. The examples use relative imports, so they must be run from the repository root.
@@ -651,7 +656,7 @@ The examples require the following dependencies:
 - Matplotlib
 - tqdm (for progress bars in optimization examples)
 
-Some examples also require the data files included in the `examples` directory:
+Some examples also require the data files included in the `torchrdit/examples` directory:
 - `Si_C-e.txt` - Silicon Carbide permittivity data
 - `SiO2-e.txt` - Silicon Dioxide permittivity data
 
@@ -740,24 +745,27 @@ device.update_er_with_mask(mask=mask, layer_index=0)
 ### Dispersive Materials
 
 ```python
-# Dispersive materials are typically specified via `dielectric_file` in a spec/config.
-# When running through `tr.simulate(spec)` / `tr.optimize(spec, ...)` or loading a JSON
-# config/spec file, relative `dielectric_file` paths resolve automatically:
-# spec/config directory → caller script directory → current working directory.
+# Dispersive materials are typically specified via `dielectric_file` in a config.
+# When loading a JSON config file, relative `dielectric_file` paths resolve automatically:
+# config directory → caller script directory → current working directory.
 #
 # Recommended usage (portable, no `base_path` required):
-import torchrdit as tr
+from torchrdit.builder import SolverBuilder
 
-spec = {
-    "solver": {"algorithm": "RCWA", "wavelengths": [1.55], "grids": [64, 64], "harmonics": [3, 3]},
+config = {
+    "algorithm": "RCWA",
+    "wavelengths": [1.55],
+    "grids": [64, 64],
+    "harmonics": [3, 3],
     "materials": {
         "SiC": {"dielectric_dispersion": True, "dielectric_file": "Si_C-e.txt", "data_format": "freq-eps", "data_unit": "thz"},
     },
     "layers": [{"material": "SiC", "thickness": 0.1, "is_homogeneous": True}],
-    "sources": {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
 }
-results = tr.simulate(spec)           # dict spec
-results2 = tr.simulate("spec.json")   # JSON spec (recommended for portability)
+builder = SolverBuilder().from_config(config)
+solver = builder.build()
+src = solver.add_source(theta=0.0, phi=0.0, pte=1.0, ptm=0.0)
+results = solver.solve(src)
 ```
 
 ### Automatic Differentiation
@@ -779,25 +787,22 @@ print(f"The gradient with respect to the mask is {torch.mean(mask.grad)}")
 ### Optimization
 
 ```python
-# Define an objective function
-def objective_GMRF(dev, src, radius):
-    # ... calculation logic
-    return loss
+import torch
+from torchrdit.solver import get_solver_builder
 
-# Optimization loop
-for epoch in trange(num_epochs):
-    # Zero gradients
-    optimizer.zero_grad()
+# Use builder API for optimization
+# Enable gradient tracking on parameters
+mask.requires_grad = True
 
-    # Forward pass
-    loss = objective_GMRF(dev, src, radius)
+# Forward solve
+    data = device.solve(src)
 
-    # Backward pass
-    loss.backward()
+    # Compute loss and backward pass
+loss = -torch.sum(data.transmission[0])
+loss.backward()
 
-    # Update parameters
-    optimizer.step()
-```
+# Access gradients for optimization
+print(f"The gradient with respect to the mask is {torch.mean(mask.grad)}")
 
 These examples demonstrate the key capabilities of TorchRDIT, including differentiable simulation, optimization, and support for complex geometries and materials.
 
@@ -806,9 +811,9 @@ These examples demonstrate the key capabilities of TorchRDIT, including differen
 """
 
     # If examples directory exists, add each example with a code block
-    if examples_exists and example_files:
-        for example_file in example_files:
-            example_name = example_file.stem
+    if examples_found:
+        for example_rel_path, example_file in example_files:
+            example_name = str(example_rel_path).replace("\\", "/")
             example_content = ""
 
             # Read the file content
@@ -837,7 +842,7 @@ These examples demonstrate the key capabilities of TorchRDIT, including differen
             except Exception as e:
                 content += f"\n### {example_name}\n\n**Error loading example: {str(e)}**\n"
     else:
-        content += "\n**No example files found in the examples directory.**\n"
+        content += "\n**No example files found in expected examples directories (`torchrdit/examples`, `examples`, `src/examples`).**\n"
 
     with open(docs_dir / "Examples.md", "w") as f:
         f.write(content)
@@ -1560,10 +1565,10 @@ loss.backward()  # Computes gradients for all sources
 ## Examples
 
 For complete examples, see:
-- `examples/source_batching_basic.py` - Basic usage patterns
-- `examples/source_batching_advanced.py` - Optimization examples
-- `examples/source_batching_performance.py` - Performance benchmarks
-- `examples/example_source_batching.py` - Comprehensive demos
+- `torchrdit/examples/source_batching_basic.py` - Basic usage patterns
+- `torchrdit/examples/source_batching_advanced.py` - Optimization examples
+- `torchrdit/examples/source_batching_performance.py` - Performance benchmarks
+- `torchrdit/examples/example_source_batching.py` - Comprehensive demos
 
 """
 
@@ -1754,12 +1759,13 @@ This directory contains automatically generated documentation for the TorchRDIT 
 The documentation is generated automatically using pydoc-markdown. To update it:
 
 1. Ensure your docstrings in the code are up-to-date
-2. Run the documentation generator script: `python generate_docs.py`
+2. Run the documentation generator script: `uv run python torchrdit/generate_docs.py`
 3. The updated documentation will be created in this directory
 
 ## Documentation Structure
 
 - **API-Overview.md**: Overview of the entire API
+- **Algorithm.md**: Documentation for the algorithm module
 - **Algorithm.md**: Documentation for the algorithm module
 - **Builder.md**: Documentation for the builder module
 - **Cell.md**: Documentation for the cell module

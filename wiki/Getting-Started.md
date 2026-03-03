@@ -27,24 +27,10 @@ pip install -e .
 
 ## Basic Usage
 
-TorchRDIT provides a regulated, spec-driven interface (recommended) and a lower-level builder API.
+TorchRDIT provides a builder API for constructing and running electromagnetic simulations.
 
-### Recommended: regulated interface
+### Builder API
 
-```python
-import torchrdit as tr
-
-# `spec` can be a dict or a JSON spec file path.
-results = tr.simulate(spec)
-results2 = tr.simulate("spec.json")
-```
-
-For dispersive materials, relative `materials[*].dielectric_file` paths are resolved automatically:
-spec/config directory (when loaded from JSON) → caller script directory → current working directory.
-
-TorchRDIT also supports in-memory dispersive materials via `materials[*].dispersion` in the regulated interface.
-These arrays can be provided as Python / NumPy / torch values, but torch tensors are converted to CPU NumPy
-internally to build the interpolation table (no autograd gradients for these samples).
 
 ### Builder API (lower-level)
 

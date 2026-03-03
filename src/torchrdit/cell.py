@@ -492,7 +492,8 @@ class Cell3D:
                 )
 
         else:
-            str_rterr = f"No materials named [{material_name} exists in the material lib.]"
+            available = sorted(self._matlib.keys())
+            str_rterr = f"No materials named [{material_name}] exists in the material lib. Available materials: {available}"
             raise RuntimeError(str_rterr)
 
     def _init_dispersive_materials(self) -> None:
@@ -614,7 +615,8 @@ class Cell3D:
         elif trn_material.lower() == "air":
             pass
         else:
-            str_rterr = f"No materials named [{trn_material} exists in the material lib.]"
+            available = sorted(self._matlib.keys())
+            str_rterr = f"No materials named [{trn_material}] exists in the material lib. Available materials: {available}"
             raise RuntimeError(str_rterr)
 
     def update_ref_material(self, ref_material: Any) -> None:
@@ -664,7 +666,8 @@ class Cell3D:
         elif ref_material.lower() == "air":
             pass
         else:
-            str_rterr = f"No materials named [{ref_material} exists in the material lib.]"
+            available = sorted(self._matlib.keys())
+            str_rterr = f"No materials named [{ref_material}] exists in the material lib. Available materials: {available}"
             raise RuntimeError(str_rterr)
 
     def get_layer_structure(self):

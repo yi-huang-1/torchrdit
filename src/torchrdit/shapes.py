@@ -1,5 +1,5 @@
 import torch
-from typing import Tuple
+from typing import Tuple, Union
 
 
 class ShapeGenerator:
@@ -25,13 +25,17 @@ class ShapeGenerator:
     ```python
     import torch
     from torchrdit.shapes import ShapeGenerator
-    # Create coordinate grids
+    # Direct mode: explicit coordinate grids
     x = torch.linspace(-1, 1, 128)
     y = torch.linspace(-1, 1, 128)
     X, Y = torch.meshgrid(x, y, indexing='ij')
-    # Initialize shape generator
     sg = ShapeGenerator(X, Y, (128, 128))
-    # Generate a circle mask
+    circle = sg.generate_circle_mask(center=(0.0, 0.0), radius=0.5)
+    # Solver mode: pass a solver directly
+    from torchrdit.solver import create_solver
+    from torchrdit.constants import Algorithm
+    solver = create_solver(algorithm=Algorithm.RDIT, grids=[128, 128], harmonics=[3, 3])
+    sg = ShapeGenerator(solver)
     circle = sg.generate_circle_mask(center=(0.0, 0.0), radius=0.5)
     ```
 
@@ -41,9 +45,9 @@ class ShapeGenerator:
 
     def __init__(
         self,
-        XO: torch.Tensor,
-        YO: torch.Tensor,
-        grids: Tuple[int, int],
+        XO: Union[torch.Tensor, object] = None,
+        YO: torch.Tensor = None,
+        grids: Tuple[int, int] = None,
         lattice_t1=None,
         lattice_t2=None,
         tcomplex=torch.complex128,
@@ -51,15 +55,25 @@ class ShapeGenerator:
         tint=torch.int64,
         nfloat=torch.float64,
     ):
-        """Initialize a shape generator with coordinate grids and lattice vectors.
+        """Initialize a shape generator with coordinate grids or from a solver.
 
-        Creates a new ShapeGenerator instance with the provided coordinate grids and
-        optional lattice vectors for non-Cartesian coordinate systems.
+        Can be called in two ways:
+
+        1. **Direct mode**: ``ShapeGenerator(XO, YO, grids, ...)`` with explicit
+           coordinate tensors.
+        2. **Solver mode**: ``ShapeGenerator(solver)`` where *solver* is any object
+           exposing ``XO``, ``YO``, ``grids``, ``lattice_t1``, ``lattice_t2``,
+           ``tcomplex``, ``tfloat``, ``tint``, and ``nfloat`` attributes (e.g., a
+           ``FourierBaseSolver`` instance).
 
         Args:
-            XO (torch.Tensor): Tensor containing the x-coordinates of each point in the grid.
-            YO (torch.Tensor): Tensor containing the y-coordinates of each point in the grid.
-            grids (Tuple[int, int]): Dimensions of the real-space grid as (height, width).
+            XO: Either a ``torch.Tensor`` of x-coordinates (direct mode)
+                or a solver-like object (solver mode).  Also accepted as keyword
+                ``XO=`` for backward compatibility.
+            YO (torch.Tensor, optional): y-coordinate tensor.  Required in direct
+                mode, ignored in solver mode.
+            grids (Tuple[int, int], optional): Real-space grid dimensions
+                ``(height, width)``.  Required in direct mode, ignored in solver mode.
             lattice_t1 (torch.Tensor, optional): First lattice vector. Defaults to [1,0].
             lattice_t2 (torch.Tensor, optional): Second lattice vector. Defaults to [0,1].
             tcomplex (torch.dtype, optional): Complex tensor data type. Defaults to torch.complex128.
@@ -68,24 +82,49 @@ class ShapeGenerator:
             nfloat (torch.dtype, optional): Number type for calculations. Defaults to torch.float64.
 
         Raises:
-            AssertionError: If XO and YO are not torch.Tensor objects.
+            TypeError: If the first argument is neither a ``torch.Tensor`` nor a
+                solver-like object.
 
         Examples:
         ```python
         import torch
         from torchrdit.shapes import ShapeGenerator
-        # Create coordinate grids
+        # Direct mode
         x = torch.linspace(-1, 1, 128)
         y = torch.linspace(-1, 1, 128)
         X, Y = torch.meshgrid(x, y, indexing='ij')
-        # Initialize shape generator with default Cartesian coordinates
         sg = ShapeGenerator(X, Y, (128, 128))
+        # Solver mode
+        from torchrdit.solver import create_solver
+        from torchrdit.constants import Algorithm
+        solver = create_solver(algorithm=Algorithm.RDIT, grids=[128, 128], harmonics=[3, 3])
+        sg = ShapeGenerator(solver)
         ```
 
         Keywords:
-            initialization, lattice, coordinates, grid, tensor types
+            initialization, lattice, coordinates, grid, tensor types, solver
         """
-        assert isinstance(XO, torch.Tensor) and isinstance(YO, torch.Tensor), "XO and YO must be torch.Tensor"
+        # --- Dispatch: solver-like object vs explicit tensors ---
+        if isinstance(XO, torch.Tensor):
+            # Direct mode: explicit coordinate tensors
+            assert isinstance(YO, torch.Tensor), "YO must be a torch.Tensor in direct mode"
+        elif XO is not None and hasattr(XO, 'XO') and hasattr(XO, 'YO'):
+            # Solver mode: extract all attributes from the solver
+            solver = XO
+            XO = solver.XO
+            YO = solver.YO
+            grids = tuple(solver.grids)
+            lattice_t1 = solver.lattice_t1
+            lattice_t2 = solver.lattice_t2
+            tcomplex = solver.tcomplex
+            tfloat = solver.tfloat
+            tint = solver.tint
+            nfloat = solver.nfloat
+        else:
+            raise TypeError(
+                f"First argument must be a torch.Tensor (direct mode) or a solver-like "
+                f"object with XO/YO attributes (solver mode), got {type(XO).__name__}"
+            )
 
         self.tcomplex = tcomplex
         self.tfloat = tfloat
@@ -127,6 +166,9 @@ class ShapeGenerator:
         and lattice vectors from an existing solver object, ensuring consistency between
         the solver and shape generator.
 
+        This is equivalent to ``ShapeGenerator(solver)`` and is kept for backward
+        compatibility.
+
         Args:
             solver: A solver object containing coordinate grids and lattice vectors.
 
@@ -152,17 +194,7 @@ class ShapeGenerator:
         Keywords:
             factory, solver, initialization, coordinate system
         """
-        return cls(
-            XO=solver.XO,
-            YO=solver.YO,
-            grids=tuple(solver.grids),
-            lattice_t1=solver.lattice_t1,
-            lattice_t2=solver.lattice_t2,
-            tcomplex=solver.tcomplex,
-            tfloat=solver.tfloat,
-            tint=solver.tint,
-            nfloat=solver.nfloat,
-        )
+        return cls(solver)
 
     def generate_circle_mask(self, center=None, radius=0.1, soft_edge=0.001):
         """Generate a mask for a circle in Cartesian coordinates.

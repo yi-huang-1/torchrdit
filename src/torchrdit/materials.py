@@ -580,8 +580,10 @@ class MaterialClass:
         lam_min = np.min(sim_wavelengths)
         lam_max = np.max(sim_wavelengths)
 
-        # Check if simulation wavelengths are in range
-        if lam_min < np.min(wl_list) or lam_max > np.max(wl_list):
+        # With a single in-memory dispersive sample, treat the material as constant
+        # across wavelengths and allow evaluation anywhere. Multi-point datasets
+        # retain strict range checking to avoid uncontrolled extrapolation.
+        if len(wl_list) > 1 and (lam_min < np.min(wl_list) or lam_max > np.max(wl_list)):
             raise ValueError(
                 f"Required wavelengths for material [{self.name}] are out of range "
                 f"[{np.min(wl_list):.2f}um, {np.max(wl_list):.2f}um]!"

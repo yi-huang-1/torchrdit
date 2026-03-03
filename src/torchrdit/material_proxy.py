@@ -394,8 +394,8 @@ class MaterialDataProxy:
         """
         if data.ndim != 2 or data.shape[1] != 3:
             raise ValueError("In-memory dispersive data must have shape (N, 3): [wavelength_um, eps1, eps2]")
-        if data.shape[0] < 2:
-            raise ValueError("In-memory dispersive data must contain at least 2 points")
+        if data.shape[0] < 1:
+            raise ValueError("In-memory dispersive data must contain at least 1 point")
         if not np.all(np.isfinite(data)):
             raise ValueError("In-memory dispersive data contains NaN or inf")
 

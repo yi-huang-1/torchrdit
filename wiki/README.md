@@ -7,12 +7,13 @@ This directory contains automatically generated documentation for the TorchRDIT 
 The documentation is generated automatically using pydoc-markdown. To update it:
 
 1. Ensure your docstrings in the code are up-to-date
-2. Run the documentation generator script: `python generate_docs.py`
+2. Run the documentation generator script: `uv run python torchrdit/generate_docs.py`
 3. The updated documentation will be created in this directory
 
 ## Documentation Structure
 
 - **API-Overview.md**: Overview of the entire API
+- **Algorithm.md**: Documentation for the algorithm module
 - **Algorithm.md**: Documentation for the algorithm module
 - **Builder.md**: Documentation for the builder module
 - **Cell.md**: Documentation for the cell module

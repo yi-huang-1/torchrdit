@@ -101,7 +101,7 @@ def _create_materials(
 
             if has_file:
                 caller_dir = infer_caller_dir(
-                    skip_files=("builder.py", "solver.py", "interface.py", "__init__.py", "path_utils.py")
+                    skip_files=("builder.py", "solver.py", "__init__.py", "path_utils.py")
                 )
                 resolved_file = resolve_data_path(
                     props["dielectric_file"],
@@ -929,7 +929,6 @@ class SolverBuilder:
         Keywords:
             configuration, JSON, file loading, serialization, flip
         """
-        import warnings
 
         from .config_io import detect_config_shape, load_config
 
@@ -943,16 +942,7 @@ class SolverBuilder:
         if flip:
             config = flip_config(config)
 
-        shape = detect_config_shape(config)
-        if shape == "interface":
-            solver_spec = config.get("solver")
-            if not isinstance(solver_spec, dict):
-                raise ValueError("solver must be a dictionary when provided at top level")
-            flat_config = dict(config)
-            flat_config.pop("solver", None)
-            flat_config.update(solver_spec)
-            config = flat_config
-
+        detect_config_shape(config)  # validates config structure
         # Define valid configuration keys
         valid_keys = {
             "algorithm",
@@ -988,21 +978,8 @@ class SolverBuilder:
         if "harmonics" in case_insensitive_config:
             harmonics_value = case_insensitive_config["harmonics"][1]
             if isinstance(harmonics_value, str) and harmonics_value.lower() == "auto":
-                raise ValueError("harmonics='auto' is only supported by torchrdit/src/torchrdit/interface.py")
+                raise ValueError("harmonics='auto' is not supported")
 
-        interface_only_keys = {
-            "sources",
-            "vars",
-            "output",
-            "maxg",
-        }
-        ignored_keys = [case_insensitive_config[key][0] for key in interface_only_keys if key in case_insensitive_config]
-        if ignored_keys:
-            warnings.warn(
-                f"Builder ignores interface-only keys {sorted(ignored_keys)}. "
-                "Use torchrdit/src/torchrdit/interface.py for these options.",
-                UserWarning,
-            )
 
         # Check for unknown keys (case insensitive)
         unknown_keys = set()
