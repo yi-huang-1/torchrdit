@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""
-Documentation generator for TorchRDIT project.
-This script uses pydoc-markdown to generate structured documentation
-based on the configuration in pydoc-markdown.yml.
+"""Generate TorchRDIT wiki pages and API reference material.
+
+This script orchestrates the documentation build for the repository wiki. It
+uses `pydoc-markdown` for API pages, then writes curated overview pages for the
+major TorchRDIT modules so the generated wiki mixes auto-generated reference
+content with hand-authored guides and examples.
 """
 
 import os
@@ -13,7 +15,6 @@ import tempfile
 from pathlib import Path
 
 def create_material_proxy_page(docs_dir):
-    """Create a MaterialProxy page for the wiki."""
     # First check if the auto-generated API file exists
     api_file = docs_dir / "MaterialProxy-API.md"
 
@@ -137,6 +138,13 @@ Please ensure that the module is properly installed and importable.**
             pass
 
 def main():
+    """Build the TorchRDIT documentation wiki.
+
+    The generator loads the `pydoc-markdown` configuration, renders API pages,
+    creates curated markdown guides, and removes temporary files created during
+    the documentation build.
+    """
+
     script_dir = Path(__file__).resolve().parent
     repo_root = script_dir.parent
 
@@ -576,7 +584,13 @@ For more detailed examples, see the [Examples](Examples) section.
         print("  -> Created Getting-Started.md")
 
 def create_examples_page(docs_dir, *, script_dir, repo_root):
-    """Create the Examples page for the wiki."""
+    """Create the Examples wiki page from discovered repository examples.
+
+    Args:
+        docs_dir: Directory where generated wiki markdown files are written.
+        script_dir: Directory containing this documentation generator script.
+        repo_root: Repository root used to derive stable example paths.
+    """
     # Prefer the package examples directory but keep legacy fallbacks.
     candidate_dirs = [
         script_dir / "examples",
