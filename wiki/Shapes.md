@@ -18,7 +18,7 @@ from torchrdit.solver import create_solver
 from torchrdit.constants import Algorithm
 
 # Create a solver
-solver = create_solver(algorithm=Algorithm.RDIT, rdim=[512, 512], kdim=[7, 7])
+solver = create_solver(algorithm=Algorithm.RDIT, grids=[512, 512], harmonics=[7, 7])
 
 # Create a shape generator
 shape_gen = ShapeGenerator.from_solver(solver)
@@ -42,7 +42,6 @@ Below is the complete API reference for the shapes module, automatically generat
 
 * [torchrdit.shapes](#torchrdit.shapes)
   * [ShapeGenerator](#torchrdit.shapes.ShapeGenerator)
-    * [\_\_init\_\_](#torchrdit.shapes.ShapeGenerator.__init__)
     * [from\_solver](#torchrdit.shapes.ShapeGenerator.from_solver)
     * [generate\_circle\_mask](#torchrdit.shapes.ShapeGenerator.generate_circle_mask)
     * [generate\_rectangle\_mask](#torchrdit.shapes.ShapeGenerator.generate_rectangle_mask)
@@ -52,7 +51,7 @@ Below is the complete API reference for the shapes module, automatically generat
 
 <a id="torchrdit.shapes"></a>
 
-# torchrdit.shapes
+# Module torchrdit.shapes
 
 <a id="torchrdit.shapes.ShapeGenerator"></a>
 
@@ -72,7 +71,7 @@ non-Cartesian coordinate systems through lattice vectors.
 
 - `XO` _torch.Tensor_ - Tensor containing the x-coordinates of each point in the grid.
 - `YO` _torch.Tensor_ - Tensor containing the y-coordinates of each point in the grid.
-- `rdim` _Tuple[int, int]_ - Dimensions of the real-space grid as (height, width).
+- `grids` _Tuple[int, int]_ - Dimensions of the real-space grid as (height, width).
 - `lattice_t1` _torch.Tensor_ - First lattice vector, defaults to [1,0] if not provided.
 - `lattice_t2` _torch.Tensor_ - Second lattice vector, defaults to [0,1] if not provided.
 - `tcomplex` _torch.dtype_ - Complex tensor data type.
@@ -100,64 +99,9 @@ circle = sg.generate_circle_mask(center=(0.0, 0.0), radius=0.5)
   Keywords:
   shape, mask, photonics, circle, rectangle, polygon, lattice, binary mask
 
-<a id="torchrdit.shapes.ShapeGenerator.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__(XO: torch.Tensor,
-             YO: torch.Tensor,
-             rdim: Tuple[int, int],
-             lattice_t1=None,
-             lattice_t2=None,
-             tcomplex=torch.complex128,
-             tfloat=torch.float64,
-             tint=torch.int64,
-             nfloat=torch.float64)
-```
-
-Initialize a shape generator with coordinate grids and lattice vectors.
-
-Creates a new ShapeGenerator instance with the provided coordinate grids and
-optional lattice vectors for non-Cartesian coordinate systems.
-
-**Arguments**:
-
-- `XO` _torch.Tensor_ - Tensor containing the x-coordinates of each point in the grid.
-- `YO` _torch.Tensor_ - Tensor containing the y-coordinates of each point in the grid.
-- `rdim` _Tuple[int, int]_ - Dimensions of the real-space grid as (height, width).
-- `lattice_t1` _torch.Tensor, optional_ - First lattice vector. Defaults to [1,0].
-- `lattice_t2` _torch.Tensor, optional_ - Second lattice vector. Defaults to [0,1].
-- `tcomplex` _torch.dtype, optional_ - Complex tensor data type. Defaults to torch.complex128.
-- `tfloat` _torch.dtype, optional_ - Float tensor data type. Defaults to torch.float64.
-- `tint` _torch.dtype, optional_ - Integer tensor data type. Defaults to torch.int64.
-- `nfloat` _torch.dtype, optional_ - Number type for calculations. Defaults to torch.float64.
-  
-
-**Raises**:
-
-- `AssertionError` - If XO and YO are not torch.Tensor objects.
-  
-
-**Examples**:
-
-```python
-import torch
-from torchrdit.shapes import ShapeGenerator
-# Create coordinate grids
-x = torch.linspace(-1, 1, 128)
-y = torch.linspace(-1, 1, 128)
-X, Y = torch.meshgrid(x, y, indexing='ij')
-# Initialize shape generator with default Cartesian coordinates
-sg = ShapeGenerator(X, Y, (128, 128))
-```
-  
-  Keywords:
-  initialization, lattice, coordinates, grid, tensor types
-
 <a id="torchrdit.shapes.ShapeGenerator.from_solver"></a>
 
-#### from\_solver
+### ShapeGenerator.from\_solver
 
 ```python
 @classmethod
@@ -189,8 +133,8 @@ import torch
 from torchrdit.shapes import ShapeGenerator
 solver = create_solver(
     algorithm=Algorithm.RDIT,
-    rdim=[1024, 1024],
-    kdim=[7, 7]
+    grids=[1024, 1024],
+    harmonics=[7, 7]
 )
 shape_gen = ShapeGenerator.from_solver(solver)
 # Now shape_gen uses the same coordinate system as solver
@@ -202,7 +146,7 @@ circle_mask = shape_gen.generate_circle_mask(radius=0.3)
 
 <a id="torchrdit.shapes.ShapeGenerator.generate_circle_mask"></a>
 
-#### generate\_circle\_mask
+### ShapeGenerator.generate\_circle\_mask
 
 ```python
 def generate_circle_mask(center=None, radius=0.1, soft_edge=0.001)
@@ -224,7 +168,7 @@ The mask can have hard or soft edges based on the soft_edge parameter.
 
 **Returns**:
 
-- `torch.Tensor` - A tensor of shape rdim containing the circle mask.
+- `torch.Tensor` - A tensor of shape grids containing the circle mask.
   Values are 1.0 inside the circle and 0.0 outside,
   with a smooth transition at the edge if soft_edge > 0.
   
@@ -250,7 +194,7 @@ soft_circle = sg.generate_circle_mask(center=(0.2, -0.3), radius=0.4, soft_edge=
 
 <a id="torchrdit.shapes.ShapeGenerator.generate_rectangle_mask"></a>
 
-#### generate\_rectangle\_mask
+### ShapeGenerator.generate\_rectangle\_mask
 
 ```python
 def generate_rectangle_mask(center=(0.0, 0.0),
@@ -278,7 +222,7 @@ dimensions, and orientation. The mask can have hard or soft edges.
 
 **Returns**:
 
-- `torch.Tensor` - A tensor of shape rdim containing the rectangle mask.
+- `torch.Tensor` - A tensor of shape grids containing the rectangle mask.
   Values are 1.0 inside the rectangle and 0.0 outside,
   with a smooth transition at the edge if soft_edge > 0.
   
@@ -304,7 +248,7 @@ square = sg.generate_rectangle_mask(x_size=0.4, y_size=0.4, angle=0)
 
 <a id="torchrdit.shapes.ShapeGenerator.generate_polygon_mask"></a>
 
-#### generate\_polygon\_mask
+### ShapeGenerator.generate\_polygon\_mask
 
 ```python
 def generate_polygon_mask(polygon_points,
@@ -336,7 +280,7 @@ The polygon can be rotated, translated, and have soft or hard edges.
 
 **Returns**:
 
-- `torch.Tensor` - A tensor of shape rdim containing the polygon mask.
+- `torch.Tensor` - A tensor of shape grids containing the polygon mask.
   Values are 1.0 inside the polygon and 0.0 outside (unless inverted),
   with a smooth transition at the edge if soft_edge > 0.
   
@@ -368,7 +312,7 @@ hexagon = sg.generate_polygon_mask(hexagon_points, center=(0.1, 0.1), angle=30)
 
 <a id="torchrdit.shapes.ShapeGenerator.combine_masks"></a>
 
-#### combine\_masks
+### ShapeGenerator.combine\_masks
 
 ```python
 def combine_masks(mask1, mask2, operation="union")
@@ -426,7 +370,7 @@ circle1_minus_circle2 = sg.combine_masks(circle1, circle2, operation="subtract")
 
 <a id="torchrdit.shapes.ShapeGenerator.get_layout"></a>
 
-#### get\_layout
+### ShapeGenerator.get\_layout
 
 ```python
 def get_layout() -> Tuple[torch.Tensor, torch.Tensor]

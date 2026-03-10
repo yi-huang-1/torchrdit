@@ -1,12 +1,18 @@
-"""This file defines some helper function."""
+"""Utilities for TorchRDIT.
 
-from typing import Callable, Optional, Union, Any, Tuple, List
+This module contains helper functions used across TorchRDIT, including the
+recommended high-level factory for creating `MaterialClass` instances via
+`create_material()`.
+"""
+
+from typing import Any, Callable, List, Optional, Sequence, Tuple, Union
 from functools import partial, wraps
 
 import torch
 import skimage.draw as skdraw
 
 from .materials import MaterialClass
+from .device import resolve_device
 
 # Function Type
 FuncType = Callable[..., Any]
@@ -185,6 +191,10 @@ def create_material(
     data_format: str = "freq-eps",  # format of the user-difined data
     data_unit: str = "thz",  # unit of frequency or wavelength
     max_poly_fit_order: int = 10,  # max polynomial fit order
+    user_dielectric_wavelengths_um: Optional[Sequence[float]] = None,
+    user_dielectric_eps: Optional[Sequence[complex]] = None,
+    user_dielectric_n: Optional[Sequence[float]] = None,
+    user_dielectric_k: Optional[Sequence[float]] = None,
 ):
     """Create a material object for use in electromagnetic simulations.
 
@@ -192,24 +202,50 @@ def create_material(
     in TorchRDIT simulations. Materials can be defined with either constant
     properties (non-dispersive) or wavelength-dependent properties (dispersive).
 
-    For non-dispersive materials, simple constant values for permittivity and
-    permeability are sufficient. For dispersive materials, data can be loaded
-    from a file containing wavelength or frequency-dependent properties.
+	For non-dispersive materials, simple constant values for permittivity and
+	permeability are sufficient. For dispersive materials, data can be loaded
+	from a file containing wavelength or frequency-dependent properties, or
+	provided directly as in-memory samples.
+	
+	Note on in-memory dispersive inputs: ``user_dielectric_wavelengths_um`` and
+	its companion arrays (``user_dielectric_eps`` or ``user_dielectric_n/k``)
+	accept Python sequences, NumPy arrays, or torch tensors. Internally, these
+	samples are converted to CPU NumPy arrays to build an interpolation table, so
+	autograd gradients are not preserved for these inputs.
 
-    Args:
+	    Args:
         name: Unique identifier for the material. This name is used when
               referencing the material in other functions.
               Default is 'material1'.
         permittivity: Complex relative permittivity (εᵣ) of the material for non-dispersive
-                    materials. Default is 1.0 (vacuum). Negative convention is used.
+                    materials. Default is 1.0 (vacuum).
+                    TorchRDIT uses an exp(-iωt) convention; lossy media typically have
+                    Im(ε) < 0. If a complex value is provided with Im(ε) > 0, it is
+                    conjugated internally to match the convention.
         permeability: Complex relative permeability (μᵣ) of the material for non-dispersive
-                    materials. Default is 1.0 (vacuum). Negative convention is used.
+                    materials. Default is 1.0 (vacuum).
         dielectric_dispersion: Whether the material has frequency-dependent
-                             permittivity. If True, data must be provided through
-                             user_dielectric_file. Default is False.
+                             permittivity. If True, data must be provided via exactly one of:
+                             - user_dielectric_file (file-based), or
+                             - (user_dielectric_wavelengths_um + user_dielectric_eps), or
+                             - (user_dielectric_wavelengths_um + user_dielectric_n [+ optional user_dielectric_k]).
+                             Default is False.
         user_dielectric_file: Path to a file containing the dispersive material data.
                             Required if dielectric_dispersion is True.
                             Default is None.
+	        user_dielectric_wavelengths_um: In-memory dispersive wavelength samples in microns (μm).
+	                             When provided with either user_dielectric_eps or user_dielectric_n,
+	                             this defines a dispersive material without reading a file.
+	                             Cannot be used together with user_dielectric_file.
+        user_dielectric_eps: In-memory complex permittivity samples at user_dielectric_wavelengths_um.
+                             Complex values are normalized to TorchRDIT's convention (loss has
+                             negative imaginary part). Both signs are accepted; the values are
+                             conjugated if needed so that Im(ε) <= 0.
+                             Cannot be used together with user_dielectric_n/user_dielectric_k.
+        user_dielectric_n: In-memory refractive index samples at user_dielectric_wavelengths_um.
+                             Requires dielectric_dispersion=True. Cannot be used with user_dielectric_eps.
+        user_dielectric_k: In-memory extinction coefficient samples at user_dielectric_wavelengths_um.
+                             Optional if user_dielectric_n is provided (defaults to 0).
         data_format: Format of the data in the dispersive material file.
                    Options are:
                    - 'freq-eps': Frequency and complex permittivity
@@ -242,6 +278,14 @@ def create_material(
         data_format='wl-nk',
         data_unit='um'
     )
+
+    # Create a dispersive material from in-memory data (wavelengths in um)
+    silica = create_material(
+        name='silica',
+        dielectric_dispersion=True,
+        user_dielectric_wavelengths_um=[1.0, 1.5, 2.0],
+        user_dielectric_eps=[2.1-0.0j, 2.08-0.0j, 2.05-0.0j],
+    )
     ```
     """
     return MaterialClass(
@@ -253,6 +297,10 @@ def create_material(
         data_format=data_format,
         data_unit=data_unit,
         max_poly_fit_order=max_poly_fit_order,
+        user_dielectric_wavelengths_um=user_dielectric_wavelengths_um,
+        user_dielectric_eps=user_dielectric_eps,
+        user_dielectric_n=user_dielectric_n,
+        user_dielectric_k=user_dielectric_k,
     )
 
 
@@ -318,7 +366,7 @@ def init_smatrix(shape: Tuple, dtype: torch.dtype, device: Union[str, torch.devi
 
     Args:
         shape: Tuple specifying the dimensions of the S-matrix components.
-              For batch processing, this is typically (batch_size, kdim_0_tims_1, kdim_0_tims_1).
+              For batch processing, this is typically (batch_size, harmonics_0_tims_1, harmonics_0_tims_1).
         dtype: PyTorch data type for the matrices (typically torch.complex64 or torch.complex128).
         device: Device to create the tensors on ('cpu' or 'cuda').
                Default is 'cpu'.
@@ -332,6 +380,7 @@ def init_smatrix(shape: Tuple, dtype: torch.dtype, device: Union[str, torch.devi
         waves pass through without reflection (S11=S22=0) and without modification
         (S12=S21=I, where I is the identity matrix).
     """
+    device = resolve_device(device).resolved_device
     smatrix = {}
     if len(shape) == 3:
         smatrix["S11"] = torch.zeros(size=shape, dtype=dtype, device=device)
@@ -386,9 +435,9 @@ def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64
     """
 
     # Input dimensions can be:
-    # - 2D: (kdim_0_tims_1, kdim_0_tims_1) for single source, single frequency
-    # - 3D: (n_freqs, kdim_0_tims_1, kdim_0_tims_1) for single source, multiple frequencies
-    # - 4D: (n_sources, n_freqs, kdim_0_tims_1, kdim_0_tims_1) for batched sources
+    # - 2D: (harmonics_0_tims_1, harmonics_0_tims_1) for single source, single frequency
+    # - 3D: (n_freqs, harmonics_0_tims_1, harmonics_0_tims_1) for single source, multiple frequencies
+    # - 4D: (n_sources, n_freqs, harmonics_0_tims_1, harmonics_0_tims_1) for batched sources
 
     # Construct identity matrix
     ndim = smat_a["S11"].ndim
@@ -454,7 +503,7 @@ def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64
     return smatrix
 
 
-def _create_blur_kernel(radius: int, device: torch.device = torch.device("cpu"), tfloat: torch.dtype = torch.float32):
+def _create_blur_kernel(radius: int, device: Union[str, torch.device] = torch.device("cpu"), tfloat: torch.dtype = torch.float32):
     """Create a circular convolution kernel for blurring operations.
 
     Creates a normalized circular (disk-shaped) convolution kernel with the specified
@@ -482,6 +531,7 @@ def _create_blur_kernel(radius: int, device: torch.device = torch.device("cpu"),
     Keywords:
         convolution, kernel, blur, disk, circle, filter, topology optimization
     """
+    device = resolve_device(device).resolved_device
     row_ind, col_ind = skdraw.disk(center=(radius, radius), radius=radius + 1)
     kernel = torch.zeros(size=(2 * radius + 1, 2 * radius + 1), dtype=tfloat, device=device)
     kernel[row_ind, col_ind] = 1
@@ -492,7 +542,7 @@ def operator_blur(
     rho: torch.Tensor,
     radius: int = 2,
     num_blur: int = 1,
-    device: torch.device = torch.device("cpu"),
+    device: Union[str, torch.device] = torch.device("cpu"),
     tfloat: torch.dtype = torch.float32,
 ) -> torch.Tensor:
     """Apply a blur filter to a tensor using 2D convolution.
@@ -534,7 +584,7 @@ def operator_blur(
     Keywords:
         blur, convolution, filter, smoothing, topology optimization, feature size, batch processing
     """
-
+    device = resolve_device(device).resolved_device
     in_ch = rho.shape[1]
     out_ch = in_ch
 
@@ -613,7 +663,7 @@ def blur_filter(
     beta: int = 100,
     eta: float = 0.5,
     num_proj: int = 1,
-    device: torch.device = torch.device("cpu"),
+    device: Union[str, torch.device] = torch.device("cpu"),
     tfloat: torch.dtype = torch.float32,
 ):
     """Apply combined blur and projection filtering for topology optimization.
@@ -671,45 +721,45 @@ def blur_filter(
         topology optimization, filter, blur, projection, binary, manufacturability,
         feature size, inverse design, photonics
     """
-
+    device = resolve_device(device).resolved_device
     rho = operator_blur(rho, radius=radius, num_blur=num_blur, device=device, tfloat=tfloat)
     rho = operator_proj(rho, beta=beta, eta=eta, num_proj=num_proj)
 
     return rho
 
 
-def to_diag_util(input_mat: torch.Tensor, kdim: List[int]) -> torch.Tensor:
+def to_diag_util(input_mat: torch.Tensor, harmonics: List[int]) -> torch.Tensor:
     """Convert a vector to a diagonal matrix for electromagnetic calculations.
 
     This utility function creates a diagonal matrix from a vector, which is a common
     operation in electromagnetic simulations when converting material properties or
     field components to matrix form for calculations.
 
-    The function handles both regular harmonics (kdim_0_tims_1) and cases where the
-    input represents both polarizations (2*kdim_0_tims_1), automatically determining
+    The function handles both regular harmonics (harmonics_0_tims_1) and cases where the
+    input represents both polarizations (2*harmonics_0_tims_1), automatically determining
     the appropriate size based on the input dimensions.
 
     Args:
         input_mat: Input tensor to be converted to a diagonal matrix. This is typically
-                 a vector of length kdim_0_tims_1 or 2*kdim_0_tims_1, where kdim_0_tims_1
+                 a vector of length harmonics_0_tims_1 or 2*harmonics_0_tims_1, where harmonics_0_tims_1
                  is the product of the k-space dimensions.
-        kdim: Dimensions in Fourier space as [kheight, kwidth]. These determine
+        harmonics: Dimensions in Fourier space as [kx, ky]. These determine
              the number of harmonics used in the calculation.
 
     Returns:
         torch.Tensor: Diagonal matrix with the input values along the diagonal.
-                   If input_mat has shape [..., kdim_0_tims_1], the output will have
-                   shape [..., kdim_0_tims_1, kdim_0_tims_1]. If input_mat has shape
-                   [..., 2*kdim_0_tims_1], the output will have shape
-                   [..., 2*kdim_0_tims_1, 2*kdim_0_tims_1].
+                   If input_mat has shape [..., harmonics_0_tims_1], the output will have
+                   shape [..., harmonics_0_tims_1, harmonics_0_tims_1]. If input_mat has shape
+                   [..., 2*harmonics_0_tims_1], the output will have shape
+                   [..., 2*harmonics_0_tims_1, 2*harmonics_0_tims_1].
 
     Examples:
     ```python
     import torch
     from torchrdit.utils import to_diag_util
     input_vector = torch.ones(5)  # A vector with 5 elements
-    kdim = [1, 5]  # 1x5 k-space dimension resulting in 5 harmonics
-    diagonal_matrix = to_diag_util(input_vector, kdim)
+    harmonics = [1, 5]  # 1x5 k-space dimension resulting in 5 harmonics
+    diagonal_matrix = to_diag_util(input_vector, harmonics)
     print(diagonal_matrix.shape)  # Outputs torch.Size([5, 5])
     print(torch.allclose(diagonal_matrix, torch.eye(5)))  # Outputs True
     ```
@@ -722,8 +772,8 @@ def to_diag_util(input_mat: torch.Tensor, kdim: List[int]) -> torch.Tensor:
         diagonal matrix, electromagnetic, RCWA, R-DIT, Fourier, harmonics,
         polarization, matrix construction
     """
-    kdim_0_tims_1 = kdim[0] * kdim[1]
-    if input_mat.shape[-1] == kdim_0_tims_1:
-        return input_mat.unsqueeze(-2) * torch.eye(kdim_0_tims_1).to(input_mat.device)
+    harmonics_0_tims_1 = harmonics[0] * harmonics[1]
+    if input_mat.shape[-1] == harmonics_0_tims_1:
+        return input_mat.unsqueeze(-2) * torch.eye(harmonics_0_tims_1).to(input_mat.device)
     else:
-        return input_mat.unsqueeze(-2) * torch.eye(2 * kdim_0_tims_1).to(input_mat.device)
+        return input_mat.unsqueeze(-2) * torch.eye(2 * harmonics_0_tims_1).to(input_mat.device)

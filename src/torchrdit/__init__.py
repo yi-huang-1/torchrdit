@@ -29,11 +29,10 @@ Key modules:
 
 """
 
-__version__ = "0.1.27"
+__version__ = "0.1.28"
 
 # Import core functionality
 from .gds import mask_to_gds, gds_to_mask, load_gds_vertices
+from .device import DeviceResolution
 
-__all__ = [
-    "mask_to_gds", "gds_to_mask", "load_gds_vertices",
-]
+__all__ = ["mask_to_gds", "gds_to_mask", "load_gds_vertices", "DeviceResolution"]

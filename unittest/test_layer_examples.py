@@ -26,8 +26,8 @@ class TestLayerDocExamples(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         # Create standard lattice grid
-        self.rdim = [256, 256]
-        self.kdim = [5, 5]
+        self.grids = [256, 256]
+        self.harmonics = [5, 5]
         
         # Create materials for tests
         self.air = create_material(name="air", permittivity=1.0)
@@ -35,8 +35,8 @@ class TestLayerDocExamples(unittest.TestCase):
         self.sio2 = create_material(name="SiO2", permittivity=2.25)
         
         # Create a vector grid for layer manager tests
-        self.vec_p = torch.linspace(-0.5, 0.5, self.rdim[0])
-        self.vec_q = torch.linspace(-0.5, 0.5, self.rdim[1])
+        self.vec_p = torch.linspace(-0.5, 0.5, self.grids[0])
+        self.vec_q = torch.linspace(-0.5, 0.5, self.grids[1])
         self.lattice_t1 = torch.tensor([1.0, 0.0])
         self.lattice_t2 = torch.tensor([0.0, 1.0])
     

@@ -29,8 +29,8 @@ def example_multi_angle_optimization():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[7, 7],
+        grids=[256, 256],
+        harmonics=[7, 7],
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     
@@ -137,8 +137,8 @@ def example_robust_design():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[7, 7],
+        grids=[256, 256],
+        harmonics=[7, 7],
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     
@@ -304,8 +304,8 @@ def example_large_sweep_chunking():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[5, 5]
+        grids=[256, 256],
+        harmonics=[5, 5]
     )
     
     si = create_material(name="Si", permittivity=12.25)
@@ -357,8 +357,8 @@ def example_gradient_validation():
         solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[128, 128],
-            kdim=[5, 5],
+            grids=[128, 128],
+            harmonics=[5, 5],
             device='cuda' if torch.cuda.is_available() else 'cpu'
         )
         si = create_material(name="Si", permittivity=12.25)

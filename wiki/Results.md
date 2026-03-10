@@ -30,9 +30,9 @@ Organizes the x, y, and z components of electromagnetic fields:
 @dataclass
 class FieldComponents:
     """Field components in x, y, z directions"""
-    x: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
-    y: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
-    z: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
+    x: torch.Tensor  # (n_freqs, harmonics[0], harmonics[1])
+    y: torch.Tensor  # (n_freqs, harmonics[0], harmonics[1])
+    z: torch.Tensor  # (n_freqs, harmonics[0], harmonics[1])
 ```
 
 ### WaveVectors
@@ -43,11 +43,11 @@ Stores wave vector components for the simulation:
 @dataclass
 class WaveVectors:
     """Wave vector components for the simulation"""
-    kx: torch.Tensor  # (kdim[0], kdim[1])
-    ky: torch.Tensor  # (kdim[0], kdim[1])
+    kx: torch.Tensor  # (harmonics[0], harmonics[1])
+    ky: torch.Tensor  # (harmonics[0], harmonics[1])
     kinc: torch.Tensor  # (n_freqs, 3)
-    kzref: torch.Tensor  # (n_freqs, kdim[0]*kdim[1])
-    kztrn: torch.Tensor  # (n_freqs, kdim[0]*kdim[1])
+    kzref: torch.Tensor  # (n_freqs, harmonics[0]*harmonics[1])
+    kztrn: torch.Tensor  # (n_freqs, harmonics[0]*harmonics[1])
 ```
 
 ### SolverResults
@@ -126,13 +126,6 @@ Below is the complete API reference for the results module, automatically genera
     * [S12](#torchrdit.results.ScatteringMatrix.S12)
     * [S21](#torchrdit.results.ScatteringMatrix.S21)
     * [S22](#torchrdit.results.ScatteringMatrix.S22)
-  * [\_FourierCoefficients](#torchrdit.results._FourierCoefficients)
-    * [s\_x](#torchrdit.results._FourierCoefficients.s_x)
-    * [s\_y](#torchrdit.results._FourierCoefficients.s_y)
-    * [s\_z](#torchrdit.results._FourierCoefficients.s_z)
-    * [u\_x](#torchrdit.results._FourierCoefficients.u_x)
-    * [u\_y](#torchrdit.results._FourierCoefficients.u_y)
-    * [u\_z](#torchrdit.results._FourierCoefficients.u_z)
   * [FieldComponents](#torchrdit.results.FieldComponents)
     * [x](#torchrdit.results.FieldComponents.x)
     * [y](#torchrdit.results.FieldComponents.y)
@@ -158,18 +151,16 @@ Below is the complete API reference for the results module, automatically genera
     * [smat\_layers](#torchrdit.results.SolverResults.smat_layers)
     * [lattice\_t1](#torchrdit.results.SolverResults.lattice_t1)
     * [lattice\_t2](#torchrdit.results.SolverResults.lattice_t2)
-    * [default\_rdim](#torchrdit.results.SolverResults.default_rdim)
+    * [default\_grids](#torchrdit.results.SolverResults.default_grids)
     * [n\_sources](#torchrdit.results.SolverResults.n_sources)
     * [source\_parameters](#torchrdit.results.SolverResults.source_parameters)
     * [loss](#torchrdit.results.SolverResults.loss)
     * [is\_batched](#torchrdit.results.SolverResults.is_batched)
-    * [\_\_len\_\_](#torchrdit.results.SolverResults.__len__)
-    * [\_\_getitem\_\_](#torchrdit.results.SolverResults.__getitem__)
-    * [\_\_iter\_\_](#torchrdit.results.SolverResults.__iter__)
     * [as\_list](#torchrdit.results.SolverResults.as_list)
     * [get\_source\_result](#torchrdit.results.SolverResults.get_source_result)
     * [from\_dict](#torchrdit.results.SolverResults.from_dict)
     * [to\_dict](#torchrdit.results.SolverResults.to_dict)
+    * [to\_structured\_dict](#torchrdit.results.SolverResults.to_structured_dict)
     * [get\_diffraction\_order\_indices](#torchrdit.results.SolverResults.get_diffraction_order_indices)
     * [get\_zero\_order\_transmission](#torchrdit.results.SolverResults.get_zero_order_transmission)
     * [get\_zero\_order\_reflection](#torchrdit.results.SolverResults.get_zero_order_reflection)
@@ -185,7 +176,7 @@ Below is the complete API reference for the results module, automatically genera
 
 <a id="torchrdit.results"></a>
 
-# torchrdit.results
+# Module torchrdit.results
 
 Module for electromagnetic simulation results processing and analysis.
 
@@ -196,8 +187,9 @@ vectors in a structured, easy-to-use format.
 
 **Notes**:
 
-  Throughout this module, kdim_0_tims_1 = kdim[0] * kdim[1], where kdim is the
+  Throughout this module, harmonics_0_tims_1 = harmonics[0] * harmonics[1], where harmonics is the
   k-space dimensions used in the simulation.
+  k-space arrays follow [kx, ky] ordering (harmonics[0] -> kx, harmonics[1] -> ky).
   
   Classes:
 - `ScatteringMatrix` - Container for S-parameter matrices (S11, S12, S21, S22).
@@ -267,20 +259,20 @@ characterize the reflection and transmission properties of an electromagnetic st
 
 **Notes**:
 
-  kdim_0_tims_1 = kdim[0] * kdim[1], where kdim is the k-space dimensions
+  harmonics_0_tims_1 = harmonics[0] * harmonics[1], where harmonics is the k-space dimensions
   used in the simulation.
   
 
 **Attributes**:
 
 - `S11` _torch.Tensor_ - Reflection coefficient matrix for waves incident from port 1.
-- `Shape` - (n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
+- `Shape` - (n_freqs, 2*harmonics_0_tims_1, 2*harmonics_0_tims_1)
 - `S12` _torch.Tensor_ - Transmission coefficient matrix from port 2 to port 1.
-- `Shape` - (n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
+- `Shape` - (n_freqs, 2*harmonics_0_tims_1, 2*harmonics_0_tims_1)
 - `S21` _torch.Tensor_ - Transmission coefficient matrix from port 1 to port 2.
-- `Shape` - (n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
+- `Shape` - (n_freqs, 2*harmonics_0_tims_1, 2*harmonics_0_tims_1)
 - `S22` _torch.Tensor_ - Reflection coefficient matrix for waves incident from port 2.
-- `Shape` - (n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
+- `Shape` - (n_freqs, 2*harmonics_0_tims_1, 2*harmonics_0_tims_1)
   
 
 **Examples**:
@@ -299,79 +291,27 @@ transmitted_power = torch.abs(smatrix.S21)**2
 
 <a id="torchrdit.results.ScatteringMatrix.S11"></a>
 
-#### S11
+#### ScatteringMatrix.S11
 
-(n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
+(n_freqs, 2*harmonics_0_tims_1, 2*harmonics_0_tims_1)
 
 <a id="torchrdit.results.ScatteringMatrix.S12"></a>
 
-#### S12
+#### ScatteringMatrix.S12
 
-(n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
+(n_freqs, 2*harmonics_0_tims_1, 2*harmonics_0_tims_1)
 
 <a id="torchrdit.results.ScatteringMatrix.S21"></a>
 
-#### S21
+#### ScatteringMatrix.S21
 
-(n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
+(n_freqs, 2*harmonics_0_tims_1, 2*harmonics_0_tims_1)
 
 <a id="torchrdit.results.ScatteringMatrix.S22"></a>
 
-#### S22
+#### ScatteringMatrix.S22
 
-(n_freqs, 2*kdim_0_tims_1, 2*kdim_0_tims_1)
-
-<a id="torchrdit.results._FourierCoefficients"></a>
-
-## \_FourierCoefficients Objects
-
-```python
-@dataclass
-class _FourierCoefficients()
-```
-
-Internal class for k-space Fourier coefficients (not real-space fields).
-
-Contains Fourier coefficients in k-space representing spectral amplitudes.
-These are the raw coefficients from the electromagnetic solver
-
-Note: This is an internal class - use public field API methods instead.
-
-<a id="torchrdit.results._FourierCoefficients.s_x"></a>
-
-#### s\_x
-
-Electric field Fourier coefficient x-component
-
-<a id="torchrdit.results._FourierCoefficients.s_y"></a>
-
-#### s\_y
-
-Electric field Fourier coefficient y-component
-
-<a id="torchrdit.results._FourierCoefficients.s_z"></a>
-
-#### s\_z
-
-Electric field Fourier coefficient z-component
-
-<a id="torchrdit.results._FourierCoefficients.u_x"></a>
-
-#### u\_x
-
-Magnetic field Fourier coefficient x-component
-
-<a id="torchrdit.results._FourierCoefficients.u_y"></a>
-
-#### u\_y
-
-Magnetic field Fourier coefficient y-component
-
-<a id="torchrdit.results._FourierCoefficients.u_z"></a>
-
-#### u\_z
-
-Magnetic field Fourier coefficient z-component
+(n_freqs, 2*harmonics_0_tims_1, 2*harmonics_0_tims_1)
 
 <a id="torchrdit.results.FieldComponents"></a>
 
@@ -428,37 +368,37 @@ if field.mag_x is not None:
 
 <a id="torchrdit.results.FieldComponents.x"></a>
 
-#### x
+#### FieldComponents.x
 
-Electric field x-component (n_freqs, kdim[0], kdim[1])
+Electric field x-component (n_freqs, harmonics[0], harmonics[1])
 
 <a id="torchrdit.results.FieldComponents.y"></a>
 
-#### y
+#### FieldComponents.y
 
-Electric field y-component (n_freqs, kdim[0], kdim[1])
+Electric field y-component (n_freqs, harmonics[0], harmonics[1])
 
 <a id="torchrdit.results.FieldComponents.z"></a>
 
-#### z
+#### FieldComponents.z
 
-Electric field z-component (n_freqs, kdim[0], kdim[1])
+Electric field z-component (n_freqs, harmonics[0], harmonics[1])
 
 <a id="torchrdit.results.FieldComponents.mag_x"></a>
 
-#### mag\_x
+#### FieldComponents.mag\_x
 
 Magnetic field x-component
 
 <a id="torchrdit.results.FieldComponents.mag_y"></a>
 
-#### mag\_y
+#### FieldComponents.mag\_y
 
 Magnetic field y-component
 
 <a id="torchrdit.results.FieldComponents.mag_z"></a>
 
-#### mag\_z
+#### FieldComponents.mag\_z
 
 Magnetic field z-component
 
@@ -479,15 +419,15 @@ reflected, and transmitted wave vectors in the Fourier domain.
 **Attributes**:
 
 - `kx` _torch.Tensor_ - X-component of the wave vector in reciprocal space.
-- `Shape` - (kdim[0], kdim[1])
+- `Shape` - (harmonics[0], harmonics[1])
 - `ky` _torch.Tensor_ - Y-component of the wave vector in reciprocal space.
-- `Shape` - (kdim[0], kdim[1])
+- `Shape` - (harmonics[0], harmonics[1])
 - `kinc` _torch.Tensor_ - Incident wave vector.
 - `Shape` - (n_freqs, 3)
 - `kzref` _torch.Tensor_ - Z-component of the wave vector in reflection region.
-- `Shape` - (n_freqs, kdim[0]*kdim[1])
+- `Shape` - (n_freqs, harmonics[0]*harmonics[1])
 - `kztrn` _torch.Tensor_ - Z-component of the wave vector in transmission region.
-- `Shape` - (n_freqs, kdim[0]*kdim[1])
+- `Shape` - (n_freqs, harmonics[0]*harmonics[1])
   
 
 **Examples**:
@@ -506,33 +446,33 @@ k_magnitude = torch.sqrt(wave_vectors.kx**2 + wave_vectors.ky**2 + kz**2)
 
 <a id="torchrdit.results.WaveVectors.kx"></a>
 
-#### kx
+#### WaveVectors.kx
 
-(kdim[0], kdim[1])
+(harmonics[0], harmonics[1])
 
 <a id="torchrdit.results.WaveVectors.ky"></a>
 
-#### ky
+#### WaveVectors.ky
 
-(kdim[0], kdim[1])
+(harmonics[0], harmonics[1])
 
 <a id="torchrdit.results.WaveVectors.kinc"></a>
 
-#### kinc
+#### WaveVectors.kinc
 
 (n_freqs, 3)
 
 <a id="torchrdit.results.WaveVectors.kzref"></a>
 
-#### kzref
+#### WaveVectors.kzref
 
-(n_freqs, kdim[0]*kdim[1])
+(n_freqs, harmonics[0]*harmonics[1])
 
 <a id="torchrdit.results.WaveVectors.kztrn"></a>
 
-#### kztrn
+#### WaveVectors.kztrn
 
-(n_freqs, kdim[0]*kdim[1])
+(n_freqs, harmonics[0]*harmonics[1])
 
 <a id="torchrdit.results.SolverResults"></a>
 
@@ -551,7 +491,7 @@ diffraction efficiencies, field components, scattering matrices, wave vectors.
 
 **Notes**:
 
-  kdim_0_tims_1 = kdim[0] * kdim[1], where kdim is the k-space dimensions
+  harmonics_0_tims_1 = harmonics[0] * harmonics[1], where harmonics is the k-space dimensions
   used in the simulation. This relationship appears in the ScatteringMatrix
   component's tensor shapes.
   
@@ -563,16 +503,16 @@ diffraction efficiencies, field components, scattering matrices, wave vectors.
 - `transmission` _torch.Tensor_ - Total transmission efficiency.
 - `Shape` - (n_freqs) for single source, (n_sources, n_freqs) for batched
 - `reflection_diffraction` _torch.Tensor_ - Reflection efficiencies for each diffraction order.
-- `Shape` - (n_freqs, kdim[0], kdim[1]) or (n_sources, n_freqs, kdim[0], kdim[1])
+- `Shape` - (n_freqs, harmonics[0], harmonics[1]) or (n_sources, n_freqs, harmonics[0], harmonics[1])
 - `transmission_diffraction` _torch.Tensor_ - Transmission efficiencies for each diffraction order.
-- `Shape` - (n_freqs, kdim[0], kdim[1]) or (n_sources, n_freqs, kdim[0], kdim[1])
+- `Shape` - (n_freqs, harmonics[0], harmonics[1]) or (n_sources, n_freqs, harmonics[0], harmonics[1])
 - `reflection_field` _FieldComponents_ - Field Fourier coefficients in the reflection region.
 - `transmission_field` _FieldComponents_ - Field Fourier coefficients in the transmission region.
 - `structure_matrix` _ScatteringMatrix_ - Scattering matrix for the entire structure.
 - `wave_vectors` _WaveVectors_ - Wave vector components for the simulation.
 - `n_sources` _int_ - Number of sources (1 for single, >1 for batched).
   lattice_t1, lattice_t2 (Optional[torch.Tensor]): Lattice vectors.
-- `default_rdim` _Optional[Tuple[int, int]]_ - Default spatial resolution from solver.
+- `default_grids` _Optional[Tuple[int, int]]_ - Default spatial resolution from solver.
   
 
 **Examples**:
@@ -608,97 +548,97 @@ U_x, U_y, U_z = coeffs['U_x'], coeffs['U_y'], coeffs['U_z']  # H-field coefficie
 
 <a id="torchrdit.results.SolverResults.reflection"></a>
 
-#### reflection
+#### SolverResults.reflection
 
 (n_freqs)
 
 <a id="torchrdit.results.SolverResults.transmission"></a>
 
-#### transmission
+#### SolverResults.transmission
 
 (n_freqs)
 
 <a id="torchrdit.results.SolverResults.reflection_diffraction"></a>
 
-#### reflection\_diffraction
+#### SolverResults.reflection\_diffraction
 
-(n_freqs, kdim[0], kdim[1])
+(n_freqs, harmonics[0], harmonics[1])
 
 <a id="torchrdit.results.SolverResults.transmission_diffraction"></a>
 
-#### transmission\_diffraction
+#### SolverResults.transmission\_diffraction
 
-(n_freqs, kdim[0], kdim[1])
+(n_freqs, harmonics[0], harmonics[1])
 
 <a id="torchrdit.results.SolverResults.mat_v_ref"></a>
 
-#### mat\_v\_ref
+#### SolverResults.mat\_v\_ref
 
 V matrix for reflection region (magnetic field mode matrix)
 
 <a id="torchrdit.results.SolverResults.mat_v_trn"></a>
 
-#### mat\_v\_trn
+#### SolverResults.mat\_v\_trn
 
 V matrix for transmission region (magnetic field mode matrix)
 
 <a id="torchrdit.results.SolverResults.polarization_data"></a>
 
-#### polarization\_data
+#### SolverResults.polarization\_data
 
 Polarization data containing esrc and other vectors
 
 <a id="torchrdit.results.SolverResults.solver_config"></a>
 
-#### solver\_config
+#### SolverResults.solver\_config
 
-Solver configuration (kdim, n_freqs, device, etc.)
+Solver configuration (harmonics, n_freqs, device, etc.)
 
 <a id="torchrdit.results.SolverResults.smat_layers"></a>
 
-#### smat\_layers
+#### SolverResults.smat\_layers
 
 Individual layer S-matrices for proper mode coefficient calculation
 
 <a id="torchrdit.results.SolverResults.lattice_t1"></a>
 
-#### lattice\_t1
+#### SolverResults.lattice\_t1
 
 First lattice vector [x, y] from solver
 
 <a id="torchrdit.results.SolverResults.lattice_t2"></a>
 
-#### lattice\_t2
+#### SolverResults.lattice\_t2
 
 Second lattice vector [x, y] from solver
 
-<a id="torchrdit.results.SolverResults.default_rdim"></a>
+<a id="torchrdit.results.SolverResults.default_grids"></a>
 
-#### default\_rdim
+#### SolverResults.default\_grids
 
 Default spatial resolution [height, width] from solver
 
 <a id="torchrdit.results.SolverResults.n_sources"></a>
 
-#### n\_sources
+#### SolverResults.n\_sources
 
 Number of sources (1 for single, >1 for batched)
 
 <a id="torchrdit.results.SolverResults.source_parameters"></a>
 
-#### source\_parameters
+#### SolverResults.source\_parameters
 
 Original source dictionaries for batched case
 
 <a id="torchrdit.results.SolverResults.loss"></a>
 
-#### loss
+#### SolverResults.loss
 
 Total loss for each source/wavelength (batched only)
 
 <a id="torchrdit.results.SolverResults.is_batched"></a>
 
-#### is\_batched
+### SolverResults.is\_batched
 
 ```python
 @property
@@ -711,49 +651,9 @@ This is True when:
 1. Explicitly set via _is_batched (for single-element list inputs)
 2. When n_sources > 1 (multiple sources)
 
-<a id="torchrdit.results.SolverResults.__len__"></a>
-
-#### \_\_len\_\_
-
-```python
-def __len__() -> int
-```
-
-Return number of sources in the results.
-
-<a id="torchrdit.results.SolverResults.__getitem__"></a>
-
-#### \_\_getitem\_\_
-
-```python
-def __getitem__(
-        idx: Union[int, slice]) -> Union["SolverResults", "SolverResults"]
-```
-
-Get results for specific source(s).
-
-**Arguments**:
-
-- `idx` - Integer index or slice for source selection.
-  
-
-**Returns**:
-
-  SolverResults for single index, SolverResults for slice (both single and batched compatible).
-
-<a id="torchrdit.results.SolverResults.__iter__"></a>
-
-#### \_\_iter\_\_
-
-```python
-def __iter__()
-```
-
-Iterate over individual source results.
-
 <a id="torchrdit.results.SolverResults.as_list"></a>
 
-#### as\_list
+### SolverResults.as\_list
 
 ```python
 @property
@@ -764,7 +664,7 @@ Get all results as a list of SolverResults objects.
 
 <a id="torchrdit.results.SolverResults.get_source_result"></a>
 
-#### get\_source\_result
+### SolverResults.get\_source\_result
 
 ```python
 def get_source_result(idx: int) -> "SolverResults"
@@ -783,7 +683,7 @@ Get results for a specific source.
 
 <a id="torchrdit.results.SolverResults.from_dict"></a>
 
-#### from\_dict
+### SolverResults.from\_dict
 
 ```python
 @classmethod
@@ -825,7 +725,7 @@ print(f"Transmission: {results.transmission[0].item():.3f}")
 
 <a id="torchrdit.results.SolverResults.to_dict"></a>
 
-#### to\_dict
+### SolverResults.to\_dict
 
 ```python
 def to_dict() -> Dict
@@ -855,9 +755,28 @@ legacy_function(data_dict)
   Keywords:
   conversion, dictionary, legacy format, backward compatibility
 
+<a id="torchrdit.results.SolverResults.to_structured_dict"></a>
+
+### SolverResults.to\_structured\_dict
+
+```python
+def to_structured_dict() -> Dict
+```
+
+Convert results to a structured, self-describing dictionary format.
+
+This provides a clearer, namespaced schema compared to the legacy flat
+dictionary returned by :meth:`to_dict`. The returned structure aims to
+make the meaning and domain of each tensor explicit (e.g., Fourier
+coefficients in k-space vs. scalar efficiencies).
+
+**Returns**:
+
+- `Dict` - Structured dictionary containing simulation results.
+
 <a id="torchrdit.results.SolverResults.get_diffraction_order_indices"></a>
 
-#### get\_diffraction\_order\_indices
+### SolverResults.get\_diffraction\_order\_indices
 
 ```python
 def get_diffraction_order_indices(order_x: int = 0,
@@ -904,7 +823,7 @@ efficiency = results.transmission_diffraction[0, ix, iy]
 
 <a id="torchrdit.results.SolverResults.get_zero_order_transmission"></a>
 
-#### get\_zero\_order\_transmission
+### SolverResults.get\_zero\_order\_transmission
 
 ```python
 def get_zero_order_transmission(
@@ -945,7 +864,7 @@ phase_diff = torch.angle(tx[0]) - torch.angle(ty[0])
 
 <a id="torchrdit.results.SolverResults.get_zero_order_reflection"></a>
 
-#### get\_zero\_order\_reflection
+### SolverResults.get\_zero\_order\_reflection
 
 ```python
 def get_zero_order_reflection(
@@ -984,7 +903,7 @@ minor_axis = torch.minimum(torch.abs(rx[0]), torch.abs(ry[0]))
 
 <a id="torchrdit.results.SolverResults.get_order_transmission_efficiency"></a>
 
-#### get\_order\_transmission\_efficiency
+### SolverResults.get\_order\_transmission\_efficiency
 
 ```python
 def get_order_transmission_efficiency(order_x: int = 0,
@@ -1031,7 +950,7 @@ plt.plot(wavelengths, t1.detach().cpu().numpy(), label='First order')
 
 <a id="torchrdit.results.SolverResults.get_order_reflection_efficiency"></a>
 
-#### get\_order\_reflection\_efficiency
+### SolverResults.get\_order\_reflection\_efficiency
 
 ```python
 def get_order_reflection_efficiency(order_x: int = 0,
@@ -1079,7 +998,7 @@ print(f"Total efficiency: {total.item():.4f} (should be close to 1.0)")
 
 <a id="torchrdit.results.SolverResults.get_all_diffraction_orders"></a>
 
-#### get\_all\_diffraction\_orders
+### SolverResults.get\_all\_diffraction\_orders
 
 ```python
 def get_all_diffraction_orders() -> List[Tuple[int, int]]
@@ -1116,7 +1035,7 @@ first_orders = [(m, n) for m, n in all_orders if abs(m) + abs(n) == 1]
 
 <a id="torchrdit.results.SolverResults.get_propagating_orders"></a>
 
-#### get\_propagating\_orders
+### SolverResults.get\_propagating\_orders
 
 ```python
 def get_propagating_orders(wavelength_idx: int = 0) -> List[Tuple[int, int]]
@@ -1163,7 +1082,7 @@ for i, wl in enumerate(wavelengths):
 
 <a id="torchrdit.results.SolverResults.get_reflection_interface_fourier_coefficients"></a>
 
-#### get\_reflection\_interface\_fourier\_coefficients
+### SolverResults.get\_reflection\_interface\_fourier\_coefficients
 
 ```python
 def get_reflection_interface_fourier_coefficients() -> Dict[str, torch.Tensor]
@@ -1186,7 +1105,7 @@ and field visualization.
   - 'U_y': Magnetic field Fourier coefficient y-component (u_y) at reflection interface
   - 'U_z': Magnetic field Fourier coefficient z-component (u_z) at reflection interface
   
-  Each tensor has shape (n_freqs, kdim[0], kdim[1]).
+  Each tensor has shape (n_freqs, harmonics[0], harmonics[1]).
   Returns None for magnetic components if not available.
   
 
@@ -1225,7 +1144,7 @@ electric_field_intensity = (
 
 <a id="torchrdit.results.SolverResults.get_transmission_interface_fourier_coefficients"></a>
 
-#### get\_transmission\_interface\_fourier\_coefficients
+### SolverResults.get\_transmission\_interface\_fourier\_coefficients
 
 ```python
 def get_transmission_interface_fourier_coefficients(
@@ -1249,7 +1168,7 @@ and field visualization.
   - 'U_y': Magnetic field Fourier coefficient y-component (u_y) at transmission interface
   - 'U_z': Magnetic field Fourier coefficient z-component (u_z) at transmission interface
   
-  Each tensor has shape (n_freqs, kdim[0], kdim[1]).
+  Each tensor has shape (n_freqs, harmonics[0], harmonics[1]).
   Returns None for magnetic components if not available.
   
 
@@ -1291,7 +1210,7 @@ electric_field_intensity = (
 
 <a id="torchrdit.results.SolverResults.calculate_interface_fourier_coefficients"></a>
 
-#### calculate\_interface\_fourier\_coefficients
+### SolverResults.calculate\_interface\_fourier\_coefficients
 
 ```python
 def calculate_interface_fourier_coefficients(
@@ -1371,7 +1290,7 @@ trn_only = results.calculate_interface_fourier_coefficients('transmission')
 
 <a id="torchrdit.results.SolverResults.find_optimal_source"></a>
 
-#### find\_optimal\_source
+### SolverResults.find\_optimal\_source
 
 ```python
 def find_optimal_source(metric: str = "max_transmission",
@@ -1415,7 +1334,7 @@ best_idx = results.find_optimal_source('min_reflection', frequency_idx=0)
 
 <a id="torchrdit.results.SolverResults.get_parameter_sweep_data"></a>
 
-#### get\_parameter\_sweep\_data
+### SolverResults.get\_parameter\_sweep\_data
 
 ```python
 def get_parameter_sweep_data(

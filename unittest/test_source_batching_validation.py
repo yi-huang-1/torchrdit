@@ -28,8 +28,8 @@ class TestSourceBatchingValidation:
         solver = create_solver(
             algorithm=algorithm,
             lam0=np.array([1.55]),
-            rdim=[64, 64],
-            kdim=[3, 3],
+            grids=[64, 64],
+            harmonics=[3, 3],
             device='cpu'
         )
         
@@ -171,8 +171,8 @@ class TestSourceBatchingValidation:
         solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=lam0,
-            rdim=[64, 64],
-            kdim=[3, 3],
+            grids=[64, 64],
+            harmonics=[3, 3],
             device='cpu'
         )
         mat_air = create_material(name="Air", permittivity=1.0)

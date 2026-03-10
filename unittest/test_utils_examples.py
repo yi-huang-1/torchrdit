@@ -47,7 +47,7 @@ class TestUtilsDocExamples(unittest.TestCase):
         rho_3d: 4D tensor with multiple batches for testing batch operations.
         vec_2d: Vector used to test diagonal matrix creation.
         vec_3d: Multi-batch vector used to test batch diagonal matrix creation.
-        kdim: Dimensions in Fourier space for diagonal matrix functions.
+        harmonics: Dimensions in Fourier space for diagonal matrix functions.
     
     Examples:
         >>> # Example of running a specific test
@@ -75,7 +75,7 @@ class TestUtilsDocExamples(unittest.TestCase):
         self.rho_3d = torch.rand(2, 1, 5, 5)  # 4D tensor with batch dimension and channel
         self.vec_2d = torch.randn(5)  # Vector to convert to diagonal matrix
         self.vec_3d = torch.randn(2, 5)  # Batched vector
-        self.kdim = [1, 5]  # k dimensions for to_diag_util
+        self.harmonics = [1, 5]  # k dimensions for to_diag_util
     
     def test_create_blur_kernel(self):
         """Test the _create_blur_kernel function example.
@@ -275,7 +275,7 @@ class TestUtilsDocExamples(unittest.TestCase):
         vec = self.vec_3d.clone()
         
         # Convert to diagonal matrix
-        diag_mat = to_diag_util(vec, kdim=self.kdim)
+        diag_mat = to_diag_util(vec, harmonics=self.harmonics)
         
         # Verify properties
         self.assertEqual(diag_mat.shape, (2, 5, 5))
@@ -302,7 +302,7 @@ class TestUtilsDocExamples(unittest.TestCase):
         vec_complex = torch.complex(vec_real, vec_imag)
         
         # Convert to diagonal matrix
-        diag_mat = to_diag_util(vec_complex, kdim=self.kdim)
+        diag_mat = to_diag_util(vec_complex, harmonics=self.harmonics)
         
         # Verify properties
         self.assertEqual(diag_mat.shape, (5, 5))
@@ -324,7 +324,7 @@ class TestUtilsDocExamples(unittest.TestCase):
         vec = torch.randn(10)  # 2 * n_harmonics (n_harmonics = 5)
         
         # Convert to diagonal matrix - will automatically detect dual polarization
-        diag_mat = to_diag_util(vec, kdim=self.kdim)
+        diag_mat = to_diag_util(vec, harmonics=self.harmonics)
         
         # Verify shape (should match the vector length for dual polarization)
         self.assertEqual(diag_mat.shape, (10, 10))
@@ -334,10 +334,10 @@ class TestUtilsDocExamples(unittest.TestCase):
             self.assertEqual(diag_mat[i, i].item(), vec[i].item())
         
         # With large number of harmonics
-        large_kdim = [3, 3]  # 9 harmonics
+        large_harmonics = [3, 3]  # 9 harmonics
         large_vec = torch.randn(18)  # 2 * (3*3) = 18 for dual polarization
         
-        large_diag = to_diag_util(large_vec, kdim=large_kdim)
+        large_diag = to_diag_util(large_vec, harmonics=large_harmonics)
         self.assertEqual(large_diag.shape, (18, 18))
 
 

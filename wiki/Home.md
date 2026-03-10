@@ -20,6 +20,7 @@ Welcome to the `TorchRDIT` documentation. `TorchRDIT` is an advanced software pa
 
 - [API Overview](API-Overview)
 - [Algorithm Module](Algorithm) - Implementation of electromagnetic solvers
+- [Algorithm Module](Algorithm) - Implementation of electromagnetic solvers
 - [Builder Module](Builder) - Fluent API for creating simulations
 - [Cell Module](Cell) - Cell geometry definitions
 - [Constants Module](Constants) - Physical constants and enumerations
@@ -43,7 +44,7 @@ TorchRDIT now includes industry-standard GDS file format support:
 - Batch processing for multiple designs
 - See the [GDS](GDS) page for details
 
-## New in v0.1.27: Unified Interface & Field APIs
+## New in v0.1.27: Unified Field APIs
 
 TorchRDIT v0.1.27 introduces major improvements:
 - **Unified SolverResults**: Single class handles both single and batched sources
@@ -58,6 +59,6 @@ Recent features include:
 
 ## Examples
 
-TorchRDIT comes with several example files in the `examples/` directory
+TorchRDIT comes with several example files in the `torchrdit/examples/` directory
 
 For more detailed explanations of each example, see the [Examples](Examples) page.

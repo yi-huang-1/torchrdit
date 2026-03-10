@@ -11,6 +11,7 @@
 - API Reference
   - [Overview](API-Overview)
   - [Algorithm](Algorithm)
+  - [Algorithm](Algorithm)
   - [Builder](Builder)
   - [Cell](Cell)
   - [Constants](Constants)

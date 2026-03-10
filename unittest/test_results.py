@@ -45,16 +45,16 @@ class TestFieldComponents(unittest.TestCase):
         """Set up test fixtures."""
         # Create sample field components for testing
         n_freqs = 2
-        kdim = (3, 3)  # 3x3 k-space grid
-        self.x = torch.randn(n_freqs, *kdim, dtype=torch.complex64)
-        self.y = torch.randn(n_freqs, *kdim, dtype=torch.complex64)
-        self.z = torch.randn(n_freqs, *kdim, dtype=torch.complex64)
+        harmonics = (3, 3)  # 3x3 k-space grid
+        self.x = torch.randn(n_freqs, *harmonics, dtype=torch.complex64)
+        self.y = torch.randn(n_freqs, *harmonics, dtype=torch.complex64)
+        self.z = torch.randn(n_freqs, *harmonics, dtype=torch.complex64)
 
         self.field = FieldComponents(x=self.x, y=self.y, z=self.z)
 
     def test_shapes(self):
         """Test that tensor shapes are as expected."""
-        expected_shape = (2, 3, 3)  # n_freqs, kdim[0], kdim[1]
+        expected_shape = (2, 3, 3)  # n_freqs, harmonics[0], harmonics[1]
         self.assertEqual(self.field.x.shape, expected_shape)
         self.assertEqual(self.field.y.shape, expected_shape)
         self.assertEqual(self.field.z.shape, expected_shape)
@@ -67,11 +67,11 @@ class TestWaveVectors(unittest.TestCase):
         """Set up test fixtures."""
         # Create sample wave vectors for testing
         n_freqs = 2
-        kdim = (3, 3)  # 3x3 k-space grid
-        n_harmonics = kdim[0] * kdim[1]
+        harmonics = (3, 3)  # 3x3 k-space grid
+        n_harmonics = harmonics[0] * harmonics[1]
 
-        self.kx = torch.linspace(-1, 1, kdim[0] * kdim[1]).reshape(kdim)
-        self.ky = torch.linspace(-1, 1, kdim[0] * kdim[1]).reshape(kdim)
+        self.kx = torch.linspace(-1, 1, harmonics[0] * harmonics[1]).reshape(harmonics)
+        self.ky = torch.linspace(-1, 1, harmonics[0] * harmonics[1]).reshape(harmonics)
         self.kinc = torch.zeros(n_freqs, 3)
         self.kinc[:, 2] = 1.0  # Normal incidence
 
@@ -111,11 +111,11 @@ class TestWaveVectors(unittest.TestCase):
 
     def test_shapes(self):
         """Test that tensor shapes are as expected."""
-        self.assertEqual(self.wave_vectors.kx.shape, (3, 3))  # kdim[0], kdim[1]
-        self.assertEqual(self.wave_vectors.ky.shape, (3, 3))  # kdim[0], kdim[1]
+        self.assertEqual(self.wave_vectors.kx.shape, (3, 3))  # harmonics[0], harmonics[1]
+        self.assertEqual(self.wave_vectors.ky.shape, (3, 3))  # harmonics[0], harmonics[1]
         self.assertEqual(self.wave_vectors.kinc.shape, (2, 3))  # n_freqs, 3
-        self.assertEqual(self.wave_vectors.kzref.shape, (2, 9))  # n_freqs, kdim[0]*kdim[1]
-        self.assertEqual(self.wave_vectors.kztrn.shape, (2, 9))  # n_freqs, kdim[0]*kdim[1]
+        self.assertEqual(self.wave_vectors.kzref.shape, (2, 9))  # n_freqs, harmonics[0]*harmonics[1]
+        self.assertEqual(self.wave_vectors.kztrn.shape, (2, 9))  # n_freqs, harmonics[0]*harmonics[1]
 
 
 class TestSolverResults(unittest.TestCase):
@@ -125,32 +125,32 @@ class TestSolverResults(unittest.TestCase):
         """Set up test fixtures."""
         # Create sample data for SolverResults
         n_freqs = 2
-        kdim = (3, 3)  # 3x3 k-space grid
-        n_harmonics = kdim[0] * kdim[1]
+        harmonics = (3, 3)  # 3x3 k-space grid
+        n_harmonics = harmonics[0] * harmonics[1]
 
         # Overall efficiencies
         self.reflection = torch.tensor([0.3, 0.35])
         self.transmission = torch.tensor([0.7, 0.65])
 
         # Diffraction efficiencies
-        self.reflection_diffraction = torch.zeros(n_freqs, *kdim)
-        self.transmission_diffraction = torch.zeros(n_freqs, *kdim)
+        self.reflection_diffraction = torch.zeros(n_freqs, *harmonics)
+        self.transmission_diffraction = torch.zeros(n_freqs, *harmonics)
 
         # Set center (zero-order) values
         self.reflection_diffraction[:, 1, 1] = self.reflection
         self.transmission_diffraction[:, 1, 1] = self.transmission
 
         # Create field components
-        rx = torch.randn(n_freqs, *kdim, dtype=torch.complex64)
-        ry = torch.randn(n_freqs, *kdim, dtype=torch.complex64)
-        rz = torch.randn(n_freqs, *kdim, dtype=torch.complex64)
-        tx = torch.randn(n_freqs, *kdim, dtype=torch.complex64)
-        ty = torch.randn(n_freqs, *kdim, dtype=torch.complex64)
-        tz = torch.randn(n_freqs, *kdim, dtype=torch.complex64)
+        rx = torch.randn(n_freqs, *harmonics, dtype=torch.complex64)
+        ry = torch.randn(n_freqs, *harmonics, dtype=torch.complex64)
+        rz = torch.randn(n_freqs, *harmonics, dtype=torch.complex64)
+        tx = torch.randn(n_freqs, *harmonics, dtype=torch.complex64)
+        ty = torch.randn(n_freqs, *harmonics, dtype=torch.complex64)
+        tz = torch.randn(n_freqs, *harmonics, dtype=torch.complex64)
 
         # Wave vectors
-        kx = torch.linspace(-1, 1, n_harmonics).reshape(kdim)
-        ky = torch.linspace(-1, 1, n_harmonics).reshape(kdim)
+        kx = torch.linspace(-1, 1, n_harmonics).reshape(harmonics)
+        ky = torch.linspace(-1, 1, n_harmonics).reshape(harmonics)
         kinc = torch.zeros(n_freqs, 3)
         kinc[:, 2] = 1.0  # Normal incidence
 
@@ -270,6 +270,29 @@ class TestSolverResults(unittest.TestCase):
         self.assertTrue(torch.equal(dict_from_results['TRN'], self.transmission))
         self.assertTrue(torch.equal(dict_from_results['kx'], self.wave_vectors.kx))
 
+    def test_to_structured_dict(self):
+        """Test the to_structured_dict method."""
+        structured = self.results.to_structured_dict()
+
+        self.assertIn("efficiency", structured)
+        self.assertIn("diffraction_efficiency", structured)
+        self.assertIn("field_fourier_coefficients", structured)
+        self.assertIn("scattering_matrix", structured)
+        self.assertIn("wavevectors", structured)
+
+        self.assertTrue(torch.equal(structured["efficiency"]["reflection"], self.reflection))
+        self.assertTrue(torch.equal(structured["efficiency"]["transmission"], self.transmission))
+        self.assertTrue(torch.equal(structured["diffraction_efficiency"]["reflection"], self.reflection_diffraction))
+        self.assertTrue(torch.equal(structured["diffraction_efficiency"]["transmission"], self.transmission_diffraction))
+
+        self.assertTrue(torch.equal(structured["wavevectors"]["kx"], self.wave_vectors.kx))
+        self.assertTrue(torch.equal(structured["wavevectors"]["ky"], self.wave_vectors.ky))
+        self.assertTrue(torch.equal(structured["wavevectors"]["incident"], self.wave_vectors.kinc))
+        self.assertTrue(torch.equal(structured["wavevectors"]["kz"]["reflection"], self.wave_vectors.kzref))
+        self.assertTrue(torch.equal(structured["wavevectors"]["kz"]["transmission"], self.wave_vectors.kztrn))
+
+        self.assertTrue(torch.equal(structured["scattering_matrix"]["structure"]["S11"], self.structure_matrix.S11))
+
     def test_get_diffraction_order_indices(self):
         """Test the get_diffraction_order_indices method."""
         # Test zero order (center of k-space)
@@ -387,32 +410,32 @@ class TestUnifiedSolverResults(unittest.TestCase):
         """Set up test fixtures for unified results testing."""
         # Set up single source results data
         self.n_freqs = 2
-        self.kdim = [3, 3]  # 3x3 k-space grid
-        self.n_harmonics = self.kdim[0] * self.kdim[1]  # 9 harmonics
+        self.harmonics = [3, 3]  # 3x3 k-space grid
+        self.n_harmonics = self.harmonics[0] * self.harmonics[1]  # 9 harmonics
 
         # Single source data (shape: (n_freqs, ...))
         self.single_reflection = torch.tensor([0.1, 0.2], dtype=torch.float32)
         self.single_transmission = torch.tensor([0.8, 0.7], dtype=torch.float32)
-        self.single_reflection_diffraction = torch.randn(self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.float32)
-        self.single_transmission_diffraction = torch.randn(self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.float32)
+        self.single_reflection_diffraction = torch.randn(self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.float32)
+        self.single_transmission_diffraction = torch.randn(self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.float32)
 
         # Field components for single source
         self.single_reflection_field = FieldComponents(
-            x=torch.randn(self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            y=torch.randn(self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            z=torch.randn(self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            mag_x=torch.randn(self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            mag_y=torch.randn(self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            mag_z=torch.randn(self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
+            x=torch.randn(self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            y=torch.randn(self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            z=torch.randn(self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            mag_x=torch.randn(self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            mag_y=torch.randn(self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            mag_z=torch.randn(self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
         )
 
         self.single_transmission_field = FieldComponents(
-            x=torch.randn(self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            y=torch.randn(self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            z=torch.randn(self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            mag_x=torch.randn(self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            mag_y=torch.randn(self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            mag_z=torch.randn(self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
+            x=torch.randn(self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            y=torch.randn(self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            z=torch.randn(self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            mag_x=torch.randn(self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            mag_y=torch.randn(self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            mag_z=torch.randn(self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
         )
 
         # Batched source data (shape: (n_sources, n_freqs, ...))
@@ -426,29 +449,29 @@ class TestUnifiedSolverResults(unittest.TestCase):
         self.batched_loss = 1.0 - self.batched_reflection - self.batched_transmission
 
         self.batched_reflection_diffraction = torch.randn(
-            self.n_sources, self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.float32
+            self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.float32
         )
         self.batched_transmission_diffraction = torch.randn(
-            self.n_sources, self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.float32
+            self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.float32
         )
 
         # Batched field components
         self.batched_reflection_field = FieldComponents(
-            x=torch.randn(self.n_sources, self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            y=torch.randn(self.n_sources, self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            z=torch.randn(self.n_sources, self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            mag_x=torch.randn(self.n_sources, self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            mag_y=torch.randn(self.n_sources, self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            mag_z=torch.randn(self.n_sources, self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
+            x=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            y=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            z=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            mag_x=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            mag_y=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            mag_z=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
         )
 
         self.batched_transmission_field = FieldComponents(
-            x=torch.randn(self.n_sources, self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            y=torch.randn(self.n_sources, self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            z=torch.randn(self.n_sources, self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            mag_x=torch.randn(self.n_sources, self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            mag_y=torch.randn(self.n_sources, self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            mag_z=torch.randn(self.n_sources, self.n_freqs, self.kdim[0], self.kdim[1], dtype=torch.complex64),
+            x=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            y=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            z=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            mag_x=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            mag_y=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            mag_z=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
         )
 
         # Shared data (structure matrix, wave vectors)
@@ -460,8 +483,8 @@ class TestUnifiedSolverResults(unittest.TestCase):
         )
 
         self.wave_vectors = WaveVectors(
-            kx=torch.randn(self.kdim[0], self.kdim[1], dtype=torch.complex64),
-            ky=torch.randn(self.kdim[0], self.kdim[1], dtype=torch.complex64),
+            kx=torch.randn(self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            ky=torch.randn(self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
             kinc=torch.randn(self.n_freqs, 3, dtype=torch.complex64),
             kzref=torch.randn(self.n_freqs, self.n_harmonics, dtype=torch.complex64),
             kztrn=torch.randn(self.n_freqs, self.n_harmonics, dtype=torch.complex64)
@@ -470,7 +493,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
         # Lattice vectors for field reconstruction
         self.lattice_t1 = torch.tensor([1.0, 0.0], dtype=torch.float32)
         self.lattice_t2 = torch.tensor([0.0, 1.0], dtype=torch.float32)
-        self.default_rdim = (64, 64)
+        self.default_grids = (64, 64)
 
         # Source parameters for batched case
         self.source_parameters = [
@@ -493,7 +516,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
             wave_vectors=self.wave_vectors,
             lattice_t1=self.lattice_t1,
             lattice_t2=self.lattice_t2,
-            default_rdim=self.default_rdim,
+            default_grids=self.default_grids,
         )
 
         # Test backward compatibility properties
@@ -524,7 +547,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
             wave_vectors=self.wave_vectors,
             lattice_t1=self.lattice_t1,
             lattice_t2=self.lattice_t2,
-            default_rdim=self.default_rdim,
+            default_grids=self.default_grids,
             n_sources=self.n_sources,
             source_parameters=self.source_parameters,
             loss=self.batched_loss,
@@ -707,7 +730,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
 
         # Test shapes and values are as expected
         self.assertEqual(tx.shape, (self.n_freqs,))
-        self.assertEqual(len(all_orders), self.kdim[0] * self.kdim[1])
+        self.assertEqual(len(all_orders), self.harmonics[0] * self.harmonics[1])
 
         # Test isinstance still works
         self.assertIsInstance(results, SolverResults)
@@ -715,6 +738,240 @@ class TestUnifiedSolverResults(unittest.TestCase):
         # Test that new batched attributes work for single source
         self.assertEqual(results.n_sources, 1)
         self.assertFalse(results.is_batched)
+
+
+class TestBatchedDiffractionMethods(unittest.TestCase):
+    def setUp(self):
+        self.n_sources = 3
+        self.n_freqs = 2
+        self.harmonics = [3, 3]
+        self.n_harmonics = self.harmonics[0] * self.harmonics[1]
+
+        self.batched_reflection = torch.randn(self.n_sources, self.n_freqs, dtype=torch.float32)
+        self.batched_transmission = torch.randn(self.n_sources, self.n_freqs, dtype=torch.float32)
+        self.batched_reflection_diffraction = torch.randn(
+            self.n_sources,
+            self.n_freqs,
+            self.harmonics[0],
+            self.harmonics[1],
+            dtype=torch.float32,
+        )
+        self.batched_transmission_diffraction = torch.randn(
+            self.n_sources,
+            self.n_freqs,
+            self.harmonics[0],
+            self.harmonics[1],
+            dtype=torch.float32,
+        )
+
+        self.batched_reflection_field = FieldComponents(
+            x=torch.randn(
+                self.n_sources,
+                self.n_freqs,
+                self.harmonics[0],
+                self.harmonics[1],
+                dtype=torch.complex64,
+            ),
+            y=torch.randn(
+                self.n_sources,
+                self.n_freqs,
+                self.harmonics[0],
+                self.harmonics[1],
+                dtype=torch.complex64,
+            ),
+            z=torch.randn(
+                self.n_sources,
+                self.n_freqs,
+                self.harmonics[0],
+                self.harmonics[1],
+                dtype=torch.complex64,
+            ),
+        )
+        self.batched_transmission_field = FieldComponents(
+            x=torch.randn(
+                self.n_sources,
+                self.n_freqs,
+                self.harmonics[0],
+                self.harmonics[1],
+                dtype=torch.complex64,
+            ),
+            y=torch.randn(
+                self.n_sources,
+                self.n_freqs,
+                self.harmonics[0],
+                self.harmonics[1],
+                dtype=torch.complex64,
+            ),
+            z=torch.randn(
+                self.n_sources,
+                self.n_freqs,
+                self.harmonics[0],
+                self.harmonics[1],
+                dtype=torch.complex64,
+            ),
+        )
+
+        self.unbatched_reflection = self.batched_reflection[0]
+        self.unbatched_transmission = self.batched_transmission[0]
+        self.unbatched_reflection_diffraction = self.batched_reflection_diffraction[0]
+        self.unbatched_transmission_diffraction = self.batched_transmission_diffraction[0]
+        self.unbatched_reflection_field = FieldComponents(
+            x=self.batched_reflection_field.x[0],
+            y=self.batched_reflection_field.y[0],
+            z=self.batched_reflection_field.z[0],
+        )
+        self.unbatched_transmission_field = FieldComponents(
+            x=self.batched_transmission_field.x[0],
+            y=self.batched_transmission_field.y[0],
+            z=self.batched_transmission_field.z[0],
+        )
+
+        self.structure_matrix = ScatteringMatrix(
+            S11=torch.randn(self.n_freqs, 2 * self.n_harmonics, 2 * self.n_harmonics, dtype=torch.complex64),
+            S12=torch.randn(self.n_freqs, 2 * self.n_harmonics, 2 * self.n_harmonics, dtype=torch.complex64),
+            S21=torch.randn(self.n_freqs, 2 * self.n_harmonics, 2 * self.n_harmonics, dtype=torch.complex64),
+            S22=torch.randn(self.n_freqs, 2 * self.n_harmonics, 2 * self.n_harmonics, dtype=torch.complex64),
+        )
+
+        self.single_wave_vectors = WaveVectors(
+            kx=torch.randn(self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            ky=torch.randn(self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            kinc=torch.randn(self.n_freqs, 3, dtype=torch.complex64),
+            kzref=torch.randn(self.n_freqs, self.n_harmonics, dtype=torch.complex64),
+            kztrn=torch.randn(self.n_freqs, self.n_harmonics, dtype=torch.complex64),
+        )
+
+    def _make_results(self, batched: bool, wave_vectors):
+        if batched:
+            return SolverResults(
+                reflection=self.batched_reflection,
+                transmission=self.batched_transmission,
+                reflection_diffraction=self.batched_reflection_diffraction,
+                transmission_diffraction=self.batched_transmission_diffraction,
+                reflection_field=self.batched_reflection_field,
+                transmission_field=self.batched_transmission_field,
+                structure_matrix=self.structure_matrix,
+                wave_vectors=wave_vectors,
+                n_sources=self.n_sources,
+            )
+        return SolverResults(
+            reflection=self.unbatched_reflection,
+            transmission=self.unbatched_transmission,
+            reflection_diffraction=self.unbatched_reflection_diffraction,
+            transmission_diffraction=self.unbatched_transmission_diffraction,
+            reflection_field=self.unbatched_reflection_field,
+            transmission_field=self.unbatched_transmission_field,
+            structure_matrix=self.structure_matrix,
+            wave_vectors=wave_vectors,
+        )
+
+    def _make_wave_vector_list(self):
+        wave_vectors = []
+        for source_idx in range(self.n_sources):
+            kzref = torch.full((self.n_freqs, self.n_harmonics), 1j, dtype=torch.complex64)
+            kztrn = torch.full((self.n_freqs, self.n_harmonics), 1j, dtype=torch.complex64)
+            if source_idx == 0:
+                kzref[0, 4] = torch.tensor(1.0 + 0j, dtype=torch.complex64)
+                kzref[0, 7] = torch.tensor(0.5 + 0j, dtype=torch.complex64)
+            else:
+                kzref[0, 4] = torch.tensor(1.0 + 0j, dtype=torch.complex64)
+
+            wave_vectors.append(
+                WaveVectors(
+                    kx=torch.randn(self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+                    ky=torch.randn(self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+                    kinc=torch.randn(self.n_freqs, 3, dtype=torch.complex64),
+                    kzref=kzref,
+                    kztrn=kztrn,
+                )
+            )
+        return wave_vectors
+
+    def test_harmonics_property_unbatched(self):
+        results = self._make_results(batched=False, wave_vectors=self.single_wave_vectors)
+        self.assertEqual(results.harmonics, (3, 3))
+
+    def test_harmonics_property_batched(self):
+        results = self._make_results(batched=True, wave_vectors=self.single_wave_vectors)
+        self.assertEqual(results.harmonics, (3, 3))
+
+    def test_get_diffraction_order_indices_batched(self):
+        results = self._make_results(batched=True, wave_vectors=self.single_wave_vectors)
+        self.assertEqual(results.get_diffraction_order_indices(0, 0), (1, 1))
+        self.assertEqual(results.get_diffraction_order_indices(1, 0), (2, 1))
+
+    def test_get_zero_order_transmission_batched(self):
+        results = self._make_results(batched=True, wave_vectors=self.single_wave_vectors)
+        tx, ty, tz = results.get_zero_order_transmission()
+        self.assertEqual(tx.shape, (self.n_sources, self.n_freqs))
+        self.assertEqual(ty.shape, (self.n_sources, self.n_freqs))
+        self.assertEqual(tz.shape, (self.n_sources, self.n_freqs))
+        self.assertTrue(torch.equal(tx, self.batched_transmission_field.x[..., 1, 1]))
+        self.assertTrue(torch.equal(ty, self.batched_transmission_field.y[..., 1, 1]))
+        self.assertTrue(torch.equal(tz, self.batched_transmission_field.z[..., 1, 1]))
+
+    def test_get_zero_order_reflection_batched(self):
+        results = self._make_results(batched=True, wave_vectors=self.single_wave_vectors)
+        rx, ry, rz = results.get_zero_order_reflection()
+        self.assertEqual(rx.shape, (self.n_sources, self.n_freqs))
+        self.assertEqual(ry.shape, (self.n_sources, self.n_freqs))
+        self.assertEqual(rz.shape, (self.n_sources, self.n_freqs))
+        self.assertTrue(torch.equal(rx, self.batched_reflection_field.x[..., 1, 1]))
+        self.assertTrue(torch.equal(ry, self.batched_reflection_field.y[..., 1, 1]))
+        self.assertTrue(torch.equal(rz, self.batched_reflection_field.z[..., 1, 1]))
+
+    def test_get_order_transmission_efficiency_batched(self):
+        results = self._make_results(batched=True, wave_vectors=self.single_wave_vectors)
+        efficiency = results.get_order_transmission_efficiency(0, 0)
+        self.assertEqual(efficiency.shape, (self.n_sources, self.n_freqs))
+        self.assertTrue(torch.equal(efficiency, self.batched_transmission_diffraction[..., 1, 1]))
+
+    def test_get_order_reflection_efficiency_batched(self):
+        results = self._make_results(batched=True, wave_vectors=self.single_wave_vectors)
+        efficiency = results.get_order_reflection_efficiency(0, 0)
+        self.assertEqual(efficiency.shape, (self.n_sources, self.n_freqs))
+        self.assertTrue(torch.equal(efficiency, self.batched_reflection_diffraction[..., 1, 1]))
+
+    def test_get_all_diffraction_orders_batched(self):
+        results = self._make_results(batched=True, wave_vectors=self.single_wave_vectors)
+        orders = results.get_all_diffraction_orders()
+        expected_orders = [
+            (-1, -1),
+            (-1, 0),
+            (-1, 1),
+            (0, -1),
+            (0, 0),
+            (0, 1),
+            (1, -1),
+            (1, 0),
+            (1, 1),
+        ]
+        self.assertEqual(orders, expected_orders)
+
+    def test_get_propagating_orders_batched_with_source_idx(self):
+        wave_vectors = self._make_wave_vector_list()
+        results = self._make_results(batched=True, wave_vectors=wave_vectors)
+        propagating = results.get_propagating_orders(wavelength_idx=0, source_idx=0)
+        self.assertIn((0, 0), propagating)
+        self.assertEqual(set(propagating), {(0, 0), (1, 0)})
+
+    def test_get_propagating_orders_batched_no_source_idx_raises(self):
+        wave_vectors = self._make_wave_vector_list()
+        results = self._make_results(batched=True, wave_vectors=wave_vectors)
+        with self.assertRaisesRegex(ValueError, "source_idx"):
+            results.get_propagating_orders(0)
+
+    def test_resolve_wave_vectors_single(self):
+        results = self._make_results(batched=False, wave_vectors=self.single_wave_vectors)
+        self.assertIs(results._resolve_wave_vectors(), self.single_wave_vectors)
+        self.assertIs(results._resolve_wave_vectors(source_idx=0), self.single_wave_vectors)
+
+    def test_resolve_wave_vectors_list(self):
+        wave_vectors = self._make_wave_vector_list()
+        results = self._make_results(batched=True, wave_vectors=wave_vectors)
+        self.assertIs(results._resolve_wave_vectors(source_idx=0), wave_vectors[0])
+        with self.assertRaisesRegex(ValueError, "source_idx"):
+            results._resolve_wave_vectors()
 
 
 if __name__ == '__main__':

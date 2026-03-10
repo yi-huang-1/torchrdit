@@ -55,8 +55,8 @@ def test_solver_transmission_consistency_with_fff_toggle(algorithm):
     dev = create_solver(
         algorithm=algorithm,
         precision=Precision.DOUBLE,
-        rdim=[192, 192],
-        kdim=[7, 7],
+        grids=[192, 192],
+        harmonics=[7, 7],
         lam0=np.array([1550 * NM]),
         lengthunit='um',
         t1=t1,
@@ -98,8 +98,8 @@ def test_solver_fff_vector_field_matches_generator():
     dev = create_solver(
         algorithm=Algorithm.RCWA,
         precision=Precision.DOUBLE,
-        rdim=[64, 64],
-        kdim=[5, 5],
+        grids=[64, 64],
+        harmonics=[5, 5],
         lam0=np.array([1.55]),
         is_use_FFF=True,
     )
@@ -118,7 +118,7 @@ def test_solver_fff_vector_field_matches_generator():
         YO=dev.YO,
         lattice_t1=dev.lattice_t1,
         lattice_t2=dev.lattice_t2,
-        kdim=tuple(dev.kdim),
+        harmonics=tuple(dev.harmonics),
         scheme="POL",
         fourier_loss_weight=1e-2,
         smoothness_loss_weight=1e-3,
@@ -131,26 +131,26 @@ def test_solver_fff_vector_field_matches_generator():
 
     expected_n_xx = dev.layer_manager._gen_toeplitz2d(
         p_xx.to(dev.tcomplex),
-        nharmonic_1=dev.kdim[0],
-        nharmonic_2=dev.kdim[1],
+        nharmonic_1=dev.harmonics[0],
+        nharmonic_2=dev.harmonics[1],
         method="FFT",
     )
     expected_n_yy = dev.layer_manager._gen_toeplitz2d(
         p_yy.to(dev.tcomplex),
-        nharmonic_1=dev.kdim[0],
-        nharmonic_2=dev.kdim[1],
+        nharmonic_1=dev.harmonics[0],
+        nharmonic_2=dev.harmonics[1],
         method="FFT",
     )
     expected_n_xy = dev.layer_manager._gen_toeplitz2d(
         p_xy.to(dev.tcomplex),
-        nharmonic_1=dev.kdim[0],
-        nharmonic_2=dev.kdim[1],
+        nharmonic_1=dev.harmonics[0],
+        nharmonic_2=dev.harmonics[1],
         method="FFT",
     )
     expected_n_yx = dev.layer_manager._gen_toeplitz2d(
         (ty * tx.conj() / denom).to(dev.tcomplex),
-        nharmonic_1=dev.kdim[0],
-        nharmonic_2=dev.kdim[1],
+        nharmonic_1=dev.harmonics[0],
+        nharmonic_2=dev.harmonics[1],
         method="FFT",
     )
 
@@ -170,8 +170,8 @@ def test_calculate_vector_field_reuses_generator(monkeypatch):
     dev = create_solver(
         algorithm=Algorithm.RCWA,
         precision=Precision.DOUBLE,
-        rdim=[32, 32],
-        kdim=[5, 5],
+        grids=[32, 32],
+        harmonics=[5, 5],
         lam0=np.array([1.55]),
         is_use_FFF=True,
     )
@@ -208,8 +208,8 @@ def test_calculate_vector_field_reuses_toeplitz_inputs(monkeypatch):
     dev = create_solver(
         algorithm=Algorithm.RCWA,
         precision=Precision.DOUBLE,
-        rdim=[32, 32],
-        kdim=[5, 5],
+        grids=[32, 32],
+        harmonics=[5, 5],
         lam0=np.array([1.55]),
         is_use_FFF=True,
     )
@@ -242,8 +242,8 @@ def test_calculate_vector_field_reuses_toeplitz_inputs_unit_batch(monkeypatch):
     dev = create_solver(
         algorithm=Algorithm.RCWA,
         precision=Precision.DOUBLE,
-        rdim=[32, 32],
-        kdim=[5, 5],
+        grids=[32, 32],
+        harmonics=[5, 5],
         lam0=np.array([1.55]),
         is_use_FFF=True,
     )
@@ -276,8 +276,8 @@ def test_calculate_vector_field_reuses_toeplitz_inputs_multi_batch(monkeypatch):
     dev = create_solver(
         algorithm=Algorithm.RCWA,
         precision=Precision.DOUBLE,
-        rdim=[32, 32],
-        kdim=[5, 5],
+        grids=[32, 32],
+        harmonics=[5, 5],
         lam0=np.array([1.55]),
         is_use_FFF=True,
     )
@@ -312,8 +312,8 @@ def test_solver_get_vector_components_matches_generator():
     dev = create_solver(
         algorithm=Algorithm.RCWA,
         precision=Precision.DOUBLE,
-        rdim=[64, 64],
-        kdim=[5, 5],
+        grids=[64, 64],
+        harmonics=[5, 5],
         lam0=np.array([1.55]),
         is_use_FFF=True,
     )
@@ -335,7 +335,7 @@ def test_solver_get_vector_components_matches_generator():
         YO=dev.YO,
         lattice_t1=dev.lattice_t1,
         lattice_t2=dev.lattice_t2,
-        kdim=tuple(dev.kdim),
+        harmonics=tuple(dev.harmonics),
         scheme="POL",
         fourier_loss_weight=1e-2,
         smoothness_loss_weight=1e-3,
@@ -345,12 +345,12 @@ def test_solver_get_vector_components_matches_generator():
     assert torch.allclose(solver_ty, expected_ty.to(solver_ty.dtype), atol=1e-6, rtol=1e-6)
 
 
-def _build_basic_solver(rdim=32, kdim=3):
+def _build_basic_solver(grids=32, harmonics=3):
     dev = create_solver(
         algorithm=Algorithm.RCWA,
         precision=Precision.DOUBLE,
-        rdim=[rdim, rdim],
-        kdim=[kdim, kdim],
+        grids=[grids, grids],
+        harmonics=[harmonics, harmonics],
         lam0=np.array([1.55]),
         lengthunit="um",
         is_use_FFF=False,
@@ -370,7 +370,7 @@ def test_layer_slicing_matches_manual_stack():
     dev_sliced, mat_air, mat_sin = _build_basic_solver()
     dev_manual, _, _ = _build_basic_solver()
 
-    mask = torch.zeros(dev_sliced.rdim, dtype=dev_sliced.tfloat)
+    mask = torch.zeros(dev_sliced.grids, dtype=dev_sliced.tfloat)
     mask[8:24, 8:24] = 1.0
 
     dev_sliced.add_layer(
@@ -410,7 +410,7 @@ def test_layer_slicing_preserves_gradients():
 
     dev, mat_air, mat_sin = _build_basic_solver()
 
-    mask = torch.rand(dev.rdim, dtype=dev.tfloat)
+    mask = torch.rand(dev.grids, dtype=dev.tfloat)
     mask.requires_grad_(True)
 
     dev.add_layer(
@@ -441,7 +441,7 @@ def test_layer_slice_count_survives_replace_to_grating():
         slice_count=slice_count,
     )
 
-    mask = torch.ones(dev.rdim, dtype=dev.tfloat)
+    mask = torch.ones(dev.grids, dtype=dev.tfloat)
     dev.update_er_with_mask(mask=mask, layer_index=0, method="FFT")
 
     assert dev.layer_manager.layers[0].slice_count == slice_count
@@ -495,8 +495,8 @@ def test_hex_cell_transmission_reflection_golden(algorithm, precision, expected_
     dev = create_solver(
         algorithm=algorithm,
         precision=precision,
-        rdim=[512, 512],
-        kdim=[9, 9],
+        grids=[512, 512],
+        harmonics=[9, 9],
         lam0=np.array([1540 * NM]),
         lengthunit='um',
         t1=t1,
@@ -555,8 +555,8 @@ def test_analytical_vs_fft_parity(algorithm):
     dev = create_solver(
         algorithm=algorithm,
         precision=Precision.DOUBLE,
-        rdim=[512, 512],
-        kdim=[9, 9],
+        grids=[512, 512],
+        harmonics=[9, 9],
         lam0=np.array([1540 * NM]),
         lengthunit='um',
         t1=t1,
@@ -666,3 +666,32 @@ def test_dispersive_nonhomogeneous_layer_energy_and_values():
     expected_T, expected_R = 0.43316791878804345, 0.5431967324784357
     assert expected_T - 0.1 <= T <= expected_T + 0.1
     assert expected_R - 0.1 <= R <= expected_R + 0.1
+
+
+def test_solver_default_wavelengths_nonempty():
+    from torchrdit.solver import RCWASolver, RDITSolver
+
+    rcwa = RCWASolver()
+    rdit = RDITSolver()
+
+    assert rcwa.lam0.size > 0
+    assert rdit.lam0.size > 0
+
+
+def test_solver_rejects_empty_wavelengths():
+    from torchrdit.solver import RCWASolver, RDITSolver
+
+    with pytest.raises(ValueError, match=r"lam0"):
+        RCWASolver(lam0=np.array([]))
+    with pytest.raises(ValueError, match=r"lam0"):
+        RDITSolver(lam0=np.array([]))
+
+
+def test_solver_defaults_do_not_share_mutable_state():
+    from torchrdit.solver import RCWASolver
+
+    s1 = RCWASolver()
+    s2 = RCWASolver()
+
+    assert s1.grids is not s2.grids
+    assert s1.harmonics is not s2.harmonics

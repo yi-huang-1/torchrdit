@@ -4,7 +4,6 @@
   * [handle\_plasmonic\_materials](#torchrdit.materials.handle_plasmonic_materials)
   * [stabilize\_epsilon\_batch](#torchrdit.materials.stabilize_epsilon_batch)
   * [MaterialClass](#torchrdit.materials.MaterialClass)
-    * [\_\_init\_\_](#torchrdit.materials.MaterialClass.__init__)
     * [isdispersive\_er](#torchrdit.materials.MaterialClass.isdispersive_er)
     * [er](#torchrdit.materials.MaterialClass.er)
     * [ur](#torchrdit.materials.MaterialClass.ur)
@@ -19,12 +18,10 @@
     * [from\_data\_file](#torchrdit.materials.MaterialClass.from_data_file)
     * [clear\_cache](#torchrdit.materials.MaterialClass.clear_cache)
     * [cache\_info](#torchrdit.materials.MaterialClass.cache_info)
-    * [\_\_str\_\_](#torchrdit.materials.MaterialClass.__str__)
-    * [\_\_repr\_\_](#torchrdit.materials.MaterialClass.__repr__)
 
 <a id="torchrdit.materials"></a>
 
-# torchrdit.materials
+# Module torchrdit.materials
 
 Module for defining and managing material properties in TorchRDIT electromagnetic simulations.
 
@@ -39,6 +36,7 @@ of different material data formats and sources, including:
 - Direct permittivity/permeability specification
 - Refractive index and extinction coefficient (n, k) specification
 - Loading from data files with different formats (freq-eps, wl-eps, freq-nk, wl-nk)
+- In-memory dispersive samples provided as (wavelength_um, eps) or (wavelength_um, n, k)
 
 Plasmonic Material Handling:
 Materials near surface plasmon resonance (ε ≈ -1) are automatically stabilized
@@ -104,7 +102,7 @@ solver.update_trn_material("air")
 
 <a id="torchrdit.materials.handle_plasmonic_materials"></a>
 
-#### handle\_plasmonic\_materials
+### handle\_plasmonic\_materials
 
 ```python
 def handle_plasmonic_materials(epsilon: torch.Tensor,
@@ -136,7 +134,7 @@ Uses negative imaginary convention where lossy materials have Im(ε) < 0.
 
 <a id="torchrdit.materials.stabilize_epsilon_batch"></a>
 
-#### stabilize\_epsilon\_batch
+### stabilize\_epsilon\_batch
 
 ```python
 def stabilize_epsilon_batch(epsilon_tensor: torch.Tensor,
@@ -224,6 +222,14 @@ silica = create_material(
     data_format="wl-eps",
     data_unit="um"
 )
+
+# In-memory dispersive data (wavelengths in um)
+silica_inmem = create_material(
+    name="silica_inmem",
+    dielectric_dispersion=True,
+    user_dielectric_wavelengths_um=[1.0, 1.5, 2.0],
+    user_dielectric_eps=[2.10-0.00j, 2.08-0.00j, 2.05-0.00j],
+)
 # Use in a simulation with specific wavelengths
 import numpy as np
 wavelengths = np.array([1.31, 1.55])
@@ -237,95 +243,9 @@ print(f"Silica permittivity at λ=1.55 μm: {permittivity[1].real:.4f}")
   dispersive materials, refractive index, wavelength-dependent properties,
   material data, complex permittivity, dielectric function
 
-<a id="torchrdit.materials.MaterialClass.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__(name: str = "material1",
-             permittivity: float = 1.0,
-             permeability: float = 1.0,
-             dielectric_dispersion: bool = False,
-             user_dielectric_file: str = "",
-             data_format: str = "freq-eps",
-             data_unit: str = "thz",
-             max_poly_fit_order: int = 10,
-             data_proxy: Optional[MaterialDataProxy] = None,
-             stabilization_params: Optional[Dict[str, float]] = None) -> None
-```
-
-Initialize a MaterialClass instance with electromagnetic properties.
-
-Creates a new material with specified properties. For non-dispersive materials,
-only name, permittivity, and permeability need to be specified. For dispersive
-materials (with wavelength/frequency-dependent properties), additional parameters
-are required to specify the data source and format.
-
-**Arguments**:
-
-- `name` - Unique identifier for the material. Used when referencing the material
-  in solvers and layer definitions.
-- `permittivity` - Relative permittivity (εr) for non-dispersive materials.
-  Can be a real or complex value to represent lossless or lossy materials.
-  This value is ignored for dispersive materials.
-- `permeability` - Relative permeability (μr) of the material. Default is 1.0
-  (non-magnetic material).
-- `dielectric_dispersion` - Whether the material has wavelength/frequency-dependent
-  permittivity. If True, a data file must be provided.
-- `user_dielectric_file` - Path to the data file containing the dispersive properties.
-  Required if dielectric_dispersion is True.
-- `data_format` - Format of the data in the file. Must be one of:
-- `'freq-eps'` - Frequency and permittivity (real, imaginary)
-- `'wl-eps'` - Wavelength and permittivity (real, imaginary)
-- `'freq-nk'` - Frequency and refractive index (n, k)
-- `'wl-nk'` - Wavelength and refractive index (n, k)
-- `data_unit` - Unit of the frequency or wavelength in the data file (e.g., 'thz', 'um').
-- `max_poly_fit_order` - Maximum polynomial order for fitting dispersive data.
-  Higher values provide more accurate fits for complex
-  dispersion curves but may lead to overfitting.
-- `data_proxy` - Custom data proxy instance for handling material data loading.
-  Uses the shared class-level proxy if None.
-- `stabilization_params` - Optional dictionary with plasmonic stabilization parameters:
-  - 'min_loss': Minimum loss value (default: 1e-5)
-  - 'threshold': Detection window around ε = -1 (default: 0.01)
-  
-
-**Raises**:
-
-- `ValueError` - If dispersive material is missing a data file,
-  if the data file doesn't exist, or if the data format is invalid.
-  
-
-**Examples**:
-
-```python
-from torchrdit.materials import MaterialClass
-# Create a simple air material
-air = MaterialClass(name="air", permittivity=1.0)
-
-# Create a lossy metal with complex permittivity
-gold = MaterialClass(
-    name="gold",
-    permittivity=complex(-10.0, 1.5)
-)
-
-# Create a dispersive material from data file
-silica = MaterialClass(
-    name="silica",
-    dielectric_dispersion=True,
-    user_dielectric_file="materials/SiO2.txt",
-    data_format="wl-eps",
-    data_unit="um"
-)
-```
-  
-  Keywords:
-  material creation, permittivity, permeability, dispersive material,
-  optical constants, electromagnetic properties, material initialization
-
 <a id="torchrdit.materials.MaterialClass.isdispersive_er"></a>
 
-#### isdispersive\_er
+### MaterialClass.isdispersive\_er
 
 ```python
 @property
@@ -336,7 +256,7 @@ Whether the material has dispersive permittivity.
 
 <a id="torchrdit.materials.MaterialClass.er"></a>
 
-#### er
+### MaterialClass.er
 
 ```python
 @property
@@ -347,7 +267,7 @@ Permittivity tensor of the material.
 
 <a id="torchrdit.materials.MaterialClass.ur"></a>
 
-#### ur
+### MaterialClass.ur
 
 ```python
 @property
@@ -358,7 +278,7 @@ Permeability tensor of the material.
 
 <a id="torchrdit.materials.MaterialClass.name"></a>
 
-#### name
+### MaterialClass.name
 
 ```python
 @property
@@ -369,7 +289,7 @@ Name of the material.
 
 <a id="torchrdit.materials.MaterialClass.fitted_data"></a>
 
-#### fitted\_data
+### MaterialClass.fitted\_data
 
 ```python
 @property
@@ -380,7 +300,7 @@ Fitted profile data for dispersive materials.
 
 <a id="torchrdit.materials.MaterialClass.data_format"></a>
 
-#### data\_format
+### MaterialClass.data\_format
 
 ```python
 @property
@@ -391,7 +311,7 @@ Format of the material data.
 
 <a id="torchrdit.materials.MaterialClass.data_unit"></a>
 
-#### data\_unit
+### MaterialClass.data\_unit
 
 ```python
 @property
@@ -402,7 +322,7 @@ Unit of the material data.
 
 <a id="torchrdit.materials.MaterialClass.supported_formats"></a>
 
-#### supported\_formats
+### MaterialClass.supported\_formats
 
 ```python
 @property
@@ -413,7 +333,7 @@ List of supported data formats.
 
 <a id="torchrdit.materials.MaterialClass.get_permittivity"></a>
 
-#### get\_permittivity
+### MaterialClass.get\_permittivity
 
 ```python
 def get_permittivity(wavelengths: np.ndarray,
@@ -443,7 +363,7 @@ plasmon resonance conditions (ε ≈ -1) to prevent matrix singularities.
 
 <a id="torchrdit.materials.MaterialClass.load_dispersive_er"></a>
 
-#### load\_dispersive\_er
+### MaterialClass.load\_dispersive\_er
 
 ```python
 def load_dispersive_er(lam0: np.ndarray, lengthunit: str = "um") -> None
@@ -466,7 +386,7 @@ the same wavelength and unit combinations.
 
 <a id="torchrdit.materials.MaterialClass.from_nk_data"></a>
 
-#### from\_nk\_data
+### MaterialClass.from\_nk\_data
 
 ```python
 @classmethod
@@ -493,7 +413,7 @@ Create a material from refractive index and extinction coefficient.
 
 <a id="torchrdit.materials.MaterialClass.from_data_file"></a>
 
-#### from\_data\_file
+### MaterialClass.from\_data\_file
 
 ```python
 @classmethod
@@ -529,7 +449,7 @@ Create a dispersive material from a data file.
 
 <a id="torchrdit.materials.MaterialClass.clear_cache"></a>
 
-#### clear\_cache
+### MaterialClass.clear\_cache
 
 ```python
 def clear_cache() -> None
@@ -539,31 +459,11 @@ Clear the permittivity cache to free memory.
 
 <a id="torchrdit.materials.MaterialClass.cache_info"></a>
 
-#### cache\_info
+### MaterialClass.cache\_info
 
 ```python
 def cache_info()
 ```
 
 Get cache statistics.
-
-<a id="torchrdit.materials.MaterialClass.__str__"></a>
-
-#### \_\_str\_\_
-
-```python
-def __str__() -> str
-```
-
-String representation of the material.
-
-<a id="torchrdit.materials.MaterialClass.__repr__"></a>
-
-#### \_\_repr\_\_
-
-```python
-def __repr__() -> str
-```
-
-Detailed representation of the material.
 

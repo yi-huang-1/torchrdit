@@ -40,8 +40,8 @@ from torchrdit.utils import create_material
 solver = create_solver(
     algorithm=Algorithm.RCWA,
     lam0=np.array([1.55]),  # Wavelength in micrometers
-    rdim=[512, 512],        # Real space grid dimensions
-    kdim=[5, 5],            # Fourier space dimensions
+    grids=[512, 512],        # Real space grid dimensions
+    harmonics=[5, 5],            # Fourier space dimensions
     device="cuda"           # Use GPU acceleration
 )
 
@@ -49,6 +49,15 @@ solver = create_solver(
 silicon = create_material(name="silicon", permittivity=11.7)
 sio2 = create_material(name="sio2", permittivity=2.25)
 solver.add_materials([silicon, sio2])
+
+# Dispersive material can be created from a data file or in-memory samples:
+# gold = create_material(
+#     name="gold",
+#     dielectric_dispersion=True,
+#     user_dielectric_wavelengths_um=[1.0, 1.5, 2.0],
+#     user_dielectric_n=[0.45, 0.35, 0.30],
+#     user_dielectric_k=[6.5, 7.0, 7.5],
+# )
 
 # Define layers
 solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
@@ -442,8 +451,8 @@ def create_solver_from_config(
                 - "algorithm": Algorithm type ("RCWA" or "RDIT")
                 - "wavelengths": List of wavelengths to simulate
                 - "lengthunit": Length unit (e.g., "um", "nm")
-                - "rdim": Real space dimensions [height, width]
-                - "kdim": Fourier space dimensions [kheight, kwidth]
+                - "grids": Real space dimensions [height, width]
+                - "harmonics": Fourier space dimensions [kx, ky]
                 - "device": Device to use (e.g., "cpu", "cuda")
 
         flip (bool, optional): Whether to flip the coordinate system. When True,
@@ -465,8 +474,8 @@ def create_solver_from_config(
         "algorithm": "RDIT",
         "wavelengths": [1.55],
         "length_unit": "um",
-        "rdim": [512, 512],
-        "kdim": [5, 5],
+        "grids": [512, 512],
+        "harmonics": [5, 5],
         "device": "cuda"
     }
     solver = create_solver_from_config(config)
@@ -480,8 +489,8 @@ def create_solver_from_config(
     #   "algorithm": "RCWA",
     #   "wavelengths": [1.31, 1.55],
     #   "length_unit": "um",
-    #   "rdim": [256, 256],
-    #   "kdim": [3, 3]
+    #   "grids": [256, 256],
+    #   "harmonics": [3, 3]
     # }
     solver = create_solver_from_config("config.json")
     ```
@@ -505,8 +514,8 @@ def create_solver(
     precision: Precision = Precision.SINGLE,
     lam0: np.ndarray = np.array([1.0]),
     lengthunit: str = "um",
-    rdim: List[int] = [512, 512],
-    kdim: List[int] = [3, 3],
+    grids: List[int] = [512, 512],
+    harmonics: List[int] = [3, 3],
     materiallist: List[Any] = [],
     t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),
     t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),
@@ -551,16 +560,17 @@ def create_solver(
                    - 'nm': Nanometers
                    All dimensions (wavelengths, thicknesses) are interpreted in this unit.
 
-        rdim (List[int]): Dimensions of the real space grid [height, width].
+        grids (List[int]): Dimensions of the real space grid [height, width].
               Default is [512, 512]. Higher values provide more spatial resolution
               but require more memory and computation time.
 
-        kdim (List[int]): Dimensions in Fourier space [kheight, kwidth]. Default is [3, 3].
+        harmonics (List[int]): Dimensions in Fourier space [kx, ky]. Default is [3, 3].
               This determines the number of Fourier harmonics used in the simulation.
               Higher values improve accuracy but significantly increase computation time.
 
         materiallist (List[Any]): List of materials used in the simulation. Can include
-                      MaterialClass instances created with create_material().
+                      MaterialClass instances created with create_material(), including
+                      dispersive materials defined from a file or in-memory samples.
                       Default is an empty list.
 
         t1 (torch.Tensor): First lattice vector defining the unit cell geometry.
@@ -611,8 +621,8 @@ def create_solver(
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),  # Wavelength (μm)
-        rdim=[512, 512],        # Real space resolution
-        kdim=[5, 5],            # Fourier space harmonics
+        grids=[512, 512],        # Real space resolution
+        harmonics=[5, 5],            # Fourier space harmonics
         device='cuda'           # Use GPU acceleration
     )
     ```
@@ -626,8 +636,8 @@ def create_solver(
         lam0=np.array([0.8, 1.0, 1.2]),  # Multiple wavelengths
         t1=torch.tensor([[1.0, 0.0]]),
         t2=torch.tensor([[0.5, 0.866]]),  # 60-degree lattice
-        rdim=[1024, 1024],
-        kdim=[7, 7],
+        grids=[1024, 1024],
+        harmonics=[7, 7],
         device='cuda'
     )
     ```
@@ -638,8 +648,8 @@ def create_solver(
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[512, 512],
-        kdim=[7, 7],
+        grids=[512, 512],
+        harmonics=[7, 7],
         device='cuda'
     )
 
@@ -678,7 +688,7 @@ def create_solver(
         To optimize memory usage and performance:
         1. Use the R-DIT algorithm (default) for inverse design applications
         2. Use GPU acceleration (device='cuda') when available
-        3. Adjust rdim and kdim based on required accuracy and available memory
+        3. Adjust grids and harmonics based on required accuracy and available memory
         4. Use single precision for large simulations where memory is a concern
 
     Keywords:
@@ -696,8 +706,8 @@ def create_solver(
         .with_precision(precision)
         .with_wavelengths(lam0)
         .with_length_unit(lengthunit)
-        .with_real_dimensions(rdim)
-        .with_k_dimensions(kdim)
+        .with_real_dimensions(grids)
+        .with_k_dimensions(harmonics)
         .with_materials(materiallist)
         .with_lattice_vectors(t1, t2)
         .with_fff(is_use_FFF)
@@ -785,8 +795,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         tint (torch.dtype): Integer data type used for calculations.
         nfloat (np.dtype): NumPy float data type for compatibility.
         device (Union[str, torch.device]): Device used for computation ('cpu' or 'cuda').
-        rdim (List[int]): Dimensions in real space [height, width].
-        kdim (List[int]): Dimensions in k-space [kheight, kwidth].
+        grids (List[int]): Dimensions in real space [height, width].
+        harmonics (List[int]): Dimensions in k-space [kx, ky].
         shapes (ShapeGenerator): Generator for creating shape masks.
         layer_manager (LayerManager): Manager for handling material layers.
 
@@ -807,8 +817,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
     solver = create_solver(
         algorithm=Algorithm.RCWA,
         lam0=np.array([1.55]),
-        rdim=[512, 512],
-        kdim=[5, 5]
+        grids=[512, 512],
+        harmonics=[5, 5]
     )
 
     # Add materials and layers
@@ -832,8 +842,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         # wavelengths (frequencies) to be solved
         lam0: Union[float, np.ndarray] = np.array([1.0]),
         lengthunit: str = "um",  # length unit used in the solver
-        rdim: Optional[List[int]] = None,  # dimensions in real space: (H, W)
-        kdim: Optional[List[int]] = None,  # dimensions in k space: (kH, kW)
+        grids: Optional[List[int]] = None,  # dimensions in real space: (H, W)
+        harmonics: Optional[List[int]] = None,  # dimensions in k space: (kH, kW)
         materiallist: Optional[List[MaterialClass]] = None,  # list of materials
         t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
         t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
@@ -861,21 +871,26 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             self.tint = torch.int64
             self.nfloat = np.float64
 
-        Cell3D.__init__(self, lengthunit, rdim, kdim, materiallist, t1, t2, device)
+        if grids is None:
+            grids = [512, 512]
+        else:
+            grids = list(grids)
+        if harmonics is None:
+            harmonics = [3, 3]
+        else:
+            harmonics = list(harmonics)
+        if materiallist is None:
+            materiallist = []
+        else:
+            materiallist = list(materiallist)
+
+        Cell3D.__init__(self, lengthunit, grids, harmonics, materiallist, t1, t2, device)
         SolverSubjectMixin.__init__(self)
 
         # Store debug flags
         self.debug_batching = debug_batching
         self.debug_tensorization = debug_tensorization
         self.debug_unification = debug_unification
-
-        # Initialize default values for mutable parameters
-        if rdim is None:
-            rdim = [512, 512]
-        if kdim is None:
-            kdim = [3, 3]
-        if materiallist is None:
-            materiallist = []
 
         # Initialize tensors that were previously class variables
         self.mesh_fp = torch.empty((3, 3), device=self.device, dtype=self.tfloat)
@@ -886,12 +901,20 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         self.k_0 = torch.empty((1,), device=self.device, dtype=self.tfloat)
 
         # Set free space wavelength
-        if isinstance(lam0, float):
-            self._lam0 = np.array([lam0], dtype=self.nfloat)
+        if lam0 is None:
+            lam0 = np.array([1.0], dtype=self.nfloat)
+        if isinstance(lam0, (float, int)):
+            self._lam0 = np.array([float(lam0)], dtype=self.nfloat)
         elif isinstance(lam0, np.ndarray):
             self._lam0 = lam0.astype(self.nfloat)
         else:
-            raise TypeError(f"lam0 must be float or numpy.ndarray, got {type(lam0)}")
+            try:
+                self._lam0 = np.array(lam0, dtype=self.nfloat)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(f"lam0 must be float or numpy.ndarray, got {type(lam0)}") from exc
+
+        if self._lam0.size == 0:
+            raise ValueError("lam0 must be non-empty")
 
         self.n_freqs = len(self._lam0)
         self.kinc = torch.zeros((1, 3), device=self.device, dtype=self.tfloat)
@@ -973,22 +996,22 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         # Set up k-space mesh
         f_p = torch.arange(
-            start=-np.floor(self.kdim[0] / 2), end=np.floor(self.kdim[0] / 2) + 1, dtype=self.tint, device=self.device
+            start=-np.floor(self.harmonics[0] / 2), end=np.floor(self.harmonics[0] / 2) + 1, dtype=self.tint, device=self.device
         )
         f_q = torch.arange(
-            start=-np.floor(self.kdim[1] / 2), end=np.floor(self.kdim[1] / 2) + 1, dtype=self.tint, device=self.device
+            start=-np.floor(self.harmonics[1] / 2), end=np.floor(self.harmonics[1] / 2) + 1, dtype=self.tint, device=self.device
         )
         [self.mesh_fq, self.mesh_fp] = torch.meshgrid(f_q, f_p, indexing="xy")
 
         # Mark as initialized
         self._reciprocal_space_initialized = True
 
-    def _solve_nonhomo_layer(self, layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, kdim, k_0, **kwargs):
+    def _solve_nonhomo_layer(self, layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, harmonics, k_0, **kwargs):
         """Delegate to the algorithm strategy."""
         if self._algorithm is None:
             raise ValueError("Solver algorithm not set")
         return self._algorithm.solve_nonhomo_layer(
-            layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, kdim, k_0, **kwargs
+            layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, harmonics, k_0, **kwargs
         )
 
     @property
@@ -1016,6 +1039,22 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             self._lam0 = value.astype(self.nfloat)
         else:
             raise TypeError(f"lam0 must be float or numpy.ndarray, got {type(value)}")
+
+    @property
+    def device_resolution(self):
+        """Get the device resolution metadata.
+
+        Returns the DeviceResolution object containing information about the
+        requested device, resolved device, fallback status, and fallback reason.
+
+        Returns:
+            DeviceResolution: Device resolution metadata with fields:
+                - requested_device: The device string that was requested
+                - resolved_device: The actual torch.device that was resolved to
+                - fell_back: Boolean indicating if fallback occurred
+                - reason: String explaining fallback reason, or None if no fallback
+        """
+        return self._device_resolution
 
     def add_source(self, theta: float, phi: float, pte: float, ptm: float, norm_te_dir: str = "y") -> dict:
         """Configure the incident electromagnetic wave source.
@@ -1128,8 +1167,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         Returns:
             Tuple of tensors:
-            - Single source: shapes (n_freqs, kdim[0], kdim[1])
-            - Batched sources: shapes (n_sources, n_freqs, kdim[0], kdim[1])
+            - Single source: shapes (n_freqs, harmonics[0], harmonics[1])
+            - Batched sources: shapes (n_sources, n_freqs, harmonics[0], harmonics[1])
         """
         # Detect input type by checking kinc dimensions
         is_single_source = self.kinc.dim() == 2  # (n_freqs, 3)
@@ -1147,7 +1186,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         # Core tensorized k-vector calculation
         # Calculate wave vector expansion using broadcasting
         # kinc shape: (n_sources, n_freqs, 3)
-        # Output shapes: (n_sources, n_freqs, kdim[0], kdim[1])
+        # Output shapes: (n_sources, n_freqs, harmonics[0], harmonics[1])
         kx_0 = (
             kinc[:, :, 0, None, None]  # (n_sources, n_freqs, 1, 1)
             - (
@@ -1178,7 +1217,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         # Remove dummy batch dimension for single source
         if is_single_source:
-            kx_0 = kx_0.squeeze(0)  # (n_freqs, kdim[0], kdim[1])
+            kx_0 = kx_0.squeeze(0)  # (n_freqs, harmonics[0], harmonics[1])
             ky_0 = ky_0.squeeze(0)
             kz_ref_0 = kz_ref_0.squeeze(0)
             kz_trn_0 = kz_trn_0.squeeze(0)
@@ -1190,8 +1229,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         Apply small offset to zero values for numerical stability.
         Handles both tensor shapes:
-        - Single source: (n_freqs, kdim[0], kdim[1])
-        - Batched sources: (n_sources, n_freqs, kdim[0], kdim[1])
+        - Single source: (n_freqs, harmonics[0], harmonics[1])
+        - Batched sources: (n_sources, n_freqs, harmonics[0], harmonics[1])
 
         Args:
             kx_0, ky_0: k-vector tensors (any dimensionality)
@@ -1221,8 +1260,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         Args:
             ur, er: Material properties (scalars or tensors)
             kx_0, ky_0: k-vectors with shapes:
-                - Single source: (n_freqs, kdim[0], kdim[1])
-                - Batched sources: (n_sources, n_freqs, kdim[0], kdim[1])
+                - Single source: (n_freqs, harmonics[0], harmonics[1])
+                - Batched sources: (n_sources, n_freqs, harmonics[0], harmonics[1])
             is_dispersive: Whether the material is dispersive
 
         Returns:
@@ -1254,8 +1293,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         Args:
             kx_0, ky_0: k-vectors with shape:
-                - Single source: (n_freqs, kdim[0], kdim[1])
-                - Batched sources: (n_sources, n_freqs, kdim[0], kdim[1])
+                - Single source: (n_freqs, harmonics[0], harmonics[1])
+                - Batched sources: (n_sources, n_freqs, harmonics[0], harmonics[1])
             kz_ref_0, kz_trn_0: kz vectors with same shape as kx_0, ky_0
 
         Returns:
@@ -1276,8 +1315,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         else:
             n_sources = kx_0.shape[0]
 
-        # Now all inputs have shape (n_sources, n_freqs, kdim[0], kdim[1])
-        n_harmonics_squared = self.kdim[0] * self.kdim[1]
+        # Now all inputs have shape (n_sources, n_freqs, harmonics[0], harmonics[1])
+        n_harmonics_squared = self.harmonics[0] * self.harmonics[1]
 
         # Create identity matrices
         ident_mat_k = torch.eye(n_harmonics_squared, dtype=self.tcomplex, device=self.device)
@@ -1287,7 +1326,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         self.ident_mat_k2 = ident_mat_k2
 
         # Transform to diagonal matrices - flatten last two dimensions
-        # Shape: (n_sources, n_freqs, kdim[0], kdim[1]) -> (n_sources, n_freqs, n_harmonics_squared)
+        # Shape: (n_sources, n_freqs, harmonics[0], harmonics[1]) -> (n_sources, n_freqs, n_harmonics_squared)
         mat_kx = kx_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
         mat_ky = ky_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
         mat_kz_ref = kz_ref_0.transpose(dim0=-2, dim1=-1).flatten(start_dim=-2)
@@ -1301,8 +1340,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         # VECTORIZED: Direct call to to_diag_util with batched tensors
         # to_diag_util supports batched inputs through broadcasting
-        mat_kx_diag = to_diag_util(mat_kx, self.kdim)
-        mat_ky_diag = to_diag_util(mat_ky, self.kdim)
+        mat_kx_diag = to_diag_util(mat_kx, self.harmonics)
+        mat_ky_diag = to_diag_util(mat_ky, self.harmonics)
 
         mat_kz = torch.conj(torch.sqrt(1.0 - mat_kx_kx - mat_ky_ky))
 
@@ -1329,12 +1368,12 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         mat_v0 = blockmat2x2(
             [
                 [
-                    to_diag_util(mat_kx_ky * inv_mat_lam, self.kdim),
-                    to_diag_util(ident_mat_kx_kx * inv_mat_lam, self.kdim),
+                    to_diag_util(mat_kx_ky * inv_mat_lam, self.harmonics),
+                    to_diag_util(ident_mat_kx_kx * inv_mat_lam, self.harmonics),
                 ],
                 [
-                    to_diag_util(-ident_mat_ky_ky * inv_mat_lam, self.kdim),
-                    to_diag_util(-mat_kx_ky * inv_mat_lam, self.kdim),
+                    to_diag_util(-ident_mat_ky_ky * inv_mat_lam, self.harmonics),
+                    to_diag_util(-mat_kx_ky * inv_mat_lam, self.harmonics),
                 ],
             ]
         )
@@ -1495,8 +1534,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 )
                 reciprocal_toeplitz_er = self.layer_manager._gen_toeplitz2d(
                     torch.reciprocal(layer.ermat.to(self.device).to(self.tcomplex)),
-                    nharmonic_1=self.kdim[0],
-                    nharmonic_2=self.kdim[1],
+                    nharmonic_1=self.harmonics[0],
+                    nharmonic_2=self.harmonics[1],
                     method="FFT",
                 )
 
@@ -1538,7 +1577,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 # Flatten (n_sources, n_freqs, M, N) → (n_sources*n_freqs, M, N) for algorithm processing
                 original_shape = p_mat_i.shape  # Store for reshaping outputs
                 batch_size = n_sources * p_mat_i.shape[1]  # n_sources * n_freqs
-                matrix_shape = p_mat_i.shape[2:]  # (2*kdim², 2*kdim²)
+                matrix_shape = p_mat_i.shape[2:]  # (2*harmonics², 2*harmonics²)
 
                 # Flatten input matrices
                 p_mat_i_flat = p_mat_i.reshape(batch_size, *matrix_shape)
@@ -1556,7 +1595,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                     q_mat_i=q_mat_i_flat,
                     mat_w0=mat_w0_flat,
                     mat_v0=mat_v0_flat,
-                    kdim=self.kdim,
+                    harmonics=self.harmonics,
                     k_0=k_0_flat,
                 )
 
@@ -1568,11 +1607,11 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 # Single source case - keep original logic
                 smat_layer = self._solve_nonhomo_layer(
                     layer_thickness=slice_thickness,
-                    p_mat_i=p_mat_i[0],  # Shape: (n_freqs, 2*kdim², 2*kdim²)
-                    q_mat_i=q_mat_i[0],  # Shape: (n_freqs, 2*kdim², 2*kdim²)
+                    p_mat_i=p_mat_i[0],  # Shape: (n_freqs, 2*harmonics², 2*harmonics²)
+                    q_mat_i=q_mat_i[0],  # Shape: (n_freqs, 2*harmonics², 2*harmonics²)
                     mat_w0=matrices_batched["mat_w0"][0],
                     mat_v0=matrices_batched["mat_v0"][0],
-                    kdim=self.kdim,
+                    harmonics=self.harmonics,
                     k_0=self.k_0,
                 )
 
@@ -1656,18 +1695,18 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                         * blockmat2x2(
                             [
                                 [
-                                    to_diag_util(matrices_batched["mat_kx_ky"] * inv_dmat_lam_i, self.kdim),
+                                    to_diag_util(matrices_batched["mat_kx_ky"] * inv_dmat_lam_i, self.harmonics),
                                     to_diag_util(
                                         (toep_ur_er[:, :, None] - matrices_batched["mat_kx_kx"]) * inv_dmat_lam_i,
-                                        self.kdim,
+                                        self.harmonics,
                                     ),
                                 ],
                                 [
                                     to_diag_util(
                                         (matrices_batched["mat_ky_ky"] - toep_ur_er[:, :, None]) * inv_dmat_lam_i,
-                                        self.kdim,
+                                        self.harmonics,
                                     ),
-                                    -to_diag_util(matrices_batched["mat_ky_kx"] * inv_dmat_lam_i, self.kdim),
+                                    -to_diag_util(matrices_batched["mat_ky_kx"] * inv_dmat_lam_i, self.harmonics),
                                 ],
                             ]
                         )
@@ -1682,16 +1721,16 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                             * blockmat2x2(
                                 [
                                     [
-                                        to_diag_util(matrices_batched["mat_kx_ky"] * inv_dmat_lam_i, self.kdim),
+                                        to_diag_util(matrices_batched["mat_kx_ky"] * inv_dmat_lam_i, self.harmonics),
                                         to_diag_util(
-                                            (toep_ur_er - matrices_batched["mat_kx_kx"]) * inv_dmat_lam_i, self.kdim
+                                            (toep_ur_er - matrices_batched["mat_kx_kx"]) * inv_dmat_lam_i, self.harmonics
                                         ),
                                     ],
                                     [
                                         to_diag_util(
-                                            (matrices_batched["mat_ky_ky"] - toep_ur_er) * inv_dmat_lam_i, self.kdim
+                                            (matrices_batched["mat_ky_ky"] - toep_ur_er) * inv_dmat_lam_i, self.harmonics
                                         ),
-                                        -to_diag_util(matrices_batched["mat_ky_kx"] * inv_dmat_lam_i, self.kdim),
+                                        -to_diag_util(matrices_batched["mat_ky_kx"] * inv_dmat_lam_i, self.harmonics),
                                     ],
                                 ]
                             )
@@ -1704,18 +1743,18 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                             * blockmat2x2(
                                 [
                                     [
-                                        to_diag_util(matrices_batched["mat_kx_ky"] * inv_dmat_lam_i, self.kdim),
+                                        to_diag_util(matrices_batched["mat_kx_ky"] * inv_dmat_lam_i, self.harmonics),
                                         to_diag_util(
                                             (toep_ur_er[:, None] - matrices_batched["mat_kx_kx"]) * inv_dmat_lam_i,
-                                            self.kdim,
+                                            self.harmonics,
                                         ),
                                     ],
                                     [
                                         to_diag_util(
                                             (matrices_batched["mat_ky_ky"] - toep_ur_er[:, None]) * inv_dmat_lam_i,
-                                            self.kdim,
+                                            self.harmonics,
                                         ),
-                                        -to_diag_util(matrices_batched["mat_ky_kx"] * inv_dmat_lam_i, self.kdim),
+                                        -to_diag_util(matrices_batched["mat_ky_kx"] * inv_dmat_lam_i, self.harmonics),
                                     ],
                                 ]
                             )
@@ -1742,12 +1781,12 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                     * blockmat2x2(
                         [
                             [
-                                to_diag_util(matrices_batched["mat_kx_ky"] * inv_dmat_lam_i, self.kdim),
-                                to_diag_util((toep_ur_er - matrices_batched["mat_kx_kx"]) * inv_dmat_lam_i, self.kdim),
+                                to_diag_util(matrices_batched["mat_kx_ky"] * inv_dmat_lam_i, self.harmonics),
+                                to_diag_util((toep_ur_er - matrices_batched["mat_kx_kx"]) * inv_dmat_lam_i, self.harmonics),
                             ],
                             [
-                                to_diag_util((matrices_batched["mat_ky_ky"] - toep_ur_er) * inv_dmat_lam_i, self.kdim),
-                                -to_diag_util(matrices_batched["mat_ky_kx"] * inv_dmat_lam_i, self.kdim),
+                                to_diag_util((matrices_batched["mat_ky_ky"] - toep_ur_er) * inv_dmat_lam_i, self.harmonics),
+                                -to_diag_util(matrices_batched["mat_ky_kx"] * inv_dmat_lam_i, self.harmonics),
                             ],
                         ]
                     )
@@ -1768,7 +1807,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             )
 
             # Create diagonal matrix - concatenate along last dimension
-            # We need shape (..., 2*kdim_product) for to_diag_util
+            # We need shape (..., 2*harmonics_product) for to_diag_util
             if n_sources > 1:
                 mat_x_i_diag = torch.concat([mat_x_i, mat_x_i], dim=-1)  # Concatenate along last dimension
             else:
@@ -1778,9 +1817,9 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             if hasattr(self, "debug_tensorization") and self.debug_tensorization:
                 print(f"[DEBUG] mat_x_i shape: {mat_x_i.shape}")
                 print(f"[DEBUG] mat_x_i_diag shape: {mat_x_i_diag.shape}")
-                print(f"[DEBUG] kdim: {self.kdim}")
+                print(f"[DEBUG] harmonics: {self.harmonics}")
 
-            mat_x_i = to_diag_util(torch.exp(mat_x_i_diag), self.kdim)
+            mat_x_i = to_diag_util(torch.exp(mat_x_i_diag), self.harmonics)
 
             # Calculate Layer Scattering Matrix
             atwi = matrices_batched["mat_w0"]
@@ -1866,7 +1905,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         self.notify_observers("setting_up_matrices")
         matrices = self._setup_common_matrices(kx_0, ky_0, kz_ref_0, kz_trn_0)
 
-        n_harmonics_squared = self.kdim[0] * self.kdim[1]
+        n_harmonics_squared = self.harmonics[0] * self.harmonics[1]
 
         # Initialize global scattering matrix
         # Use appropriate shape based on batch mode
@@ -1964,42 +2003,42 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 )
 
                 # Format the electric field Fourier coefficients for output
-                rx = torch.reshape(fields["ref_s_x"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+                rx = torch.reshape(fields["ref_s_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                     dim0=-2, dim1=-1
                 )
-                ry = torch.reshape(fields["ref_s_y"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+                ry = torch.reshape(fields["ref_s_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                     dim0=-2, dim1=-1
                 )
-                rz = torch.reshape(fields["ref_s_z"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+                rz = torch.reshape(fields["ref_s_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                     dim0=-2, dim1=-1
                 )
-                tx = torch.reshape(fields["trn_s_x"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+                tx = torch.reshape(fields["trn_s_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                     dim0=-2, dim1=-1
                 )
-                ty = torch.reshape(fields["trn_s_y"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+                ty = torch.reshape(fields["trn_s_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                     dim0=-2, dim1=-1
                 )
-                tz = torch.reshape(fields["trn_s_z"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+                tz = torch.reshape(fields["trn_s_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                     dim0=-2, dim1=-1
                 )
 
                 # Format the magnetic field Fourier coefficients for output
-                rmag_x = torch.reshape(fields["ref_u_x"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+                rmag_x = torch.reshape(fields["ref_u_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                     dim0=-2, dim1=-1
                 )
-                rmag_y = torch.reshape(fields["ref_u_y"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+                rmag_y = torch.reshape(fields["ref_u_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                     dim0=-2, dim1=-1
                 )
-                rmag_z = torch.reshape(fields["ref_u_z"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+                rmag_z = torch.reshape(fields["ref_u_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                     dim0=-2, dim1=-1
                 )
-                tmag_x = torch.reshape(fields["trn_u_x"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+                tmag_x = torch.reshape(fields["trn_u_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                     dim0=-2, dim1=-1
                 )
-                tmag_y = torch.reshape(fields["trn_u_y"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+                tmag_y = torch.reshape(fields["trn_u_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                     dim0=-2, dim1=-1
                 )
-                tmag_z = torch.reshape(fields["trn_u_z"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+                tmag_z = torch.reshape(fields["trn_u_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                     dim0=-2, dim1=-1
                 )
 
@@ -2041,7 +2080,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                     # Lattice vectors for field reconstruction
                     "lattice_t1": self.lattice_t1,
                     "lattice_t2": self.lattice_t2,
-                    "default_rdim": self.rdim,
+                    "default_grids": self.grids,
                 }
 
                 all_results.append(SolverResults.from_dict(data))
@@ -2107,7 +2146,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 # Add lattice vectors for field reconstruction
                 lattice_t1=self.lattice_t1,
                 lattice_t2=self.lattice_t2,
-                default_rdim=self.rdim,
+                default_grids=self.grids,
             )
 
         else:
@@ -2130,42 +2169,42 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
             # Format the Fourier coefficients for output
             self.notify_observers("assembling_final_data")
-            rx = torch.reshape(fields["ref_s_x"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+            rx = torch.reshape(fields["ref_s_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                 dim0=-2, dim1=-1
             )
-            ry = torch.reshape(fields["ref_s_y"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+            ry = torch.reshape(fields["ref_s_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                 dim0=-2, dim1=-1
             )
-            rz = torch.reshape(fields["ref_s_z"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+            rz = torch.reshape(fields["ref_s_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                 dim0=-2, dim1=-1
             )
-            tx = torch.reshape(fields["trn_s_x"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+            tx = torch.reshape(fields["trn_s_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                 dim0=-2, dim1=-1
             )
-            ty = torch.reshape(fields["trn_s_y"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+            ty = torch.reshape(fields["trn_s_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                 dim0=-2, dim1=-1
             )
-            tz = torch.reshape(fields["trn_s_z"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+            tz = torch.reshape(fields["trn_s_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                 dim0=-2, dim1=-1
             )
 
             # Format the magnetic field Fourier coefficients for output
-            rmag_x = torch.reshape(fields["ref_u_x"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+            rmag_x = torch.reshape(fields["ref_u_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                 dim0=-2, dim1=-1
             )
-            rmag_y = torch.reshape(fields["ref_u_y"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+            rmag_y = torch.reshape(fields["ref_u_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                 dim0=-2, dim1=-1
             )
-            rmag_z = torch.reshape(fields["ref_u_z"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+            rmag_z = torch.reshape(fields["ref_u_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                 dim0=-2, dim1=-1
             )
-            tmag_x = torch.reshape(fields["trn_u_x"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+            tmag_x = torch.reshape(fields["trn_u_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                 dim0=-2, dim1=-1
             )
-            tmag_y = torch.reshape(fields["trn_u_y"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+            tmag_y = torch.reshape(fields["trn_u_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                 dim0=-2, dim1=-1
             )
-            tmag_z = torch.reshape(fields["trn_u_z"], shape=(self.n_freqs, self.kdim[0], self.kdim[1])).transpose(
+            tmag_z = torch.reshape(fields["trn_u_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
                 dim0=-2, dim1=-1
             )
 
@@ -2208,7 +2247,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 # Lattice vectors for field reconstruction
                 "lattice_t1": self.lattice_t1,
                 "lattice_t2": self.lattice_t2,
-                "default_rdim": self.rdim,
+                "default_grids": self.grids,
             }
 
             self.notify_observers("calculation_completed", {"n_freqs": self.n_freqs})
@@ -2267,8 +2306,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 For single source (dict input):
                 - reflection: Shape (n_freqs) - Total reflection efficiency
                 - transmission: Shape (n_freqs) - Total transmission efficiency
-                - reflection_diffraction: Shape (n_freqs, kdim[0], kdim[1])
-                - transmission_diffraction: Shape (n_freqs, kdim[0], kdim[1])
+                - reflection_diffraction: Shape (n_freqs, harmonics[0], harmonics[1])
+                - transmission_diffraction: Shape (n_freqs, harmonics[0], harmonics[1])
                 - reflection_field: FieldComponents with E-field Fourier coefficients (S_x, S_y, S_z)
                                    and H-field Fourier coefficients (U_x, U_y, U_z)
                 - transmission_field: FieldComponents with E and H Fourier coefficients
@@ -2280,8 +2319,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 For batched sources (list input):
                 - reflection: Shape (n_sources, n_freqs)
                 - transmission: Shape (n_sources, n_freqs)
-                - reflection_diffraction: Shape (n_sources, n_freqs, kdim[0], kdim[1])
-                - transmission_diffraction: Shape (n_sources, n_freqs, kdim[0], kdim[1])
+                - reflection_diffraction: Shape (n_sources, n_freqs, harmonics[0], harmonics[1])
+                - transmission_diffraction: Shape (n_sources, n_freqs, harmonics[0], harmonics[1])
                 - Indexing: results[i] returns SolverResults for source i
                 - Iteration: for result in results iterates over sources
                 - Batched methods: find_optimal_source(), get_parameter_sweep_data()
@@ -2626,7 +2665,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             mask: Binary tensor representing the pattern mask, where:
                  - 1 (or True) represents the foreground material (from the layer's material)
                  - 0 (or False) represents the background material (specified by bg_material)
-                 The mask dimensions must match the real-space dimensions (rdim) of the solver.
+                 The mask dimensions must match the real-space dimensions (grids) of the solver.
 
                  For inverse design applications, this mask can be a differentiable tensor
                  generated from a neural network or optimization process.
@@ -2722,7 +2761,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         """
 
         ndim1, ndim2 = mask.size()
-        if (ndim1 != self.rdim[0]) or (ndim2 != self.rdim[1]):
+        if (ndim1 != self.grids[0]) or (ndim2 != self.grids[1]):
             raise ValueError("Mask dims don't match!")
 
         if self.layer_manager.layers[layer_index].is_homogeneous:
@@ -2767,14 +2806,14 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             method = "FFT"
 
         self.layer_manager.gen_toeplitz_matrix(
-            layer_index=layer_index, n_harmonic1=self.kdim[0], n_harmonic2=self.kdim[1], param="er", method=method
+            layer_index=layer_index, n_harmonic1=self.harmonics[0], n_harmonic2=self.harmonics[1], param="er", method=method
         )
 
         # permeability always 1.0 for current version
         # currently no support for magnetic materials
         self.layer_manager.layers[layer_index].urmat = self._get_bg(layer_index=layer_index, param="ur")
         self.layer_manager.gen_toeplitz_matrix(
-            layer_index=layer_index, n_harmonic1=self.kdim[0], n_harmonic2=self.kdim[1], param="ur", method=method
+            layer_index=layer_index, n_harmonic1=self.harmonics[0], n_harmonic2=self.harmonics[1], param="ur", method=method
         )
 
 
@@ -2804,7 +2843,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         )
         device_str = str(torch.device(device))
         return (
-            tuple(int(k) for k in self.kdim),
+            tuple(int(k) for k in self.harmonics),
             lattice_t1_vals,
             lattice_t2_vals,
             device_str,
@@ -2839,7 +2878,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             generator = vector_module.TangentFieldGenerator(
                 lattice_t1=self.lattice_t1.to(device=device_obj, dtype=dtype),
                 lattice_t2=self.lattice_t2.to(device=device_obj, dtype=dtype),
-                kdim=tuple(int(k) for k in self.kdim),
+                harmonics=tuple(int(k) for k in self.harmonics),
                 fourier_loss_weight=fourier_loss_weight,
                 smoothness_loss_weight=smoothness_loss_weight,
                 steps=steps,
@@ -2925,21 +2964,21 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         weight_yx = torch.conj(weight_xy)
 
         toeplitz_xx = self.layer_manager._gen_toeplitz2d(
-            weight_xx, nharmonic_1=self.kdim[0], nharmonic_2=self.kdim[1], method="FFT"
+            weight_xx, nharmonic_1=self.harmonics[0], nharmonic_2=self.harmonics[1], method="FFT"
         )
         toeplitz_yy = self.layer_manager._gen_toeplitz2d(
-            weight_yy, nharmonic_1=self.kdim[0], nharmonic_2=self.kdim[1], method="FFT"
+            weight_yy, nharmonic_1=self.harmonics[0], nharmonic_2=self.harmonics[1], method="FFT"
         )
         toeplitz_xy = self.layer_manager._gen_toeplitz2d(
-            weight_xy, nharmonic_1=self.kdim[0], nharmonic_2=self.kdim[1], method="FFT"
+            weight_xy, nharmonic_1=self.harmonics[0], nharmonic_2=self.harmonics[1], method="FFT"
         )
         toeplitz_yx = self.layer_manager._gen_toeplitz2d(
-            weight_yx, nharmonic_1=self.kdim[0], nharmonic_2=self.kdim[1], method="FFT"
+            weight_yx, nharmonic_1=self.harmonics[0], nharmonic_2=self.harmonics[1], method="FFT"
         )
 
         if debug_enabled:
             duration_ms = (time.perf_counter() - start_time) * 1000.0
-            n_harmonics_sq = self.kdim[0] * self.kdim[1]
+            n_harmonics_sq = self.harmonics[0] * self.harmonics[1]
             bytes_per_complex = torch.tensor([], dtype=self.tcomplex).element_size()
             approx_mem_mb = (4 * n_harmonics_sq * n_harmonics_sq * bytes_per_complex) / (1024.0 * 1024.0)
             layer_info = f" layer {layer_index}" if layer_index is not None else ""
@@ -3048,21 +3087,21 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 material_name = self.layer_manager.layers[layer_index].material_name
                 if param == "er":
                     # ret_mat = torch.tensor(self._matlib[material_name].er).unsqueeze(1)\
-                    # .unsqueeze(1).repeat(1, self.rdim[0], self.rdim[1]).to(self.device).to(self.tcomplex)
+                    # .unsqueeze(1).repeat(1, self.grids[0], self.grids[1]).to(self.device).to(self.tcomplex)
                     ret_mat = (
                         self._matlib[material_name]
                         .er.detach()
                         .clone()
                         .unsqueeze(1)
                         .unsqueeze(1)
-                        .repeat(1, self.rdim[0], self.rdim[1])
+                        .repeat(1, self.grids[0], self.grids[1])
                         .to(self.device)
                         .to(self.tcomplex)
                     )
                 elif param == "ur":
                     param_val = self._matlib[material_name].ur.detach().clone()
                     ret_mat = param_val * torch.ones(
-                        size=(self.rdim[0], self.rdim[1]), dtype=self.tcomplex, device=self.device
+                        size=(self.grids[0], self.grids[1]), dtype=self.tcomplex, device=self.device
                     )
                 else:
                     raise ValueError(f"Input parameter [{param}] is illeagal.")
@@ -3077,7 +3116,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                     raise ValueError(f"Input parameter [{param}] is illeagal.")
 
                 ret_mat = param_val * torch.ones(
-                    size=(self.rdim[0], self.rdim[1]), dtype=self.tcomplex, device=self.device
+                    size=(self.grids[0], self.grids[1]), dtype=self.tcomplex, device=self.device
                 )
         else:
             raise ValueError("The index exceeds the max layer number.")
@@ -3124,12 +3163,12 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             mat_v_ref = (1 / self.ur1) * blockmat2x2(
                 [
                     [
-                        to_diag_util(matrices["mat_kx_ky"] * inv_mat_lam_ref, self.kdim),
-                        to_diag_util((self.ur1 * self.er1 - matrices["mat_kx_kx"]) * inv_mat_lam_ref, self.kdim),
+                        to_diag_util(matrices["mat_kx_ky"] * inv_mat_lam_ref, self.harmonics),
+                        to_diag_util((self.ur1 * self.er1 - matrices["mat_kx_kx"]) * inv_mat_lam_ref, self.harmonics),
                     ],
                     [
-                        to_diag_util((matrices["mat_ky_ky"] - self.ur1 * self.er1) * inv_mat_lam_ref, self.kdim),
-                        -to_diag_util(matrices["mat_ky_kx"] * inv_mat_lam_ref, self.kdim),
+                        to_diag_util((matrices["mat_ky_ky"] - self.ur1 * self.er1) * inv_mat_lam_ref, self.harmonics),
+                        -to_diag_util(matrices["mat_ky_kx"] * inv_mat_lam_ref, self.harmonics),
                     ],
                 ]
             )
@@ -3137,16 +3176,16 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             mat_v_ref = (1 / self.ur1) * blockmat2x2(
                 [
                     [
-                        to_diag_util(matrices["mat_kx_ky"] * inv_mat_lam_ref, self.kdim),
+                        to_diag_util(matrices["mat_kx_ky"] * inv_mat_lam_ref, self.harmonics),
                         to_diag_util(
-                            ((self.ur1 * self.er1)[:, None] - matrices["mat_kx_kx"]) * inv_mat_lam_ref, self.kdim
+                            ((self.ur1 * self.er1)[:, None] - matrices["mat_kx_kx"]) * inv_mat_lam_ref, self.harmonics
                         ),
                     ],
                     [
                         to_diag_util(
-                            (matrices["mat_ky_ky"] - (self.ur1 * self.er1)[:, None]) * inv_mat_lam_ref, self.kdim
+                            (matrices["mat_ky_ky"] - (self.ur1 * self.er1)[:, None]) * inv_mat_lam_ref, self.harmonics
                         ),
-                        -to_diag_util(matrices["mat_ky_kx"] * inv_mat_lam_ref, self.kdim),
+                        -to_diag_util(matrices["mat_ky_kx"] * inv_mat_lam_ref, self.harmonics),
                     ],
                 ]
             )
@@ -3178,12 +3217,12 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             mat_v_trn = (1 / self.ur2) * blockmat2x2(
                 [
                     [
-                        to_diag_util(matrices["mat_kx_ky"] * inv_mat_lam_trn, self.kdim),
-                        to_diag_util((self.ur2 * self.er2 - matrices["mat_kx_kx"]) * inv_mat_lam_trn, self.kdim),
+                        to_diag_util(matrices["mat_kx_ky"] * inv_mat_lam_trn, self.harmonics),
+                        to_diag_util((self.ur2 * self.er2 - matrices["mat_kx_kx"]) * inv_mat_lam_trn, self.harmonics),
                     ],
                     [
-                        to_diag_util((matrices["mat_ky_ky"] - self.ur2 * self.er2) * inv_mat_lam_trn, self.kdim),
-                        -to_diag_util(matrices["mat_ky_kx"] * inv_mat_lam_trn, self.kdim),
+                        to_diag_util((matrices["mat_ky_ky"] - self.ur2 * self.er2) * inv_mat_lam_trn, self.harmonics),
+                        -to_diag_util(matrices["mat_ky_kx"] * inv_mat_lam_trn, self.harmonics),
                     ],
                 ]
             )
@@ -3191,16 +3230,16 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             mat_v_trn = (1 / self.ur2) * blockmat2x2(
                 [
                     [
-                        to_diag_util(matrices["mat_kx_ky"] * inv_mat_lam_trn, self.kdim),
+                        to_diag_util(matrices["mat_kx_ky"] * inv_mat_lam_trn, self.harmonics),
                         to_diag_util(
-                            ((self.ur2 * self.er2)[:, None] - matrices["mat_kx_kx"]) * inv_mat_lam_trn, self.kdim
+                            ((self.ur2 * self.er2)[:, None] - matrices["mat_kx_kx"]) * inv_mat_lam_trn, self.harmonics
                         ),
                     ],
                     [
                         to_diag_util(
-                            (matrices["mat_ky_ky"] - (self.ur2 * self.er2)[:, None]) * inv_mat_lam_trn, self.kdim
+                            (matrices["mat_ky_ky"] - (self.ur2 * self.er2)[:, None]) * inv_mat_lam_trn, self.harmonics
                         ),
-                        -to_diag_util(matrices["mat_ky_kx"] * inv_mat_lam_trn, self.kdim),
+                        -to_diag_util(matrices["mat_ky_kx"] * inv_mat_lam_trn, self.harmonics),
                     ],
                 ]
             )
@@ -3267,7 +3306,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             sources_list = sources
 
         n_sources = len(sources_list)
-        n_harmonics_squared = self.kdim[0] * self.kdim[1]
+        n_harmonics_squared = self.harmonics[0] * self.harmonics[1]
 
         # Use tensorized parameter collection while preserving autograd
         def _to_float_tensor_preserve(x):
@@ -3388,7 +3427,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         if kinc is None:
             kinc = self.kinc
 
-        n_harmonics_squared = self.kdim[0] * self.kdim[1]
+        n_harmonics_squared = self.harmonics[0] * self.harmonics[1]
 
         # Calculate polarization vectors using the unified method
         polarization_data = self._calculate_polarization(kinc=kinc)
@@ -3415,8 +3454,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         # Differentiable softplus protection for mat_kz_ref
         mat_kz_ref_protected = softplus_protect_kz(matrices["mat_kz_ref"], min_kz=min_kz, beta=100)
         ref_field_z = -matrices["mat_kx_diag"] @ tsolve(
-            to_diag_util(mat_kz_ref_protected, self.kdim), ref_field_x
-        ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_ref_protected, self.kdim), ref_field_y)
+            to_diag_util(mat_kz_ref_protected, self.harmonics), ref_field_x
+        ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_ref_protected, self.harmonics), ref_field_y)
 
         # Calculate transmitted fields
         ctrn = smat_global["S21"] @ csrc
@@ -3427,8 +3466,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         # Differentiable softplus protection for mat_kz_trn
         mat_kz_trn_protected = softplus_protect_kz(matrices["mat_kz_trn"], min_kz=min_kz, beta=100)
         trn_field_z = -matrices["mat_kx_diag"] @ tsolve(
-            to_diag_util(mat_kz_trn_protected, self.kdim), trn_field_x
-        ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_trn_protected, self.kdim), trn_field_y)
+            to_diag_util(mat_kz_trn_protected, self.harmonics), trn_field_x
+        ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_trn_protected, self.harmonics), trn_field_y)
 
         # Calculate diffraction efficiencies
         # Handle both 2D and 3D kinc
@@ -3454,15 +3493,15 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         ref_diff_efficiency = torch.reshape(
             torch.real(
-                self.ur2 / self.ur1 * to_diag_util(mat_kz_ref_protected, self.kdim) / kinc_z_protected[:, None, None]
+                self.ur2 / self.ur1 * to_diag_util(mat_kz_ref_protected, self.harmonics) / kinc_z_protected[:, None, None]
             )
             @ field_intensity,
-            shape=(self.n_freqs, self.kdim[0], self.kdim[1]),
+            shape=(self.n_freqs, self.harmonics[0], self.harmonics[1]),
         ).transpose(dim0=-2, dim1=-1)
 
         trn_diff_efficiency = torch.reshape(
             torch.real(
-                self.ur1 / self.ur2 * to_diag_util(mat_kz_trn_protected, self.kdim) / kinc_z_protected[:, None, None]
+                self.ur1 / self.ur2 * to_diag_util(mat_kz_trn_protected, self.harmonics) / kinc_z_protected[:, None, None]
             )
             @ (
                 torch.real(trn_field_x) ** 2
@@ -3472,7 +3511,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 + torch.real(trn_field_z) ** 2
                 + torch.imag(trn_field_z) ** 2
             ),
-            shape=(self.n_freqs, self.kdim[0], self.kdim[1]),
+            shape=(self.n_freqs, self.harmonics[0], self.harmonics[1]),
         ).transpose(dim0=-2, dim1=-1)
 
         # Calculate overall reflectance & transmittance
@@ -3488,8 +3527,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
             # Calculate Hz for reflection using Maxwell's equations: Hz = -(kx*Hx + ky*Hy)/kz
             ref_mag_z = -matrices["mat_kx_diag"] @ tsolve(
-                to_diag_util(mat_kz_ref_protected, self.kdim), ref_mag_x
-            ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_ref_protected, self.kdim), ref_mag_y)
+                to_diag_util(mat_kz_ref_protected, self.harmonics), ref_mag_x
+            ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_ref_protected, self.harmonics), ref_mag_y)
 
             # Transmission region: u = V @ c^+ (since ctrn represents forward propagating waves)
             utrn = mat_v_trn @ ctrn
@@ -3498,8 +3537,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
             # Calculate Hz for transmission using Maxwell's equations
             trn_mag_z = -matrices["mat_kx_diag"] @ tsolve(
-                to_diag_util(mat_kz_trn_protected, self.kdim), trn_mag_x
-            ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_trn_protected, self.kdim), trn_mag_y)
+                to_diag_util(mat_kz_trn_protected, self.harmonics), trn_mag_x
+            ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_trn_protected, self.harmonics), trn_mag_y)
         else:
             # If V matrices not provided, set magnetic fields to None
             ref_mag_x = ref_mag_y = ref_mag_z = None
@@ -3563,8 +3602,8 @@ class RCWASolver(FourierBaseSolver):
         # Create an RCWA solver
         solver = RCWASolver(
             lam0=np.array([1.55]),  # Wavelength in micrometers
-            rdim=[512, 512],        # Real space dimensions
-            kdim=[5, 5],            # Fourier space dimensions
+            grids=[512, 512],        # Real space dimensions
+            harmonics=[5, 5],            # Fourier space dimensions
             device='cuda'           # Use GPU acceleration
         )
 
@@ -3581,10 +3620,10 @@ class RCWASolver(FourierBaseSolver):
 
     def __init__(
         self,
-        lam0: np.ndarray = np.ndarray([]),
+        lam0: Optional[Union[float, np.ndarray]] = None,
         lengthunit: str = "um",
-        rdim: list = [512, 512],  # dimensions in real space: (H, W)
-        kdim: list = [3, 3],  # dimensions in k space: (kH, kW)
+        grids: list = [512, 512],  # dimensions in real space: (H, W)
+        harmonics: list = [3, 3],  # dimensions in k space: (kH, kW)
         materiallist: list = [],  # list of materials
         t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
         t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
@@ -3602,8 +3641,8 @@ class RCWASolver(FourierBaseSolver):
         super().__init__(
             lam0=lam0,
             lengthunit=lengthunit,
-            rdim=rdim,
-            kdim=kdim,
+            grids=grids,
+            harmonics=harmonics,
             materiallist=materiallist,
             t1=t1,
             t2=t2,
@@ -3667,8 +3706,8 @@ class RDITSolver(FourierBaseSolver):
         lam0: Wavelength(s) to simulate, in the specified length unit. Default is [1.0].
         lengthunit: The unit of length used in the simulation (e.g., 'um', 'nm').
                    Default is 'um' (micrometers).
-        rdim: Dimensions of the real space grid [height, width]. Default is [512, 512].
-        kdim: Dimensions in Fourier space [kheight, kwidth]. Default is [3, 3].
+        grids: Dimensions of the real space grid [height, width]. Default is [512, 512].
+        harmonics: Dimensions in Fourier space [kx, ky]. Default is [3, 3].
               This determines the number of Fourier harmonics used.
         materiallist: List of materials used in the simulation. Default is empty list.
         t1: First lattice vector. Default is [[1.0, 0.0]] (unit vector in x-direction).
@@ -3690,8 +3729,8 @@ class RDITSolver(FourierBaseSolver):
     # Create an R-DIT solver
     solver = RDITSolver(
         lam0=np.array([1.55]),  # Wavelength in micrometers
-        rdim=[512, 512],        # Real space dimensions
-        kdim=[5, 5],            # Fourier space dimensions
+        grids=[512, 512],        # Real space dimensions
+        harmonics=[5, 5],            # Fourier space dimensions
         device='cuda'           # Use GPU acceleration
     )
 
@@ -3717,10 +3756,10 @@ class RDITSolver(FourierBaseSolver):
 
     def __init__(
         self,
-        lam0: np.ndarray = np.ndarray([]),
+        lam0: Optional[Union[float, np.ndarray]] = None,
         lengthunit: str = "um",
-        rdim: list = [512, 512],  # dimensions in real space: (H, W)
-        kdim: list = [3, 3],  # dimensions in k space: (kH, kW)
+        grids: list = [512, 512],  # dimensions in real space: (H, W)
+        harmonics: list = [3, 3],  # dimensions in k space: (kH, kW)
         materiallist: list = [],  # list of materials
         t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),  # lattice vector in real space
         t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),  # lattice vector in real space
@@ -3738,8 +3777,8 @@ class RDITSolver(FourierBaseSolver):
         super().__init__(
             lam0=lam0,
             lengthunit=lengthunit,
-            rdim=rdim,
-            kdim=kdim,
+            grids=grids,
+            harmonics=harmonics,
             materiallist=materiallist,
             t1=t1,
             t2=t2,

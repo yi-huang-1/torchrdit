@@ -4,7 +4,6 @@
   * [SolverObserver](#torchrdit.solver.SolverObserver)
     * [update](#torchrdit.solver.SolverObserver.update)
   * [SolverSubjectMixin](#torchrdit.solver.SolverSubjectMixin)
-    * [\_\_init\_\_](#torchrdit.solver.SolverSubjectMixin.__init__)
     * [add\_observer](#torchrdit.solver.SolverSubjectMixin.add_observer)
     * [remove\_observer](#torchrdit.solver.SolverSubjectMixin.remove_observer)
     * [notify\_observers](#torchrdit.solver.SolverSubjectMixin.notify_observers)
@@ -31,7 +30,7 @@
 
 <a id="torchrdit.solver"></a>
 
-# torchrdit.solver
+# Module torchrdit.solver
 
 TorchRDIT solver module for electromagnetic simulations and inverse design.
 
@@ -75,8 +74,8 @@ from torchrdit.utils import create_material
 solver = create_solver(
     algorithm=Algorithm.RCWA,
     lam0=np.array([1.55]),  # Wavelength in micrometers
-    rdim=[512, 512],        # Real space grid dimensions
-    kdim=[5, 5],            # Fourier space dimensions
+    grids=[512, 512],        # Real space grid dimensions
+    harmonics=[5, 5],            # Fourier space dimensions
     device="cuda"           # Use GPU acceleration
 )
 
@@ -84,6 +83,15 @@ solver = create_solver(
 silicon = create_material(name="silicon", permittivity=11.7)
 sio2 = create_material(name="sio2", permittivity=2.25)
 solver.add_materials([silicon, sio2])
+
+# Dispersive material can be created from a data file or in-memory samples:
+# gold = create_material(
+#     name="gold",
+#     dielectric_dispersion=True,
+#     user_dielectric_wavelengths_um=[1.0, 1.5, 2.0],
+#     user_dielectric_n=[0.45, 0.35, 0.30],
+#     user_dielectric_k=[6.5, 7.0, 7.5],
+# )
 
 # Define layers
 solver.add_layer(material_name="silicon", thickness=torch.tensor(0.2))
@@ -205,7 +213,7 @@ result = solver.solve(source) # SolverResults object
 
 <a id="torchrdit.solver.SolverObserver.update"></a>
 
-#### update
+### SolverObserver.update
 
 ```python
 def update(event_type: str, data: dict) -> None
@@ -336,33 +344,9 @@ result = processor.process_data([1, 2, 3, 4, 5])
   observer pattern, subject, notification, progress tracking, design pattern,
   event broadcasting, observer management, mixin, loose coupling
 
-<a id="torchrdit.solver.SolverSubjectMixin.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__()
-```
-
-Initialize the observer list.
-
-Creates an empty list to store observer objects. This method should be
-called in the constructor of any class that inherits from this mixin.
-
-**Examples**:
-
-```python
-class MyClass(SolverSubjectMixin):
-    def __init__(self):
-        SolverSubjectMixin.__init__(self)  # Initialize observer list
-```
-  
-  Keywords:
-  initialization, observer list, constructor
-
 <a id="torchrdit.solver.SolverSubjectMixin.add_observer"></a>
 
-#### add\_observer
+### SolverSubjectMixin.add\_observer
 
 ```python
 def add_observer(observer: SolverObserver) -> None
@@ -396,7 +380,7 @@ solver.add_observer(observer)
 
 <a id="torchrdit.solver.SolverSubjectMixin.remove_observer"></a>
 
-#### remove\_observer
+### SolverSubjectMixin.remove\_observer
 
 ```python
 def remove_observer(observer: SolverObserver) -> None
@@ -432,7 +416,7 @@ solver.remove_observer(observer)
 
 <a id="torchrdit.solver.SolverSubjectMixin.notify_observers"></a>
 
-#### notify\_observers
+### SolverSubjectMixin.notify\_observers
 
 ```python
 def notify_observers(event_type: str, data: dict = None) -> None
@@ -488,7 +472,7 @@ def solve_layer(self, layer_index):
 
 <a id="torchrdit.solver.create_solver_from_config"></a>
 
-#### create\_solver\_from\_config
+### create\_solver\_from\_config
 
 ```python
 def create_solver_from_config(
@@ -514,8 +498,8 @@ way to store and reuse solver configurations across different simulations.
   - "algorithm": Algorithm type ("RCWA" or "RDIT")
   - "wavelengths": List of wavelengths to simulate
   - "lengthunit": Length unit (e.g., "um", "nm")
-  - "rdim": Real space dimensions [height, width]
-  - "kdim": Fourier space dimensions [kheight, kwidth]
+  - "grids": Real space dimensions [height, width]
+  - "harmonics": Fourier space dimensions [kx, ky]
   - "device": Device to use (e.g., "cpu", "cuda")
   
 - `flip` _bool, optional_ - Whether to flip the coordinate system. When True,
@@ -541,8 +525,8 @@ config = {
     "algorithm": "RDIT",
     "wavelengths": [1.55],
     "length_unit": "um",
-    "rdim": [512, 512],
-    "kdim": [5, 5],
+    "grids": [512, 512],
+    "harmonics": [5, 5],
     "device": "cuda"
 }
 solver = create_solver_from_config(config)
@@ -556,8 +540,8 @@ solver = create_solver_from_config(config)
 #   "algorithm": "RCWA",
 #   "wavelengths": [1.31, 1.55],
 #   "length_unit": "um",
-#   "rdim": [256, 256],
-#   "kdim": [3, 3]
+#   "grids": [256, 256],
+#   "harmonics": [3, 3]
 # }
 solver = create_solver_from_config("config.json")
 ```
@@ -574,7 +558,7 @@ solver = create_solver_from_config("config.json")
 
 <a id="torchrdit.solver.create_solver"></a>
 
-#### create\_solver
+### create\_solver
 
 ```python
 def create_solver(
@@ -582,8 +566,8 @@ def create_solver(
         precision: Precision = Precision.SINGLE,
         lam0: np.ndarray = np.array([1.0]),
         lengthunit: str = "um",
-        rdim: List[int] = [512, 512],
-        kdim: List[int] = [3, 3],
+        grids: List[int] = [512, 512],
+        harmonics: List[int] = [3, 3],
         materiallist: List[Any] = [],
         t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),
         t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),
@@ -630,16 +614,17 @@ better performance for inverse design applications.
   - 'nm': Nanometers
   All dimensions (wavelengths, thicknesses) are interpreted in this unit.
   
-- `rdim` _List[int]_ - Dimensions of the real space grid [height, width].
+- `grids` _List[int]_ - Dimensions of the real space grid [height, width].
   Default is [512, 512]. Higher values provide more spatial resolution
   but require more memory and computation time.
   
-- `kdim` _List[int]_ - Dimensions in Fourier space [kheight, kwidth]. Default is [3, 3].
+- `harmonics` _List[int]_ - Dimensions in Fourier space [kx, ky]. Default is [3, 3].
   This determines the number of Fourier harmonics used in the simulation.
   Higher values improve accuracy but significantly increase computation time.
   
 - `materiallist` _List[Any]_ - List of materials used in the simulation. Can include
-  MaterialClass instances created with create_material().
+  MaterialClass instances created with create_material(), including
+  dispersive materials defined from a file or in-memory samples.
   Default is an empty list.
   
 - `t1` _torch.Tensor_ - First lattice vector defining the unit cell geometry.
@@ -653,8 +638,15 @@ better performance for inverse design applications.
   but adds computational overhead.
   
 - `fff_vector_scheme` _str_ - Tangent vector field scheme to use when generating
-  Fourier-factorization normals. Options include ``'POL'``, ``'NORMAL'``,
-  ``'JONES'``, and ``'JONES_DIRECT'``. Default is ``'POL'``.
+  Fourier-factorization normals. Choose among:
+  
+  * ``'POL'`` – polarization-preserving tangents normalized by the global maximum.
+  * ``'NORMAL'`` – per-pixel unit tangents for geometry-driven factorization.
+  * ``'JONES'`` – convert refined tangents into Jones vectors after the solve.
+  * ``'JONES_DIRECT'`` – run the Newton refinement directly in Jones space
+  (fmmax/S4 style).
+  
+  Default is ``'POL'``.
 - `fff_fourier_weight` _float_ - Weight applied to the Fourier-domain loss
   during tangent field refinement. Default is ``1e-2``.
 - `fff_smoothness_weight` _float_ - Weight applied to the smoothness loss
@@ -687,8 +679,8 @@ from torchrdit.constants import Algorithm, Precision
 solver = create_solver(
     algorithm=Algorithm.RDIT,
     lam0=np.array([1.55]),  # Wavelength (μm)
-    rdim=[512, 512],        # Real space resolution
-    kdim=[5, 5],            # Fourier space harmonics
+    grids=[512, 512],        # Real space resolution
+    harmonics=[5, 5],            # Fourier space harmonics
     device='cuda'           # Use GPU acceleration
 )
 ```
@@ -702,8 +694,8 @@ solver = create_solver(
     lam0=np.array([0.8, 1.0, 1.2]),  # Multiple wavelengths
     t1=torch.tensor([[1.0, 0.0]]),
     t2=torch.tensor([[0.5, 0.866]]),  # 60-degree lattice
-    rdim=[1024, 1024],
-    kdim=[7, 7],
+    grids=[1024, 1024],
+    harmonics=[7, 7],
     device='cuda'
 )
 ```
@@ -714,8 +706,8 @@ solver = create_solver(
 solver = create_solver(
     algorithm=Algorithm.RDIT,
     lam0=np.array([1.55]),
-    rdim=[512, 512],
-    kdim=[7, 7],
+    grids=[512, 512],
+    harmonics=[7, 7],
     device='cuda'
 )
 
@@ -756,7 +748,7 @@ print(f"Best angle: {sources[best_idx]['theta'] * 180/np.pi:.1f}°")
   To optimize memory usage and performance:
   1. Use the R-DIT algorithm (default) for inverse design applications
   2. Use GPU acceleration (device='cuda') when available
-  3. Adjust rdim and kdim based on required accuracy and available memory
+  3. Adjust grids and harmonics based on required accuracy and available memory
   4. Use single precision for large simulations where memory is a concern
   
   Keywords:
@@ -766,7 +758,7 @@ print(f"Best angle: {sources[best_idx]['theta'] * 180/np.pi:.1f}°")
 
 <a id="torchrdit.solver.softplus_protect_kz"></a>
 
-#### softplus\_protect\_kz
+### softplus\_protect\_kz
 
 ```python
 def softplus_protect_kz(kz, min_kz=1e-3, beta=100)
@@ -796,7 +788,7 @@ for protecting against numerical instabilities when kz values are very small.
 
 <a id="torchrdit.solver.softplus_clamp_min"></a>
 
-#### softplus\_clamp\_min
+### softplus\_clamp\_min
 
 ```python
 def softplus_clamp_min(x, min_val, beta=100)
@@ -845,8 +837,8 @@ using Fourier-based methods.
 - `tint` _torch.dtype_ - Integer data type used for calculations.
 - `nfloat` _np.dtype_ - NumPy float data type for compatibility.
 - `device` _Union[str, torch.device]_ - Device used for computation ('cpu' or 'cuda').
-- `rdim` _List[int]_ - Dimensions in real space [height, width].
-- `kdim` _List[int]_ - Dimensions in k-space [kheight, kwidth].
+- `grids` _List[int]_ - Dimensions in real space [height, width].
+- `harmonics` _List[int]_ - Dimensions in k-space [kx, ky].
 - `shapes` _ShapeGenerator_ - Generator for creating shape masks.
 - `layer_manager` _LayerManager_ - Manager for handling material layers.
   
@@ -871,8 +863,8 @@ from torchrdit.utils import create_material
 solver = create_solver(
     algorithm=Algorithm.RCWA,
     lam0=np.array([1.55]),
-    rdim=[512, 512],
-    kdim=[5, 5]
+    grids=[512, 512],
+    harmonics=[5, 5]
 )
 
 # Add materials and layers
@@ -892,7 +884,7 @@ result = solver.solve(source) # SolverResults object
 
 <a id="torchrdit.solver.FourierBaseSolver.algorithm"></a>
 
-#### algorithm
+### FourierBaseSolver.algorithm
 
 ```python
 @property
@@ -903,7 +895,7 @@ Get the current algorithm.
 
 <a id="torchrdit.solver.FourierBaseSolver.algorithm"></a>
 
-#### algorithm
+### FourierBaseSolver.algorithm
 
 ```python
 @algorithm.setter
@@ -914,7 +906,7 @@ Set the algorithm to use.
 
 <a id="torchrdit.solver.FourierBaseSolver.lam0"></a>
 
-#### lam0
+### FourierBaseSolver.lam0
 
 ```python
 @property
@@ -929,7 +921,7 @@ Get the free space wavelength array.
 
 <a id="torchrdit.solver.FourierBaseSolver.lam0"></a>
 
-#### lam0
+### FourierBaseSolver.lam0
 
 ```python
 @lam0.setter
@@ -949,7 +941,7 @@ Set the free space wavelength array.
 
 <a id="torchrdit.solver.FourierBaseSolver.add_source"></a>
 
-#### add\_source
+### FourierBaseSolver.add\_source
 
 ```python
 def add_source(theta: float,
@@ -1058,7 +1050,7 @@ source = solver.add_source(
 
 <a id="torchrdit.solver.FourierBaseSolver.solve"></a>
 
-#### solve
+### FourierBaseSolver.solve
 
 ```python
 def solve(source: Union[dict, List[dict]], **kwargs) -> SolverResults
@@ -1118,8 +1110,8 @@ that have requires_grad=True.
   For single source (dict input):
   - reflection: Shape (n_freqs) - Total reflection efficiency
   - transmission: Shape (n_freqs) - Total transmission efficiency
-  - reflection_diffraction: Shape (n_freqs, kdim[0], kdim[1])
-  - transmission_diffraction: Shape (n_freqs, kdim[0], kdim[1])
+  - reflection_diffraction: Shape (n_freqs, harmonics[0], harmonics[1])
+  - transmission_diffraction: Shape (n_freqs, harmonics[0], harmonics[1])
   - reflection_field: FieldComponents with E-field Fourier coefficients (S_x, S_y, S_z)
   and H-field Fourier coefficients (U_x, U_y, U_z)
   - transmission_field: FieldComponents with E and H Fourier coefficients
@@ -1131,8 +1123,8 @@ that have requires_grad=True.
   For batched sources (list input):
   - reflection: Shape (n_sources, n_freqs)
   - transmission: Shape (n_sources, n_freqs)
-  - reflection_diffraction: Shape (n_sources, n_freqs, kdim[0], kdim[1])
-  - transmission_diffraction: Shape (n_sources, n_freqs, kdim[0], kdim[1])
+  - reflection_diffraction: Shape (n_sources, n_freqs, harmonics[0], harmonics[1])
+  - transmission_diffraction: Shape (n_sources, n_freqs, harmonics[0], harmonics[1])
   - Indexing: results[i] returns SolverResults for source i
   - Iteration: for result in results iterates over sources
   - Batched methods: find_optimal_source(), get_parameter_sweep_data()
@@ -1296,7 +1288,7 @@ for i in range(100):
 
 <a id="torchrdit.solver.FourierBaseSolver.update_er_with_mask"></a>
 
-#### update\_er\_with\_mask
+### FourierBaseSolver.update\_er\_with\_mask
 
 ```python
 def update_er_with_mask(mask: torch.Tensor,
@@ -1336,7 +1328,7 @@ The method supports two approaches for computing the Toeplitz matrix:
 - `mask` - Binary tensor representing the pattern mask, where:
   - 1 (or True) represents the foreground material (from the layer's material)
   - 0 (or False) represents the background material (specified by bg_material)
-  The mask dimensions must match the real-space dimensions (rdim) of the solver.
+  The mask dimensions must match the real-space dimensions (grids) of the solver.
   
   For inverse design applications, this mask can be a differentiable tensor
   generated from a neural network or optimization process.
@@ -1442,7 +1434,7 @@ for i in range(100):
 
 <a id="torchrdit.solver.FourierBaseSolver.update_layer_thickness"></a>
 
-#### update\_layer\_thickness
+### FourierBaseSolver.update\_layer\_thickness
 
 ```python
 def update_layer_thickness(layer_index: int, thickness: torch.Tensor)
@@ -1488,7 +1480,7 @@ solver.update_layer_thickness(layer_index=0, thickness=thickness_param)
 
 <a id="torchrdit.solver.FourierBaseSolver.expand_dims"></a>
 
-#### expand\_dims
+### FourierBaseSolver.expand\_dims
 
 ```python
 def expand_dims(mat: torch.Tensor) -> Optional[torch.Tensor]
@@ -1544,8 +1536,8 @@ Applications include:
     # Create an RCWA solver
     solver = RCWASolver(
         lam0=np.array([1.55]),  # Wavelength in micrometers
-        rdim=[512, 512],        # Real space dimensions
-        kdim=[5, 5],            # Fourier space dimensions
+        grids=[512, 512],        # Real space dimensions
+        harmonics=[5, 5],            # Fourier space dimensions
         device='cuda'           # Use GPU acceleration
     )
 
@@ -1561,7 +1553,7 @@ Applications include:
 
 <a id="torchrdit.solver.RCWASolver.set_rdit_order"></a>
 
-#### set\_rdit\_order
+### RCWASolver.set\_rdit\_order
 
 ```python
 def set_rdit_order(rdit_order)
@@ -1619,8 +1611,8 @@ The R-DIT method:
 - `lam0` - Wavelength(s) to simulate, in the specified length unit. Default is [1.0].
 - `lengthunit` - The unit of length used in the simulation (e.g., 'um', 'nm').
   Default is 'um' (micrometers).
-- `rdim` - Dimensions of the real space grid [height, width]. Default is [512, 512].
-- `kdim` - Dimensions in Fourier space [kheight, kwidth]. Default is [3, 3].
+- `grids` - Dimensions of the real space grid [height, width]. Default is [512, 512].
+- `harmonics` - Dimensions in Fourier space [kx, ky]. Default is [3, 3].
   This determines the number of Fourier harmonics used.
 - `materiallist` - List of materials used in the simulation. Default is empty list.
 - `t1` - First lattice vector. Default is [[1.0, 0.0]] (unit vector in x-direction).
@@ -1646,8 +1638,8 @@ The R-DIT method:
 # Create an R-DIT solver
 solver = RDITSolver(
     lam0=np.array([1.55]),  # Wavelength in micrometers
-    rdim=[512, 512],        # Real space dimensions
-    kdim=[5, 5],            # Fourier space dimensions
+    grids=[512, 512],        # Real space dimensions
+    harmonics=[5, 5],            # Fourier space dimensions
     device='cuda'           # Use GPU acceleration
 )
 
@@ -1674,7 +1666,7 @@ result = solver.solve(source) # SolverResults object
 
 <a id="torchrdit.solver.RDITSolver.set_rdit_order"></a>
 
-#### set\_rdit\_order
+### RDITSolver.set\_rdit\_order
 
 ```python
 def set_rdit_order(rdit_order: int) -> None
@@ -1722,7 +1714,7 @@ solver.set_rdit_order(2)  # Set R-DIT order to 2 for good balance
 
 <a id="torchrdit.solver.get_solver_builder"></a>
 
-#### get\_solver\_builder
+### get\_solver\_builder
 
 ```python
 def get_solver_builder()
@@ -1762,7 +1754,7 @@ solver = (builder
 
 <a id="torchrdit.solver.create_solver_from_builder"></a>
 
-#### create\_solver\_from\_builder
+### create\_solver\_from\_builder
 
 ```python
 def create_solver_from_builder(

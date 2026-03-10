@@ -40,7 +40,7 @@ class MockAlgorithm(SolverAlgorithm):
         """
         return "MOCK"
     
-    def solve_nonhomo_layer(self, layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, kdim, k_0, **kwargs):
+    def solve_nonhomo_layer(self, layer_thickness, p_mat_i, q_mat_i, mat_w0, mat_v0, harmonics, k_0, **kwargs):
         """Mock implementation of the non-homogeneous layer solver.
         
         This method records the calls and parameters for verification in tests,
@@ -53,7 +53,7 @@ class MockAlgorithm(SolverAlgorithm):
             q_mat_i: Q matrix for the layer
             mat_w0: W0 matrix
             mat_v0: V0 matrix
-            kdim: Dimensions in k-space
+            harmonics: Dimensions in k-space
             k_0: Wave number
             **kwargs: Additional parameters
             
@@ -67,7 +67,7 @@ class MockAlgorithm(SolverAlgorithm):
             'q_mat_i': q_mat_i,
             'mat_w0': mat_w0,
             'mat_v0': mat_v0,
-            'kdim': kdim,
+            'harmonics': harmonics,
             'k_0': k_0,
             'kwargs': kwargs
         }
@@ -106,8 +106,8 @@ class TestStrategyPattern(unittest.TestCase):
         self.solver = FourierBaseSolver(
             lam0=self.lam0,
             lengthunit='um',
-            rdim=[16, 16],
-            kdim=[3, 3],
+            grids=[16, 16],
+            harmonics=[3, 3],
             precision=Precision.SINGLE,
             device='cpu'
         )
@@ -154,15 +154,15 @@ class TestStrategyPattern(unittest.TestCase):
         rcwa_solver = RCWASolver(
             lam0=self.lam0,
             lengthunit='um',
-            rdim=[16, 16],
-            kdim=[3, 3]
+            grids=[16, 16],
+            harmonics=[3, 3]
         )
         
         rdit_solver = RDITSolver(
             lam0=self.lam0,
             lengthunit='um',
-            rdim=[16, 16],
-            kdim=[3, 3]
+            grids=[16, 16],
+            harmonics=[3, 3]
         )
         
         # Verify correct algorithm types are set
@@ -185,7 +185,7 @@ class TestStrategyPattern(unittest.TestCase):
             q_mat_i=self.q_mat,
             mat_w0=self.w0_mat,
             mat_v0=self.v0_mat,
-            kdim=[3, 3],
+            harmonics=[3, 3],
             k_0=torch.tensor([2.0*np.pi/self.lam0[0]], dtype=torch.float32)
         )
         
@@ -213,15 +213,15 @@ class TestStrategyPattern(unittest.TestCase):
         rcwa_solver = RCWASolver(
             lam0=self.lam0,
             lengthunit='um',
-            rdim=[16, 16],
-            kdim=[3, 3]
+            grids=[16, 16],
+            harmonics=[3, 3]
         )
         
         rdit_solver = RDITSolver(
             lam0=self.lam0,
             lengthunit='um',
-            rdim=[16, 16],
-            kdim=[3, 3]
+            grids=[16, 16],
+            harmonics=[3, 3]
         )
         
         # Save original algorithms
@@ -261,8 +261,8 @@ class TestStrategyPattern(unittest.TestCase):
         solver_without_algo = SolverWithoutAlgorithm(
             lam0=self.lam0,
             lengthunit='um',
-            rdim=[16, 16],
-            kdim=[3, 3],
+            grids=[16, 16],
+            harmonics=[3, 3],
             precision=Precision.SINGLE,
             device='cpu'
         )
@@ -278,7 +278,7 @@ class TestStrategyPattern(unittest.TestCase):
                 q_mat_i=self.q_mat,
                 mat_w0=self.w0_mat,
                 mat_v0=self.v0_mat,
-                kdim=[3, 3],
+                harmonics=[3, 3],
                 k_0=torch.tensor([2.0*np.pi/self.lam0[0]], dtype=torch.float32)
             )
     
@@ -294,16 +294,16 @@ class TestStrategyPattern(unittest.TestCase):
         rcwa_solver = RCWASolver(
             lam0=self.lam0,
             lengthunit='um',
-            rdim=[16, 16],
-            kdim=[3, 3]
+            grids=[16, 16],
+            harmonics=[3, 3]
         )
         
         # Create R-DIT solver with default order
         rdit_solver = RDITSolver(
             lam0=self.lam0,
             lengthunit='um',
-            rdim=[16, 16],
-            kdim=[3, 3]
+            grids=[16, 16],
+            harmonics=[3, 3]
         )
         
         # Set order on both
@@ -388,15 +388,15 @@ class TestAlgorithmDocExamples(unittest.TestCase):
         # Create solver with RCWA algorithm
         rcwa_solver = create_solver(
             algorithm=Algorithm.RCWA,
-            rdim=[32, 32],  # Smaller dimensions for faster tests
-            kdim=[3, 3]
+            grids=[32, 32],  # Smaller dimensions for faster tests
+            harmonics=[3, 3]
         )
         
         # Create solver with RDIT algorithm
         rdit_solver = create_solver(
             algorithm=Algorithm.RDIT,
-            rdim=[32, 32],  # Smaller dimensions for faster tests
-            kdim=[3, 3]
+            grids=[32, 32],  # Smaller dimensions for faster tests
+            harmonics=[3, 3]
         )
         
         # Check which algorithm a solver uses

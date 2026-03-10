@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""
-Documentation generator for TorchRDIT project.
-This script uses pydoc-markdown to generate structured documentation
-based on the configuration in pydoc-markdown.yml.
+"""Generate TorchRDIT wiki pages and API reference material.
+
+This script orchestrates the documentation build for the repository wiki. It
+uses `pydoc-markdown` for API pages, then writes curated overview pages for the
+major TorchRDIT modules so the generated wiki mixes auto-generated reference
+content with hand-authored guides and examples.
 """
 
 import os
 import yaml
 import subprocess
+import shutil
+import tempfile
 from pathlib import Path
 
 def create_material_proxy_page(docs_dir):
-    """Create a MaterialProxy page for the wiki."""
     # First check if the auto-generated API file exists
     api_file = docs_dir / "MaterialProxy-API.md"
 
@@ -62,7 +65,38 @@ si_data = proxy.load_data('Si_data.txt', 'wl-eps', 'um')
 
 # Extract permittivity at specific wavelengths
 wavelengths = np.array([1.3, 1.55, 1.7])
-eps_real, eps_imag = proxy.extract_permittivity(si_data, wavelengths)
+eps1, eps2 = proxy.extract_permittivity(si_data, wavelengths)
+```
+
+### In-memory dispersive samples (λ-ε or λ-nk)
+
+TorchRDIT can also build dispersive materials without file I/O by providing
+in-memory samples at wavelengths in μm.
+
+Inputs may be Python sequences, NumPy arrays, or torch tensors. When torch
+tensors are provided, TorchRDIT converts them to CPU NumPy internally to build
+an interpolation table (no autograd gradients are preserved for these samples).
+
+```python
+from torchrdit.utils import create_material
+
+# In-memory complex epsilon samples (TorchRDIT uses exp(-iωt); lossy Im(ε) < 0).
+# If you provide Im(ε) > 0, values are conjugated internally to match the convention.
+silica = create_material(
+    name="silica_inmem_eps",
+    dielectric_dispersion=True,
+    user_dielectric_wavelengths_um=[1.0, 1.5, 2.0],
+    user_dielectric_eps=[2.10-0.00j, 2.08-0.00j, 2.05-0.00j],
+)
+
+# In-memory n/k samples (k defaults to 0 if omitted)
+silicon = create_material(
+    name="silicon_inmem_nk",
+    dielectric_dispersion=True,
+    user_dielectric_wavelengths_um=[1.3, 1.55, 1.7],
+    user_dielectric_n=[3.50, 3.48, 3.46],
+    user_dielectric_k=[0.0, 0.0, 0.0],
+)
 ```
 
 ## API Reference
@@ -104,17 +138,63 @@ Please ensure that the module is properly installed and importable.**
             pass
 
 def main():
+    """Build the TorchRDIT documentation wiki.
+
+    The generator loads the `pydoc-markdown` configuration, renders API pages,
+    creates curated markdown guides, and removes temporary files created during
+    the documentation build.
+    """
+
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+
     # Create wiki directory if it doesn't exist
-    wiki_dir = Path("wiki")
+    wiki_dir = script_dir / "wiki"
     wiki_dir.mkdir(exist_ok=True)
 
     # Load configuration
-    with open("pydoc-markdown.yml", "r") as f:
+    config_path = script_dir / "pydoc-markdown.yml"
+    with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
     # Extract docs directory from config
     docs_dir = Path(config.get("docs_directory", "wiki"))
+    if not docs_dir.is_absolute():
+        docs_dir = script_dir / docs_dir
     docs_dir.mkdir(exist_ok=True)
+
+    # Build a pydoc-markdown-only config (our YAML includes script-only keys like
+    # docs_directory/modules that pydoc-markdown will warn about).
+    pydoc_cfg = {k: v for k, v in config.items() if k in {"loaders", "processors", "renderer"}}
+
+    # Make loader search paths absolute (relative paths are interpreted relative to the
+    # config file location by pydoc-markdown, and we write a temporary config).
+    for loader in pydoc_cfg.get("loaders", []) or []:
+        if isinstance(loader, dict) and loader.get("type") == "python":
+            search_path = loader.get("search_path") or []
+            abs_paths = []
+            for p in search_path:
+                p_path = Path(p)
+                abs_paths.append(str((script_dir / p_path).resolve()) if not p_path.is_absolute() else str(p_path))
+            loader["search_path"] = abs_paths
+
+    # pydoc-markdown uses YAPF to format signatures. With type annotations,
+    # formatting fails if signatures omit the leading "def".
+    pydoc_cfg.setdefault("renderer", {})
+    pydoc_cfg["renderer"]["signature_with_def"] = True
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False, dir=str(script_dir)) as tmp_f:
+        yaml.safe_dump(pydoc_cfg, tmp_f)
+        pydoc_cfg_path = Path(tmp_f.name)
+
+    # Find the pydoc-markdown CLI.
+    # - Prefer PATH (system install).
+    # - Fall back to repo venv (.venv/bin/pydoc-markdown).
+    pydoc_markdown = shutil.which("pydoc-markdown")
+    if pydoc_markdown is None:
+        venv_candidate = repo_root / ".venv" / "bin" / "pydoc-markdown"
+        if venv_candidate.exists():
+            pydoc_markdown = str(venv_candidate)
 
     # Remove all existing files in the wiki directory
     print("Cleaning wiki directory...")
@@ -133,11 +213,24 @@ def main():
         print(f"Generating documentation for {module_name}...")
 
         # Run pydoc-markdown for this module
-        cmd = ["pydoc-markdown", "-m", module_name, "--render-toc"]
+        if pydoc_markdown is None:
+            cmd = None
+        else:
+            # Pass the config file so loader search paths and renderer settings are applied.
+            cmd = [pydoc_markdown, str(pydoc_cfg_path), "-m", module_name, "--render-toc"]
 
         try:
             with open(output_file, "w") as f:
-                result = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, text=True)
+                if cmd is None:
+                    result = subprocess.CompletedProcess(args=[], returncode=1, stderr="pydoc-markdown not found")
+                else:
+                    result = subprocess.run(
+                        cmd,
+                        stdout=f,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        cwd=str(script_dir),
+                    )
 
             if result.returncode != 0:
                 print(f"  -> Warning: Failed to generate documentation for {module_name}")
@@ -147,7 +240,10 @@ def main():
 
 **Note: Documentation generation for this module failed.**
 
-This could be due to import errors or other issues. Please ensure the module is properly installed and importable.
+This could be due to import errors or missing tools.
+
+- Ensure `pydoc-markdown` is installed and available.
+- If you're using the repository venv, run this script via `.venv/bin/python torchrdit/generate_docs.py`.
 
 ## Module Structure
 
@@ -178,7 +274,7 @@ Please check that the module exists and is properly installed.
     create_getting_started_guide(docs_dir)
 
     # Create an Examples page
-    create_examples_page(docs_dir)
+    create_examples_page(docs_dir, script_dir=script_dir, repo_root=repo_root)
 
     # Create a Shapes page
     create_shapes_page(docs_dir)
@@ -209,6 +305,12 @@ Please check that the module exists and is properly installed.
 
     print("Documentation generation complete!")
 
+    # Clean up the temporary pydoc-markdown config file.
+    try:
+        pydoc_cfg_path.unlink()
+    except Exception:
+        pass
+
 def create_home_page(docs_dir):
     """Create the Home page for the wiki."""
     with open(docs_dir / "Home.md", "w") as f:
@@ -234,6 +336,7 @@ Welcome to the `TorchRDIT` documentation. `TorchRDIT` is an advanced software pa
 
 - [API Overview](API-Overview)
 - [Algorithm Module](Algorithm) - Implementation of electromagnetic solvers
+- [Algorithm Module](Algorithm) - Implementation of electromagnetic solvers
 - [Builder Module](Builder) - Fluent API for creating simulations
 - [Cell Module](Cell) - Cell geometry definitions
 - [Constants Module](Constants) - Physical constants and enumerations
@@ -257,7 +360,7 @@ TorchRDIT now includes industry-standard GDS file format support:
 - Batch processing for multiple designs
 - See the [GDS](GDS) page for details
 
-## New in v0.1.27: Unified Interface & Field APIs
+## New in v0.1.27: Unified Field APIs
 
 TorchRDIT v0.1.27 introduces major improvements:
 - **Unified SolverResults**: Single class handles both single and batched sources
@@ -272,7 +375,7 @@ Recent features include:
 
 ## Examples
 
-TorchRDIT comes with several example files in the `examples/` directory
+TorchRDIT comes with several example files in the `torchrdit/examples/` directory
 
 For more detailed explanations of each example, see the [Examples](Examples) page.
 """)
@@ -293,6 +396,7 @@ def create_sidebar(docs_dir):
     - [Performance](Examples#demo-04-performance-benchmark)
 - API Reference
   - [Overview](API-Overview)
+  - [Algorithm](Algorithm)
   - [Algorithm](Algorithm)
   - [Builder](Builder)
   - [Cell](Cell)
@@ -322,7 +426,7 @@ This guide will help you set up and run your first electromagnetic simulation wi
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.10+
 - PyTorch 1.9+
 - NumPy
 - Matplotlib (for visualization)
@@ -343,7 +447,14 @@ pip install -e .
 
 ## Basic Usage
 
-TorchRDIT provides a builder pattern for configuring and running simulations. Here's a simple example:
+TorchRDIT provides a builder API for constructing and running electromagnetic simulations.
+
+### Builder API
+
+
+### Builder API (lower-level)
+
+Here's a simple example using the builder pattern:
 
 ```python
 import torch
@@ -448,6 +559,10 @@ device.update_er_with_mask(mask=circle_mask, layer_index=0)
 
 One of the key features of TorchRDIT is its support for automatic differentiation through PyTorch:
 
+Note: some parts of the pipeline are not differentiable. For example, in-memory
+dispersive material samples are converted to NumPy and interpolated outside of
+torch, so gradients are not available with respect to those samples.
+
 ```python
 # Make mask parameters differentiable
 mask.requires_grad = True
@@ -468,28 +583,51 @@ For more detailed examples, see the [Examples](Examples) section.
 """)
         print("  -> Created Getting-Started.md")
 
-def create_examples_page(docs_dir):
-    """Create the Examples page for the wiki."""
-    # Get the examples directory
-    examples_dir = Path("examples")
+def create_examples_page(docs_dir, *, script_dir, repo_root):
+    """Create the Examples wiki page from discovered repository examples.
 
-    # Check if examples directory exists
-    examples_exists = examples_dir.exists()
+    Args:
+        docs_dir: Directory where generated wiki markdown files are written.
+        script_dir: Directory containing this documentation generator script.
+        repo_root: Repository root used to derive stable example paths.
+    """
+    # Prefer the package examples directory but keep legacy fallbacks.
+    candidate_dirs = [
+        script_dir / "examples",
+        repo_root / "examples",
+        repo_root / "src" / "examples",
+    ]
+    examples_dirs = []
+    seen_dirs = set()
+    for candidate in candidate_dirs:
+        if candidate.is_dir():
+            resolved = candidate.resolve()
+            if resolved not in seen_dirs:
+                seen_dirs.add(resolved)
+                examples_dirs.append(candidate)
+
     example_files = []
+    seen_files = set()
+    for examples_dir in examples_dirs:
+        for example_file in sorted(examples_dir.rglob("*.py")):
+            if not example_file.is_file():
+                continue
+            resolved = example_file.resolve()
+            if resolved in seen_files:
+                continue
+            seen_files.add(resolved)
+            try:
+                rel_path = resolved.relative_to(repo_root.resolve())
+            except ValueError:
+                rel_path = example_file.name
+            example_files.append((Path(rel_path), example_file))
 
-    # If examples not found in root, try src directory structure
-    if not examples_exists:
-        examples_dir = Path("src/examples")
-        examples_exists = examples_dir.exists()
-
-    if examples_exists:
-        # Find all Python example files
-        example_files = sorted([f for f in examples_dir.glob("*.py") if f.is_file()])
+    examples_found = len(example_files) > 0
 
     # Create base examples content
     content = """# TorchRDIT Examples
 
-This page contains examples showing how to use TorchRDIT for common electromagnetic simulation tasks. The official repository includes many examples in the `examples/` folder that demonstrate different aspects of the library.
+This page contains examples showing how to use TorchRDIT for common electromagnetic simulation tasks. The official repository includes many examples in the `torchrdit/examples/` folder that demonstrate different aspects of the library.
 
 ## Example Categories
 
@@ -519,7 +657,7 @@ The examples are organized into several categories:
 To run any of the examples, navigate to the repository root and run:
 
 ```bash
-python examples/example_gmrf_variable_optimize.py
+uv run python torchrdit/examples/example_gmrf_variable_optimize.py
 ```
 
 Most examples generate visualization outputs automatically, which are saved to the same directory. The examples use relative imports, so they must be run from the repository root.
@@ -532,7 +670,7 @@ The examples require the following dependencies:
 - Matplotlib
 - tqdm (for progress bars in optimization examples)
 
-Some examples also require the data files included in the `examples` directory:
+Some examples also require the data files included in the `torchrdit/examples` directory:
 - `Si_C-e.txt` - Silicon Carbide permittivity data
 - `SiO2-e.txt` - Silicon Dioxide permittivity data
 
@@ -621,17 +759,27 @@ device.update_er_with_mask(mask=mask, layer_index=0)
 ### Dispersive Materials
 
 ```python
-# Creating materials with dispersion from data files
-material_sic = create_material(
-    name='SiC',
-    dielectric_dispersion=True,
-    user_dielectric_file='Si_C-e.txt',
-    data_format='freq-eps',
-    data_unit='thz'
-)
+# Dispersive materials are typically specified via `dielectric_file` in a config.
+# When loading a JSON config file, relative `dielectric_file` paths resolve automatically:
+# config directory → caller script directory → current working directory.
+#
+# Recommended usage (portable, no `base_path` required):
+from torchrdit.builder import SolverBuilder
 
-# Visualize fitted permittivity
-display_fitted_permittivity(device, fig_ax=axes)
+config = {
+    "algorithm": "RCWA",
+    "wavelengths": [1.55],
+    "grids": [64, 64],
+    "harmonics": [3, 3],
+    "materials": {
+        "SiC": {"dielectric_dispersion": True, "dielectric_file": "Si_C-e.txt", "data_format": "freq-eps", "data_unit": "thz"},
+    },
+    "layers": [{"material": "SiC", "thickness": 0.1, "is_homogeneous": True}],
+}
+builder = SolverBuilder().from_config(config)
+solver = builder.build()
+src = solver.add_source(theta=0.0, phi=0.0, pte=1.0, ptm=0.0)
+results = solver.solve(src)
 ```
 
 ### Automatic Differentiation
@@ -653,25 +801,22 @@ print(f"The gradient with respect to the mask is {torch.mean(mask.grad)}")
 ### Optimization
 
 ```python
-# Define an objective function
-def objective_GMRF(dev, src, radius):
-    # ... calculation logic
-    return loss
+import torch
+from torchrdit.solver import get_solver_builder
 
-# Optimization loop
-for epoch in trange(num_epochs):
-    # Zero gradients
-    optimizer.zero_grad()
+# Use builder API for optimization
+# Enable gradient tracking on parameters
+mask.requires_grad = True
 
-    # Forward pass
-    loss = objective_GMRF(dev, src, radius)
+# Forward solve
+    data = device.solve(src)
 
-    # Backward pass
-    loss.backward()
+    # Compute loss and backward pass
+loss = -torch.sum(data.transmission[0])
+loss.backward()
 
-    # Update parameters
-    optimizer.step()
-```
+# Access gradients for optimization
+print(f"The gradient with respect to the mask is {torch.mean(mask.grad)}")
 
 These examples demonstrate the key capabilities of TorchRDIT, including differentiable simulation, optimization, and support for complex geometries and materials.
 
@@ -680,9 +825,9 @@ These examples demonstrate the key capabilities of TorchRDIT, including differen
 """
 
     # If examples directory exists, add each example with a code block
-    if examples_exists and example_files:
-        for example_file in example_files:
-            example_name = example_file.stem
+    if examples_found:
+        for example_rel_path, example_file in example_files:
+            example_name = str(example_rel_path).replace("\\", "/")
             example_content = ""
 
             # Read the file content
@@ -711,7 +856,7 @@ These examples demonstrate the key capabilities of TorchRDIT, including differen
             except Exception as e:
                 content += f"\n### {example_name}\n\n**Error loading example: {str(e)}**\n"
     else:
-        content += "\n**No example files found in the examples directory.**\n"
+        content += "\n**No example files found in expected examples directories (`torchrdit/examples`, `examples`, `src/examples`).**\n"
 
     with open(docs_dir / "Examples.md", "w") as f:
         f.write(content)
@@ -743,7 +888,7 @@ from torchrdit.solver import create_solver
 from torchrdit.constants import Algorithm
 
 # Create a solver
-solver = create_solver(algorithm=Algorithm.RDIT, rdim=[512, 512], kdim=[7, 7])
+solver = create_solver(algorithm=Algorithm.RDIT, grids=[512, 512], harmonics=[7, 7])
 
 # Create a shape generator
 shape_gen = ShapeGenerator.from_solver(solver)
@@ -860,7 +1005,7 @@ YO, XO = torch.meshgrid(coords, coords, indexing="ij")
 generator = TangentFieldGenerator(
     lattice_t1=torch.tensor([1.0, 0.0], dtype=mask.dtype, device=device),
     lattice_t2=torch.tensor([0.0, 1.0], dtype=mask.dtype, device=device),
-    kdim=(9, 9),
+    harmonics=(9, 9),
     fourier_loss_weight=1e-2,
     smoothness_loss_weight=1e-3,
     steps=2,
@@ -1011,9 +1156,9 @@ Organizes the x, y, and z components of electromagnetic fields:
 @dataclass
 class FieldComponents:
     \"\"\"Field components in x, y, z directions\"\"\"
-    x: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
-    y: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
-    z: torch.Tensor  # (n_freqs, kdim[0], kdim[1])
+    x: torch.Tensor  # (n_freqs, harmonics[0], harmonics[1])
+    y: torch.Tensor  # (n_freqs, harmonics[0], harmonics[1])
+    z: torch.Tensor  # (n_freqs, harmonics[0], harmonics[1])
 ```
 
 ### WaveVectors
@@ -1024,11 +1169,11 @@ Stores wave vector components for the simulation:
 @dataclass
 class WaveVectors:
     \"\"\"Wave vector components for the simulation\"\"\"
-    kx: torch.Tensor  # (kdim[0], kdim[1])
-    ky: torch.Tensor  # (kdim[0], kdim[1])
+    kx: torch.Tensor  # (harmonics[0], harmonics[1])
+    ky: torch.Tensor  # (harmonics[0], harmonics[1])
     kinc: torch.Tensor  # (n_freqs, 3)
-    kzref: torch.Tensor  # (n_freqs, kdim[0]*kdim[1])
-    kztrn: torch.Tensor  # (n_freqs, kdim[0]*kdim[1])
+    kzref: torch.Tensor  # (n_freqs, harmonics[0]*harmonics[1])
+    kztrn: torch.Tensor  # (n_freqs, harmonics[0]*harmonics[1])
 ```
 
 ### SolverResults
@@ -1268,7 +1413,7 @@ from torchrdit.constants import Algorithm
 import numpy as np
 
 # Create solver
-solver = create_solver(algorithm=Algorithm.RDIT, rdim=[512, 512], kdim=[7, 7])
+solver = create_solver(algorithm=Algorithm.RDIT, grids=[512, 512], harmonics=[7, 7])
 
 # Create multiple sources for angle sweep
 deg = np.pi / 180
@@ -1434,10 +1579,10 @@ loss.backward()  # Computes gradients for all sources
 ## Examples
 
 For complete examples, see:
-- `examples/source_batching_basic.py` - Basic usage patterns
-- `examples/source_batching_advanced.py` - Optimization examples
-- `examples/source_batching_performance.py` - Performance benchmarks
-- `examples/example_source_batching.py` - Comprehensive demos
+- `torchrdit/examples/source_batching_basic.py` - Basic usage patterns
+- `torchrdit/examples/source_batching_advanced.py` - Optimization examples
+- `torchrdit/examples/source_batching_performance.py` - Performance benchmarks
+- `torchrdit/examples/example_source_batching.py` - Comprehensive demos
 
 """
 
@@ -1515,7 +1660,7 @@ from torchrdit.shapes import ShapeGenerator
 from torchrdit.gds import mask_to_gds
 
 # Create shape generator and mask
-shape_gen = ShapeGenerator(X, Y, rdim)
+shape_gen = ShapeGenerator(X, Y, grids)
 mask = shape_gen.generate_circle_mask(center=(0, 0), radius=0.5)
 
 # Export to GDS
@@ -1628,12 +1773,13 @@ This directory contains automatically generated documentation for the TorchRDIT 
 The documentation is generated automatically using pydoc-markdown. To update it:
 
 1. Ensure your docstrings in the code are up-to-date
-2. Run the documentation generator script: `python generate_docs.py`
+2. Run the documentation generator script: `uv run python torchrdit/generate_docs.py`
 3. The updated documentation will be created in this directory
 
 ## Documentation Structure
 
 - **API-Overview.md**: Overview of the entire API
+- **Algorithm.md**: Documentation for the algorithm module
 - **Algorithm.md**: Documentation for the algorithm module
 - **Builder.md**: Documentation for the builder module
 - **Cell.md**: Documentation for the cell module

@@ -8,7 +8,7 @@
 
 <a id="torchrdit.viz"></a>
 
-# torchrdit.viz
+# Module torchrdit.viz
 
 Visualization module for TorchRDIT electromagnetic simulations.
 
@@ -41,7 +41,7 @@ Keywords:
 
 <a id="torchrdit.viz.plot2d"></a>
 
-#### plot2d
+### plot2d
 
 ```python
 def plot2d(data: Any,
@@ -129,7 +129,7 @@ plt.show()
 
 <a id="torchrdit.viz.plot_layer"></a>
 
-#### plot\_layer
+### plot\_layer
 
 ```python
 def plot_layer(sim,
@@ -197,7 +197,7 @@ plt.show()
 
 <a id="torchrdit.viz.display_fitted_permittivity"></a>
 
-#### display\_fitted\_permittivity
+### display\_fitted\_permittivity
 
 ```python
 def display_fitted_permittivity(sim, fig_ax=None)
@@ -253,8 +253,8 @@ solver = create_solver(
     algorithm=Algorithm.RDIT,
     lam0=[1.55],
     lengthunit='um',
-    rdim=[512, 512],
-    kdim=[5, 5],
+    grids=[512, 512],
+    harmonics=[5, 5],
     device='cpu'
 )
 gold = create_material(name='gold', dielectric_dispersion=True,
@@ -279,7 +279,7 @@ plt.show()
 
 <a id="torchrdit.viz.plot_cross_section"></a>
 
-#### plot\_cross\_section
+### plot\_cross\_section
 
 ```python
 def plot_cross_section(sim,
@@ -359,7 +359,7 @@ import torch
 import matplotlib.pyplot as plt
 
 # Create a solver with layered structure
-solver = create_solver(algorithm=Algorithm.RCWA, lam0=[1.55], rdim=[256, 256])
+solver = create_solver(algorithm=Algorithm.RCWA, lam0=[1.55], grids=[256, 256])
 
 # Add materials
 silicon = create_material(name="silicon", permittivity=11.7)

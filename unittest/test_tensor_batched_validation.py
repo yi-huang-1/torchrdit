@@ -19,8 +19,8 @@ class TestBatchedValidation:
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=lam0,
-            rdim=[256, 256],  # Smaller for faster tests
-            kdim=[3, 3],
+            grids=[256, 256],  # Smaller for faster tests
+            harmonics=[3, 3],
             device="cpu",
             precision=Precision.SINGLE
         )
@@ -212,10 +212,10 @@ class TestBatchedValidation:
         solver.add_layer(material_name="Si", thickness=torch.tensor(0.3), is_homogeneous=False)
         
         # Create a simple pattern manually
-        pattern = torch.zeros(solver.rdim[0], solver.rdim[1], dtype=torch.float32)
+        pattern = torch.zeros(solver.grids[0], solver.grids[1], dtype=torch.float32)
         # Create a square in the center
-        center_x, center_y = solver.rdim[0] // 2, solver.rdim[1] // 2
-        size = min(solver.rdim[0], solver.rdim[1]) // 4
+        center_x, center_y = solver.grids[0] // 2, solver.grids[1] // 2
+        size = min(solver.grids[0], solver.grids[1]) // 4
         pattern[center_x-size:center_x+size, center_y-size:center_y+size] = 1.0
         pattern = pattern.requires_grad_(True)
         

@@ -30,8 +30,8 @@ class TestBatchedKincCalculation:
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=np.linspace(0.8, 1.2, n_freqs),
-            rdim=[256, 256],
-            kdim=[3, 3],
+            grids=[256, 256],
+            harmonics=[3, 3],
             t1=torch.tensor([[1.0, 0.0]]),
             t2=torch.tensor([[0.0, 1.0]]),
             device="cpu",

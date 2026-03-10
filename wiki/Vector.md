@@ -36,7 +36,7 @@ YO, XO = torch.meshgrid(coords, coords, indexing="ij")
 generator = TangentFieldGenerator(
     lattice_t1=torch.tensor([1.0, 0.0], dtype=mask.dtype, device=device),
     lattice_t2=torch.tensor([0.0, 1.0], dtype=mask.dtype, device=device),
-    kdim=(9, 9),
+    harmonics=(9, 9),
     fourier_loss_weight=1e-2,
     smoothness_loss_weight=1e-3,
     steps=2,
@@ -348,6 +348,39 @@ def compute(mask: torch.Tensor,
 
 Compute tangent fields for the requested scheme.
 
+**Arguments**:
+
+- `mask` _torch.Tensor_ - Pattern mask whose gradient informs the tangent solve.
+  The tensor must be two-dimensional and match ``XO``/``YO``.
+- `XO` _torch.Tensor_ - X-coordinate grid aligned with ``mask``.
+- `YO` _torch.Tensor_ - Y-coordinate grid aligned with ``mask``.
+- `scheme` _str_ - Name of the Fast Fourier Factorization tangent scheme. Supported
+  values are:
+  
+  * ``"POL"`` – polarization-preserving tangents scaled by the global
+  maximum magnitude. Use this when downstream code expects the original
+  Newton update with only global normalization.
+  * ``"NORMAL"`` – elementwise unit vectors obtained by normalizing each
+  pixel independently. This is appropriate when the FFF backend assumes
+  pointwise unit tangents.
+  * ``"JONES"`` – converts the refined tangents into Jones vectors after
+  the Newton solve, mirroring the TE/TM decomposition used in S4.
+  * ``"JONES_DIRECT"`` – runs the Newton solve directly in Jones space,
+  matching fmmax/S4 style formulations where the optimizer works on the
+  Jones representation from the outset.
+- `fourier_loss_weight` _float | None_ - Optional override for the Fourier-domain
+  regularization weight. Defaults to the value configured on construction.
+- `smoothness_loss_weight` _float | None_ - Optional override for the spatial
+  smoothness regularizer. Defaults to the construction-time value.
+- `steps` _int | None_ - Number of Newton iterations to execute. Falls back to the
+  default configured for the generator when ``None``.
+  
+
+**Returns**:
+
+  Tuple[torch.Tensor, torch.Tensor]: Tangent field components ``(tx, ty)``
+  corresponding to the requested scheme.
+
 <a id="torchrdit.vector.compute_tangent_field"></a>
 
 #### compute\_tangent\_field
@@ -358,7 +391,7 @@ def compute_tangent_field(mask: torch.Tensor,
                           YO: torch.Tensor,
                           lattice_t1: torch.Tensor,
                           lattice_t2: torch.Tensor,
-                          kdim: Tuple[int, int],
+                          harmonics: Tuple[int, int],
                           *,
                           scheme: str = "POL",
                           fourier_loss_weight: float = 1e-2,
@@ -367,4 +400,28 @@ def compute_tangent_field(mask: torch.Tensor,
 ```
 
 Compute tangent fields via ``TangentFieldGenerator``.
+
+**Arguments**:
+
+- `mask` _torch.Tensor_ - Two-dimensional mask describing the patterned layer.
+- `XO` _torch.Tensor_ - X-coordinate grid with the same shape as ``mask``.
+- `YO` _torch.Tensor_ - Y-coordinate grid with the same shape as ``mask``.
+- `lattice_t1` _torch.Tensor_ - First lattice vector in real space.
+- `lattice_t2` _torch.Tensor_ - Second lattice vector in real space.
+- `harmonics` _Tuple[int, int]_ - Number of Fourier harmonics along each axis.
+- `scheme` _str_ - Tangent vector scheme used for Fast Fourier Factorization.
+  
+  * ``"POL"`` – global-magnitude normalized polarization vectors.
+  * ``"NORMAL"`` – per-pixel unit tangents suitable for geometric FFF models.
+  * ``"JONES"`` – tangents converted to Jones vectors after refinement.
+  * ``"JONES_DIRECT"`` – Newton refinement performed directly in Jones space.
+  
+- `fourier_loss_weight` _float_ - Fourier-domain regularization weight.
+- `smoothness_loss_weight` _float_ - Spatial smoothness penalty weight.
+- `steps` _int_ - Number of Newton iterations to run.
+  
+
+**Returns**:
+
+  Tuple[torch.Tensor, torch.Tensor]: Tangent field components ``(tx, ty)``.
 

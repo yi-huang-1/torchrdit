@@ -1,6 +1,7 @@
 import unittest
 import numpy as np
 from pathlib import Path
+import torch
 
 from torchrdit.constants import Algorithm, Precision
 from torchrdit.utils import create_material
@@ -34,7 +35,7 @@ class TestSolverBuilder(unittest.TestCase):
         # Check that the solver was created properly
         self.assertIsInstance(solver, RCWASolver)
         self.assertAlmostEqual(solver.lam0[0], 1.55, places=6)
-        self.assertEqual(solver.kdim, [5, 5])
+        self.assertEqual(solver.harmonics, [5, 5])
         self.assertIsInstance(solver.algorithm, RCWAAlgorithm)
     
     def test_trn_ref_material_builder(self):
@@ -99,8 +100,8 @@ class TestSolverBuilder(unittest.TestCase):
         valid_config = {
             "algorithm": "RCWA",
             "wavelengths": [1.55],
-            "rdim": [512, 512],
-            "kdim": [3, 3]
+            "grids": [512, 512],
+            "harmonics": [3, 3]
         }
         
         # Test that valid configuration works
@@ -130,8 +131,8 @@ class TestSolverBuilder(unittest.TestCase):
         mixed_case_config = {
             "Algorithm": "RCWA",
             "WaVeLeNgThS": [1.55],
-            "RDIM": [512, 512],
-            "kdim": [3, 3],
+            "GRIDS": [512, 512],
+            "harmonics": [3, 3],
             "DevICE": "cpu"
         }
         
@@ -142,8 +143,8 @@ class TestSolverBuilder(unittest.TestCase):
         # Check that the solver was created properly
         self.assertIsInstance(solver, RCWASolver)
         self.assertAlmostEqual(solver.lam0[0], 1.55, places=6)
-        self.assertEqual(solver.rdim, [512, 512])
-        self.assertEqual(solver.kdim, [3, 3])
+        self.assertEqual(solver.grids, [512, 512])
+        self.assertEqual(solver.harmonics, [3, 3])
         
         # Check that we still get error for unknown keys regardless of case
         invalid_config = mixed_case_config.copy()
@@ -152,6 +153,22 @@ class TestSolverBuilder(unittest.TestCase):
         builder = get_solver_builder()
         with self.assertRaises(ValueError):
             builder.from_config(invalid_config)
+
+    def test_case_insensitive_values(self):
+        """Test that configuration values for algorithm/precision are case-insensitive."""
+        config = {
+            "algorithm": "rdit",
+            "precision": "double",
+            "wavelengths": [1.55],
+            "grids": [16, 16],
+            "harmonics": [3, 3],
+        }
+
+        builder = get_solver_builder()
+        solver = builder.from_config(config).build()
+
+        self.assertIsInstance(solver, RDITSolver)
+        self.assertEqual(solver.tfloat, torch.float64)
     
     def test_trn_ref_materials_config(self):
         """Test the transmission and reflection material configuration."""
@@ -165,8 +182,8 @@ class TestSolverBuilder(unittest.TestCase):
         config = {
             "algorithm": "RCWA",
             "wavelengths": [1.55],
-            "rdim": [512, 512],
-            "kdim": [3, 3],
+            "grids": [512, 512],
+            "harmonics": [3, 3],
             "materials": materials_dict,
             "trn_material": "air",
             "ref_material": "silicon",
@@ -223,13 +240,31 @@ class TestSolverBuilder(unittest.TestCase):
         self.assertEqual(layer.material_name, "silicon")
         self.assertEqual(layer.slice_count, 4)
 
+    def test_builder_layer_thickness_matches_solver_dtype(self):
+        """Builder layer thickness should match solver precision."""
+        builder = get_solver_builder()
+        solver = (
+            builder.with_algorithm(Algorithm.RCWA)
+            .with_precision(Precision.DOUBLE)
+            .with_wavelengths(1.55)
+            .with_real_dimensions([8, 8])
+            .with_k_dimensions([3, 3])
+            .with_materials([self.air, self.silicon])
+            .add_layer({"material": "silicon", "thickness": 0.2, "is_homogeneous": True})
+            .build()
+        )
+
+        thickness = solver.layer_manager.layers[0].thickness
+        self.assertIsInstance(thickness, torch.Tensor)
+        self.assertEqual(thickness.dtype, solver.tfloat)
+
     def test_config_layer_slice_count_defaults(self):
         """from_config should accept per-layer slice_count and sanitize invalid values."""
         config = {
             "algorithm": "RCWA",
             "wavelengths": [1.55],
-            "rdim": [32, 32],
-            "kdim": [3, 3],
+            "grids": [32, 32],
+            "harmonics": [3, 3],
             "materials": {
                 "air": {"permittivity": 1.0},
                 "silicon": {"permittivity": 11.7},
@@ -316,8 +351,8 @@ class TestBuilderDocExamples(unittest.TestCase):
             }
         }
         
-        # Pass the unittest directory as base_path since that's where our test files are
-        materials = _create_materials(materials_spec, Path(__file__).parent)
+        # The builder/material loader should resolve relative dielectric_file paths without any base_path.
+        materials = _create_materials(materials_spec, config_dir=Path(__file__).parent)
         
         # Verify the materials were created correctly
         self.assertEqual(len(materials), 3)
@@ -343,8 +378,8 @@ class TestBuilderDocExamples(unittest.TestCase):
         # Create a solver
         solver = RCWASolver(
             lam0=np.array([1.55]),
-            rdim=[32, 32],
-            kdim=[3, 3]
+            grids=[32, 32],
+            harmonics=[3, 3]
         )
         
         # Example from _add_layers docstring
@@ -449,7 +484,7 @@ class TestBuilderDocExamples(unittest.TestCase):
         config_dict = {
             "algorithm": "RDIT",
             "wavelengths": [1.55],
-            "kdim": [5, 5],
+            "harmonics": [5, 5],
             "materials": {
                 "Air": {"permittivity": 1.0},
                 "Si": {"permittivity": 12.0}
@@ -466,7 +501,7 @@ class TestBuilderDocExamples(unittest.TestCase):
         
         self.assertEqual(solver.algorithm.name, "R-DIT")
         self.assertAlmostEqual(solver.lam0[0], 1.55, places=6)
-        self.assertEqual(solver.kdim, [5, 5])
+        self.assertEqual(solver.harmonics, [5, 5])
         self.assertEqual(solver.layer_manager.nlayer, 2)
         
         # Example from from_config docstring - Load and flip

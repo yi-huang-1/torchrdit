@@ -1,11 +1,14 @@
 from typing import List, Dict, Union, Any, Optional, TYPE_CHECKING
+from pathlib import Path
 import torch
 import numpy as np
 from .constants import Algorithm, Precision
 from .materials import MaterialClass
 from .utils import create_material
 from .algorithm import SolverAlgorithm
-import os  # Needed for path joining in _create_materials
+from .device import resolve_device
+import os
+from .path_utils import infer_caller_dir, resolve_data_path
 
 # Import types for type checking only, not at runtime
 if TYPE_CHECKING:
@@ -13,7 +16,10 @@ if TYPE_CHECKING:
 
 
 # Function that was previously TorchrditConfig._create_materials
-def _create_materials(materials_dict: Dict[str, Any], base_path: str) -> Dict[str, Any]:
+def _create_materials(
+    materials_dict: Dict[str, Any],
+    config_dir: Optional[Union[str, os.PathLike]] = None,
+) -> Dict[str, Any]:
     """Create material objects from dictionary specification.
 
     This internal utility function converts a dictionary of material specifications
@@ -23,14 +29,17 @@ def _create_materials(materials_dict: Dict[str, Any], base_path: str) -> Dict[st
         materials_dict (Dict[str, Any]): Dictionary of material specifications.
             Each key is a material name, and each value is a dictionary containing
             the material properties.
-        base_path (str): Base path for relative file references for material data files.
+        config_dir (str | os.PathLike | None): Directory context for resolving relative
+            material data files (e.g. dispersive ``dielectric_file``). Resolution order:
+            ``config_dir`` (typically the JSON config file directory), then caller script
+            directory, then current working directory.
 
     Returns:
         Dict[str, Any]: Dictionary of created material objects with material names as keys.
 
-    Examples:
-    ```python
-    materials_spec = {
+	    Examples:
+	    ```python
+	    materials_spec = {
         "Si": {"permittivity": 12.0},
         "SiO2": {"permittivity": 2.25},
         "Au": {
@@ -38,26 +47,124 @@ def _create_materials(materials_dict: Dict[str, Any], base_path: str) -> Dict[st
             "dielectric_file": "materials/gold.txt",
             "data_format": "freq-eps",
             "data_unit": "thz"
-        }
-    }
-    materials = _create_materials(materials_spec, "./data")
-    ```
+        },
+        "SiC_inmem": {
+            "dielectric_dispersion": True,
+            "dispersion": {
+                "wavelengths_um": [1.0, 1.5, 2.0],
+                "n": [2.6, 2.55, 2.5],
+                "k": [0.1, 0.08, 0.05],
+            },
+        },
+	    }
+	    materials = _create_materials(materials_spec, config_dir="./data")
+	    ```
+	
+	    Notes:
+	        - In-memory dispersion samples under ``"dispersion"`` accept Python sequences,
+	          NumPy arrays, or torch tensors; values are converted to CPU NumPy internally
+	          (no autograd gradients) to build an interpolation table.
 
-    Keywords:
-        materials, permittivity, dielectric dispersion, material creation
-    """
-    materials = {}
+	    Keywords:
+	        materials, permittivity, dielectric dispersion, material creation
+	    """
+    materials: Dict[str, Any] = {}
     for name, props in materials_dict.items():
-        if props.get("dielectric_dispersion", False):
-            materials[name] = create_material(
-                name=name,
-                dielectric_dispersion=True,
-                user_dielectric_file=os.path.join(base_path, props["dielectric_file"]),
-                data_format=props.get("data_format", "freq-eps"),
-                data_unit=props.get("data_unit", "thz"),
-            )
+        if not isinstance(name, str):
+            raise ValueError(f"Material name must be a string, got {type(name)}")
+        if not isinstance(props, dict):
+            raise ValueError(f"Material properties must be a dictionary at materials[{name!r}], got {type(props)}")
+
+        is_dispersive = bool(props.get("dielectric_dispersion", False))
+        if is_dispersive:
+            allowed_keys = {"permittivity", "dielectric_dispersion", "dielectric_file", "dispersion", "data_format", "data_unit"}
+            unknown = set(props.keys()) - allowed_keys
+            if unknown:
+                raise ValueError(
+                    f"Unknown material keys detected at materials[{name!r}]: {sorted(unknown)} "
+                    f"(allowed: {sorted(allowed_keys)})"
+                )
+            if "permittivity" in props:
+                raise ValueError(
+                    f"Material at materials[{name!r}]: 'permittivity' is not allowed when 'dielectric_dispersion' is True"
+                )
+
+            has_file = "dielectric_file" in props
+            has_disp = "dispersion" in props
+            if has_file and has_disp:
+                raise ValueError(
+                    f"Material at materials[{name!r}] cannot specify both 'dielectric_file' and 'dispersion'"
+                )
+            if not has_file and not has_disp:
+                raise ValueError(
+                    f"Material at materials[{name!r}] requires 'dielectric_file' or 'dispersion' when 'dielectric_dispersion' is True"
+                )
+
+            if has_file:
+                caller_dir = infer_caller_dir(
+                    skip_files=("builder.py", "solver.py", "__init__.py", "path_utils.py")
+                )
+                resolved_file = resolve_data_path(
+                    props["dielectric_file"],
+                    config_dir=config_dir,
+                    caller_dir=str(caller_dir) if caller_dir is not None else None,
+                )
+                materials[name] = create_material(
+                    name=name,
+                    dielectric_dispersion=True,
+                    user_dielectric_file=resolved_file,
+                    data_format=props.get("data_format", "freq-eps"),
+                    data_unit=props.get("data_unit", "thz"),
+                )
+            else:
+                if "data_format" in props or "data_unit" in props:
+                    raise ValueError(
+                        f"Material at materials[{name!r}]: 'data_format'/'data_unit' are not used with in-memory dispersion"
+                    )
+                disp = props["dispersion"]
+                if not isinstance(disp, dict):
+                    raise ValueError(f"Material at materials[{name!r}].dispersion must be a dict, got {type(disp)}")
+                allowed_disp_keys = {"wavelengths_um", "eps", "n", "k"}
+                unknown_disp = set(disp.keys()) - allowed_disp_keys
+                if unknown_disp:
+                    raise ValueError(
+                        f"Unknown dispersion keys detected at materials[{name!r}].dispersion: {sorted(unknown_disp)} "
+                        f"(allowed: {sorted(allowed_disp_keys)})"
+                    )
+                if "wavelengths_um" not in disp:
+                    raise ValueError(f"Material at materials[{name!r}].dispersion requires 'wavelengths_um'")
+
+                has_eps = "eps" in disp
+                has_n = "n" in disp
+                if has_eps and has_n:
+                    raise ValueError(f"Material at materials[{name!r}].dispersion cannot specify both 'eps' and 'n/k'")
+                if not has_eps and not has_n:
+                    raise ValueError(f"Material at materials[{name!r}].dispersion requires 'eps' or 'n' (+ optional 'k')")
+                if has_eps and ("k" in disp):
+                    raise ValueError(f"Material at materials[{name!r}].dispersion: when 'eps' is provided, 'k' is not allowed")
+
+                materials[name] = create_material(
+                    name=name,
+                    dielectric_dispersion=True,
+                    user_dielectric_wavelengths_um=disp["wavelengths_um"],
+                    user_dielectric_eps=disp.get("eps"),
+                    user_dielectric_n=disp.get("n"),
+                    user_dielectric_k=disp.get("k"),
+                )
         else:
+            allowed_keys = {"permittivity", "dielectric_dispersion"}
+            unknown = set(props.keys()) - allowed_keys
+            if unknown:
+                raise ValueError(
+                    f"Unknown material keys detected at materials[{name!r}]: {sorted(unknown)} "
+                    f"(allowed: {sorted(allowed_keys)})"
+                )
+            if "permittivity" not in props:
+                raise ValueError(
+                    f"Material at materials[{name!r}] requires 'permittivity' when 'dielectric_dispersion' is False"
+                )
             materials[name] = create_material(name=name, permittivity=props["permittivity"])
+
     return materials
 
 
@@ -91,25 +198,46 @@ def _add_layers(
     Keywords:
         layers, materials, thickness, solver configuration, layer stack
     """
-    for layer in layers_list:
-        if isinstance(layer["material"], str):
-            material_name = layer["material"]
-        elif isinstance(layer["material"], MaterialClass):
-            material_name = layer["material"].name
+    allowed_keys = {"type", "material", "thickness", "is_homogeneous", "is_optimize", "slice_count"}
+    for idx, layer in enumerate(layers_list):
+        if not isinstance(layer, dict):
+            raise ValueError(f"Layer configuration at layers[{idx}] must be a dict, got {type(layer)}")
+        unknown = set(layer.keys()) - allowed_keys
+        if unknown:
+            raise ValueError(f"Unknown layer keys detected at layers[{idx}]: {sorted(unknown)} (allowed: {sorted(allowed_keys)})")
+        if "material" not in layer or "thickness" not in layer:
+            raise ValueError(f"Layer configuration at layers[{idx}] must include 'material' and 'thickness'")
+
+        material_value = layer["material"]
+        if isinstance(material_value, MaterialClass):
+            material_name = material_value.name
+            material_obj = material_value
+        elif isinstance(material_value, str):
+            material_name = material_value
+            if material_name not in materials:
+                raise ValueError(f"Unknown material {material_name!r} at layers[{idx}]")
+            material_obj = materials[material_name]
         else:
             raise ValueError(f"Invalid material type: {type(layer['material'])}")
 
-        if isinstance(layer["thickness"], torch.Tensor):
-            thickness = layer["thickness"]
+        thickness_val = layer["thickness"]
+        if isinstance(thickness_val, torch.Tensor):
+            thickness = thickness_val.to(device=solver.device, dtype=solver.tfloat)
         else:
-            thickness = torch.tensor(layer["thickness"], dtype=torch.float32)
+            thickness = torch.as_tensor(thickness_val, dtype=solver.tfloat, device=solver.device)
         is_homogeneous = layer.get("is_homogeneous", True)
         is_optimize = layer.get("is_optimize", False)
 
         slice_count = layer.get("slice_count", 1)
+        if isinstance(slice_count, torch.Tensor):
+            slice_count = int(slice_count.item())
+        else:
+            slice_count = int(slice_count)
+        if slice_count < 1:
+            slice_count = 1
 
         solver.add_layer(
-            material_name=materials[material_name],
+            material_name=material_obj,
             thickness=thickness,
             is_homogeneous=is_homogeneous,
             is_optimize=is_optimize,
@@ -219,8 +347,8 @@ class SolverBuilder:
         self._precision = Precision.SINGLE
         self._lam0 = np.array([1.0])
         self._lengthunit = "um"
-        self._rdim = [512, 512]
-        self._kdim = [3, 3]
+        self._grids = [512, 512]
+        self._harmonics = [3, 3]
         self._materials = []
         self._materials_dict = {}
         self._t1 = torch.tensor([[1.0, 0.0]])
@@ -368,11 +496,11 @@ class SolverBuilder:
         self._lengthunit = unit
         return self
 
-    def with_real_dimensions(self, rdim: List[int]) -> "SolverBuilder":
+    def with_real_dimensions(self, grids: List[int]) -> "SolverBuilder":
         """Set the dimensions in real space for discretization.
 
         Args:
-            rdim (List[int]): The dimensions in real space as [height, width].
+            grids (List[int]): The dimensions in real space as [height, width].
 
         Returns:
             SolverBuilder: The builder instance for method chaining.
@@ -389,14 +517,14 @@ class SolverBuilder:
         Keywords:
             real dimensions, discretization, spatial resolution, grid size
         """
-        self._rdim = rdim
+        self._grids = grids
         return self
 
-    def with_k_dimensions(self, kdim: List[int]) -> "SolverBuilder":
+    def with_k_dimensions(self, harmonics: List[int]) -> "SolverBuilder":
         """Set the dimensions in k-space (Fourier space) for harmonics.
 
         Args:
-            kdim (List[int]): The dimensions in k-space as [height, width].
+            harmonics (List[int]): The dimensions in k-space as [height, width].
                 Higher values include more harmonics for better accuracy at
                 the cost of computational complexity.
 
@@ -415,7 +543,7 @@ class SolverBuilder:
         Keywords:
             k-space, Fourier harmonics, diffraction orders, computational accuracy
         """
-        self._kdim = kdim
+        self._harmonics = harmonics
         return self
 
     def with_materials(self, materials: List[Any]) -> "SolverBuilder":
@@ -770,6 +898,12 @@ class SolverBuilder:
         Returns:
             SolverBuilder: The builder instance for method chaining.
 
+        Notes:
+            Fast Fourier Factorization (FFF) options in JSON configs use the
+            solver-style keys: ``is_use_fff``, ``fff_vector_scheme``,
+            ``fff_fourier_weight``, ``fff_smoothness_weight``, and
+            ``fff_vector_steps``.
+
         Examples:
         ```python
         from torchrdit.builder import SolverBuilder
@@ -781,7 +915,9 @@ class SolverBuilder:
         config_dict = {
             "algorithm": "RDIT",
             "wavelengths": [1.55],
-            "kdim": [5, 5],
+            "harmonics": [5, 5],
+            "is_use_fff": True,
+            "fff_vector_scheme": "POL",
             "materials": {...},
             "layers": [...]
         }
@@ -794,41 +930,57 @@ class SolverBuilder:
         Keywords:
             configuration, JSON, file loading, serialization, flip
         """
-        import json
+
+        from .config_io import detect_config_shape, load_config
 
         # Store original config path if it's a string
-        if isinstance(config, str):
-            self._config_path = config
-            with open(config, "r") as f:
-                config = json.load(f)
+        if isinstance(config, (str, os.PathLike)):
+            self._config_path = str(config)
+
+        config, config_dir = load_config(config)
 
         # Apply flip if needed
         if flip:
             config = flip_config(config)
 
+        detect_config_shape(config)  # validates config structure
         # Define valid configuration keys
         valid_keys = {
             "algorithm",
             "precision",
             "wavelengths",
             "length_unit",
-            "rdim",
-            "kdim",
+            "grids",
+            "harmonics",
+            "maxG",
             "lattice_vectors",
             "use_fff",
+            "is_use_fff",
+            "fff_vector_scheme",
+            "fff_fourier_weight",
+            "fff_smoothness_weight",
+            "fff_vector_steps",
             "device",
             "rdit_order",
             "materials",
             "layers",
-            "base_path",
             "trn_material",
             "ref_material",
+            "sources",
+            "vars",
+            "output",
         }
 
         # Create case-insensitive mapping of keys
         case_insensitive_config = {}
         for key, value in config.items():
             case_insensitive_config[key.lower()] = (key, value)
+
+        if "harmonics" in case_insensitive_config:
+            harmonics_value = case_insensitive_config["harmonics"][1]
+            if isinstance(harmonics_value, str) and harmonics_value.lower() == "auto":
+                raise ValueError("harmonics='auto' is not supported")
+
 
         # Check for unknown keys (case insensitive)
         unknown_keys = set()
@@ -837,57 +989,72 @@ class SolverBuilder:
                 unknown_keys.add(case_insensitive_config[key][0])  # Add original key to unknown keys
 
         if unknown_keys:
-            raise ValueError(f"Unknown configuration keys detected: {unknown_keys}. Valid keys are: {valid_keys}")
+            raise ValueError(
+                f"Unknown configuration keys detected: {unknown_keys}. "
+                f"Valid keys are: {valid_keys}. Use grids/harmonics for dimensions."
+            )
 
         # Extract parameters from config (case insensitive)
         if "algorithm" in case_insensitive_config:
-            self._algorithm_type = Algorithm[case_insensitive_config["algorithm"][1]]
+            algo_value = case_insensitive_config["algorithm"][1]
+            if isinstance(algo_value, Algorithm):
+                self._algorithm_type = algo_value
+            elif isinstance(algo_value, str):
+                self._algorithm_type = Algorithm[algo_value.upper()]
+            else:
+                raise ValueError(f"algorithm must be a string or Algorithm, got {type(algo_value)}")
         if "precision" in case_insensitive_config:
-            self._precision = Precision[case_insensitive_config["precision"][1]]
+            prec_value = case_insensitive_config["precision"][1]
+            if isinstance(prec_value, Precision):
+                self._precision = prec_value
+            elif isinstance(prec_value, str):
+                self._precision = Precision[prec_value.upper()]
+            else:
+                raise ValueError(f"precision must be a string or Precision, got {type(prec_value)}")
         if "wavelengths" in case_insensitive_config:
             self._lam0 = np.array(case_insensitive_config["wavelengths"][1])
         if "length_unit" in case_insensitive_config:
             self._lengthunit = case_insensitive_config["length_unit"][1]
-        if "rdim" in case_insensitive_config:
-            self._rdim = case_insensitive_config["rdim"][1]
-        if "kdim" in case_insensitive_config:
-            self._kdim = case_insensitive_config["kdim"][1]
+        if "grids" in case_insensitive_config:
+            self._grids = case_insensitive_config["grids"][1]
+        if "harmonics" in case_insensitive_config:
+            self._harmonics = case_insensitive_config["harmonics"][1]
         if "lattice_vectors" in case_insensitive_config:
             lattice_vectors = case_insensitive_config["lattice_vectors"][1]
             t1_data = lattice_vectors["t1"]
             t2_data = lattice_vectors["t2"]
-            self._t1 = torch.tensor(t1_data)
-            self._t2 = torch.tensor(t2_data)
-        if "use_fff" in case_insensitive_config:
+            self._t1 = t1_data if isinstance(t1_data, torch.Tensor) else torch.as_tensor(t1_data)
+            self._t2 = t2_data if isinstance(t2_data, torch.Tensor) else torch.as_tensor(t2_data)
+        if "is_use_fff" in case_insensitive_config:
+            self._is_use_FFF = case_insensitive_config["is_use_fff"][1]
+        elif "use_fff" in case_insensitive_config:
             self._is_use_FFF = case_insensitive_config["use_fff"][1]
         if "device" in case_insensitive_config:
             self._device = case_insensitive_config["device"][1]
         if "rdit_order" in case_insensitive_config:
             self._rdit_order = case_insensitive_config["rdit_order"][1]
-        vector_option_key = None
-        if "fff_vector" in case_insensitive_config:
-            vector_option_key = "fff_vector"
-        elif "vector_field" in case_insensitive_config:
-            vector_option_key = "vector_field"
 
-        if vector_option_key is not None:
-            vector_options = case_insensitive_config[vector_option_key][1]
-            if not isinstance(vector_options, dict):
-                raise ValueError(f"{vector_option_key} configuration must be a dictionary.")
-            self.with_fff_vector_options(
-                scheme=vector_options.get("scheme"),
-                fourier_weight=vector_options.get("fourier_weight", vector_options.get("fourier_loss_weight")),
-                smoothness_weight=vector_options.get("smoothness_weight", vector_options.get("smoothness_loss_weight")),
-                steps=vector_options.get("steps"),
-            )
+        fff_vector_opts = {}
+        if "fff_vector_scheme" in case_insensitive_config:
+            fff_vector_opts["scheme"] = case_insensitive_config["fff_vector_scheme"][1]
+        if "fff_fourier_weight" in case_insensitive_config:
+            fff_vector_opts["fourier_weight"] = case_insensitive_config["fff_fourier_weight"][1]
+        if "fff_smoothness_weight" in case_insensitive_config:
+            fff_vector_opts["smoothness_weight"] = case_insensitive_config["fff_smoothness_weight"][1]
+        if "fff_vector_steps" in case_insensitive_config:
+            fff_vector_opts["steps"] = case_insensitive_config["fff_vector_steps"][1]
+
+        if fff_vector_opts:
+            self.with_fff_vector_options(**fff_vector_opts)
 
         # Process materials and layers
-        base_path = ""
-        if "base_path" in case_insensitive_config:
-            base_path = case_insensitive_config["base_path"][1]
-
+        if config_dir is None and getattr(self, "_config_path", None):
+            try:
+                config_dir = str(Path(self._config_path).resolve().parent)
+            except OSError:
+                config_dir = None
         if "materials" in case_insensitive_config:
-            materials_dict = _create_materials(case_insensitive_config["materials"][1], base_path)
+            materials_dict = _create_materials(case_insensitive_config["materials"][1], config_dir=config_dir)
             self._materials = list(materials_dict.values())
             self._materials_dict = materials_dict
 
@@ -934,13 +1101,16 @@ class SolverBuilder:
         # Lazy import to avoid circular dependencies
         from .solver import RCWASolver, RDITSolver
 
+        # Resolve device before constructing solver (Task 2 requirement)
+        device_resolution = resolve_device(self._device)
+
         # Create the appropriate solver type based on algorithm
         if self._algorithm_type == Algorithm.RCWA:
             solver = RCWASolver(
                 lam0=self._lam0,
                 lengthunit=self._lengthunit,
-                rdim=self._rdim,
-                kdim=self._kdim,
+                grids=self._grids,
+                harmonics=self._harmonics,
                 materiallist=self._materials,
                 t1=self._t1,
                 t2=self._t2,
@@ -950,7 +1120,7 @@ class SolverBuilder:
                 fff_smoothness_weight=self._fff_smoothness_weight,
                 fff_vector_steps=self._fff_vector_steps,
                 precision=self._precision,
-                device=self._device,
+                device=device_resolution.resolved_device,
             )
 
             # If custom algorithm instance provided, override the default
@@ -961,8 +1131,8 @@ class SolverBuilder:
             solver = RDITSolver(
                 lam0=self._lam0,
                 lengthunit=self._lengthunit,
-                rdim=self._rdim,
-                kdim=self._kdim,
+                grids=self._grids,
+                harmonics=self._harmonics,
                 materiallist=self._materials,
                 t1=self._t1,
                 t2=self._t2,
@@ -972,7 +1142,7 @@ class SolverBuilder:
                 fff_smoothness_weight=self._fff_smoothness_weight,
                 fff_vector_steps=self._fff_vector_steps,
                 precision=self._precision,
-                device=self._device,
+                device=device_resolution.resolved_device,
             )
 
             # If custom algorithm instance provided, override the default
@@ -984,7 +1154,11 @@ class SolverBuilder:
                 solver.set_rdit_order(self._rdit_order)
 
         # Add layers if specified
-        if self._layers and self._materials_dict:
+        if self._layers:
+            if not self._materials_dict:
+                has_str_material = any(isinstance(layer.get("material"), str) for layer in self._layers)
+                if has_str_material:
+                    raise ValueError("layers specified but no materials provided")
             _add_layers(solver, self._layers, self._materials_dict)
 
         # Set transmission and reflection materials if specified
@@ -993,5 +1167,8 @@ class SolverBuilder:
 
         if hasattr(self, "_ref_material") and self._ref_material is not None and hasattr(solver, "update_ref_material"):
             solver.update_ref_material(self._materials_dict.get(self._ref_material, self._ref_material))
+
+        # Store device resolution metadata on solver for public API access
+        solver._device_resolution = device_resolution
 
         return solver

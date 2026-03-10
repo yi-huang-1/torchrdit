@@ -17,16 +17,16 @@ class TestGDSBatchProcessing(unittest.TestCase):
     
     def setUp(self):
         """Set up common test fixtures."""
-        self.rdim = [128, 128]
+        self.grids = [128, 128]
         self.temp_dir = tempfile.mkdtemp()
         
         # Create shape generator
         X, Y = torch.meshgrid(
-            torch.linspace(-1, 1, self.rdim[0]),
-            torch.linspace(-1, 1, self.rdim[1]),
+            torch.linspace(-1, 1, self.grids[0]),
+            torch.linspace(-1, 1, self.grids[1]),
             indexing='xy'
         )
-        self.shape_gen = ShapeGenerator(X, Y, self.rdim)
+        self.shape_gen = ShapeGenerator(X, Y, self.grids)
         
     def tearDown(self):
         """Clean up temporary files."""
@@ -107,7 +107,7 @@ class TestGDSBatchProcessing(unittest.TestCase):
         """Test exporting a batched tensor (3D) to multiple GDS files."""
         # Create batched tensor (batch_size, height, width)
         batch_size = 4
-        masks = torch.zeros(batch_size, *self.rdim)
+        masks = torch.zeros(batch_size, *self.grids)
         
         # Fill with different patterns
         for i in range(batch_size):
@@ -141,7 +141,7 @@ class TestGDSBatchProcessing(unittest.TestCase):
             reconstructed = gds_to_mask(json_path, self.shape_gen, soft_edge=0.0)
             
             # Check shape matches
-            self.assertEqual(reconstructed.shape, tuple(self.rdim))
+            self.assertEqual(reconstructed.shape, tuple(self.grids))
 
             # IoU check against original mask slice
             iou = self._calculate_iou(masks[i], reconstructed)

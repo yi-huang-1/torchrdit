@@ -24,8 +24,8 @@ class TestProcessLayerTensorization:
         solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55, 1.31]),  # Multiple wavelengths
-            rdim=[512, 512],
-            kdim=[5, 5],
+            grids=[512, 512],
+            harmonics=[5, 5],
             device="cpu",  # Use CPU for consistent testing
         )
 
@@ -207,8 +207,8 @@ class TestProcessLayerTensorization:
         solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[32, 32],
-            kdim=[3, 3],
+            grids=[32, 32],
+            harmonics=[3, 3],
             device="cpu",
         )
 
@@ -221,7 +221,7 @@ class TestProcessLayerTensorization:
         solver.add_layer(material_name="Si", thickness=0.2, is_homogeneous=False)
 
         # Learnable mask parameter
-        mask_param = torch.rand(solver.rdim[0], solver.rdim[1], dtype=torch.float32, requires_grad=True)
+        mask_param = torch.rand(solver.grids[0], solver.grids[1], dtype=torch.float32, requires_grad=True)
         solver.update_er_with_mask(mask=mask_param, layer_index=0)  # bg defaults to air
 
         # Source

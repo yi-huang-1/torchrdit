@@ -2,8 +2,6 @@
 
 * [torchrdit.layers](#torchrdit.layers)
   * [Layer](#torchrdit.layers.Layer)
-    * [\_\_init\_\_](#torchrdit.layers.Layer.__init__)
-    * [\_\_str\_\_](#torchrdit.layers.Layer.__str__)
     * [thickness](#torchrdit.layers.Layer.thickness)
     * [thickness](#torchrdit.layers.Layer.thickness)
     * [slice\_count](#torchrdit.layers.Layer.slice_count)
@@ -20,7 +18,6 @@
     * [is\_solved](#torchrdit.layers.Layer.is_solved)
     * [is\_solved](#torchrdit.layers.Layer.is_solved)
   * [LayerBuilder](#torchrdit.layers.LayerBuilder)
-    * [\_\_init\_\_](#torchrdit.layers.LayerBuilder.__init__)
     * [create\_layer](#torchrdit.layers.LayerBuilder.create_layer)
     * [update\_thickness](#torchrdit.layers.LayerBuilder.update_thickness)
     * [update\_material\_name](#torchrdit.layers.LayerBuilder.update_material_name)
@@ -28,22 +25,14 @@
     * [get\_layer\_instance](#torchrdit.layers.LayerBuilder.get_layer_instance)
     * [set\_dispersive](#torchrdit.layers.LayerBuilder.set_dispersive)
   * [HomogeneousLayer](#torchrdit.layers.HomogeneousLayer)
-    * [\_\_init\_\_](#torchrdit.layers.HomogeneousLayer.__init__)
-    * [\_\_str\_\_](#torchrdit.layers.HomogeneousLayer.__str__)
   * [GratingLayer](#torchrdit.layers.GratingLayer)
-    * [\_\_init\_\_](#torchrdit.layers.GratingLayer.__init__)
-    * [\_\_str\_\_](#torchrdit.layers.GratingLayer.__str__)
   * [HomogeneousLayerBuilder](#torchrdit.layers.HomogeneousLayerBuilder)
-    * [\_\_init\_\_](#torchrdit.layers.HomogeneousLayerBuilder.__init__)
     * [create\_layer](#torchrdit.layers.HomogeneousLayerBuilder.create_layer)
   * [GratingLayerBuilder](#torchrdit.layers.GratingLayerBuilder)
-    * [\_\_init\_\_](#torchrdit.layers.GratingLayerBuilder.__init__)
     * [create\_layer](#torchrdit.layers.GratingLayerBuilder.create_layer)
   * [LayerDirector](#torchrdit.layers.LayerDirector)
-    * [\_\_init\_\_](#torchrdit.layers.LayerDirector.__init__)
     * [build\_layer](#torchrdit.layers.LayerDirector.build_layer)
   * [LayerManager](#torchrdit.layers.LayerManager)
-    * [\_\_init\_\_](#torchrdit.layers.LayerManager.__init__)
     * [gen\_toeplitz\_matrix](#torchrdit.layers.LayerManager.gen_toeplitz_matrix)
     * [add\_layer](#torchrdit.layers.LayerManager.add_layer)
     * [replace\_layer\_to\_homogeneous](#torchrdit.layers.LayerManager.replace_layer_to_homogeneous)
@@ -59,7 +48,7 @@
 
 <a id="torchrdit.layers"></a>
 
-# torchrdit.layers
+# Module torchrdit.layers
 
 Module for defining and managing material layers in TorchRDIT electromagnetic simulations.
 
@@ -152,6 +141,8 @@ the electromagnetic response of different regions in the simulated structure.
 - `is_dispersive` _bool_ - Whether the layer's material has frequency-dependent properties.
 - `is_optimize` _bool_ - Whether the layer's parameters are subject to optimization.
 - `is_solved` _bool_ - Whether the electromagnetic response of this layer has been solved.
+- `slice_count` _int_ - Number of identical sub-slices used to discretize the layer
+  thickness during propagation calculations. Defaults to 1 (no slicing).
 - `ermat` _torch.Tensor, optional_ - Permittivity distribution matrix.
 - `urmat` _torch.Tensor, optional_ - Permeability distribution matrix.
 - `kermat` _torch.Tensor, optional_ - Fourier-transformed permittivity matrix.
@@ -161,58 +152,9 @@ the electromagnetic response of different regions in the simulated structure.
   abstract class, layer interface, layer properties, material layer,
   electromagnetic simulation, photonic structure
 
-<a id="torchrdit.layers.Layer.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-@abstractmethod
-def __init__(thickness: float = 0.0,
-             material_name: str = "",
-             is_optimize: bool = False,
-             **kwargs) -> None
-```
-
-Initialize a Layer instance with given properties.
-
-This abstract method initializes basic properties common to all layer types.
-It must be implemented by all concrete Layer subclasses.
-
-**Arguments**:
-
-- `thickness` _float_ - Thickness of the layer in the simulation's length units.
-  Default is 0.0.
-- `material_name` _str_ - Name of the material used for this layer.
-  The material must exist in the solver's material library.
-  Default is an empty string.
-- `is_optimize` _bool_ - Flag indicating if the layer's parameters
-  (e.g., thickness) should be optimized during parameter sweeps.
-  Default is False.
-- `**kwargs` - Additional keyword arguments specific to subclasses.
-  
-
-**Notes**:
-
-  This method is not intended to be called directly by users. Layers
-  should be created through the solver interface.
-  
-  Keywords:
-  initialization, layer creation, layer properties, material assignment
-
-<a id="torchrdit.layers.Layer.__str__"></a>
-
-#### \_\_str\_\_
-
-```python
-@abstractmethod
-def __str__() -> str
-```
-
-Return a string representation of the layer.
-
 <a id="torchrdit.layers.Layer.thickness"></a>
 
-#### thickness
+### Layer.thickness
 
 ```python
 @property
@@ -230,7 +172,7 @@ Get the thickness of the layer.
 
 <a id="torchrdit.layers.Layer.thickness"></a>
 
-#### thickness
+### Layer.thickness
 
 ```python
 @thickness.setter
@@ -249,18 +191,24 @@ Set the thickness of the layer.
 
 <a id="torchrdit.layers.Layer.slice_count"></a>
 
-#### slice\_count
+### Layer.slice\_count
 
 ```python
 @property
 def slice_count() -> int
 ```
 
-Number of identical sub-slices the layer should be divided into.
+Number of identical sub-slices used when propagating through the layer.
+
+**Returns**:
+
+- `int` - Count of slices the solver will use when expanding this layer
+  into thinner segments for Redheffer star-matrix composition.
+  A value of 1 means no additional slicing.
 
 <a id="torchrdit.layers.Layer.slice_count"></a>
 
-#### slice\_count
+### Layer.slice\_count
 
 ```python
 @slice_count.setter
@@ -269,9 +217,13 @@ def slice_count(count: int) -> None
 
 Set the number of identical sub-slices used for this layer.
 
+Increasing the slice count allows the solver to model thick layers by
+re-using the same material response multiple times with reduced
+thickness per slice. The value must be a positive integer.
+
 <a id="torchrdit.layers.Layer.material_name"></a>
 
-#### material\_name
+### Layer.material\_name
 
 ```python
 @property
@@ -289,7 +241,7 @@ Get the name of the material assigned to this layer.
 
 <a id="torchrdit.layers.Layer.material_name"></a>
 
-#### material\_name
+### Layer.material\_name
 
 ```python
 @material_name.setter
@@ -308,7 +260,7 @@ Set the material name for this layer.
 
 <a id="torchrdit.layers.Layer.bg_material"></a>
 
-#### bg\_material
+### Layer.bg\_material
 
 ```python
 @property
@@ -327,7 +279,7 @@ Get the background material name for patterned layers.
 
 <a id="torchrdit.layers.Layer.bg_material"></a>
 
-#### bg\_material
+### Layer.bg\_material
 
 ```python
 @bg_material.setter
@@ -346,7 +298,7 @@ Set the background material name for patterned layers.
 
 <a id="torchrdit.layers.Layer.is_homogeneous"></a>
 
-#### is\_homogeneous
+### Layer.is\_homogeneous
 
 ```python
 @property
@@ -365,7 +317,7 @@ Check if the layer has uniform material properties.
 
 <a id="torchrdit.layers.Layer.is_dispersive"></a>
 
-#### is\_dispersive
+### Layer.is\_dispersive
 
 ```python
 @property
@@ -384,7 +336,7 @@ Check if the layer's material has frequency-dependent properties.
 
 <a id="torchrdit.layers.Layer.is_dispersive"></a>
 
-#### is\_dispersive
+### Layer.is\_dispersive
 
 ```python
 @is_dispersive.setter
@@ -403,7 +355,7 @@ Set the dispersive flag for the layer's material.
 
 <a id="torchrdit.layers.Layer.is_optimize"></a>
 
-#### is\_optimize
+### Layer.is\_optimize
 
 ```python
 @property
@@ -422,7 +374,7 @@ Check if the layer's parameters are subject to optimization.
 
 <a id="torchrdit.layers.Layer.is_optimize"></a>
 
-#### is\_optimize
+### Layer.is\_optimize
 
 ```python
 @is_optimize.setter
@@ -441,7 +393,7 @@ Set the optimization flag for the layer.
 
 <a id="torchrdit.layers.Layer.is_solved"></a>
 
-#### is\_solved
+### Layer.is\_solved
 
 ```python
 @property
@@ -460,7 +412,7 @@ Check if the electromagnetic response of this layer has been solved.
 
 <a id="torchrdit.layers.Layer.is_solved"></a>
 
-#### is\_solved
+### Layer.is\_solved
 
 ```python
 @is_solved.setter
@@ -509,22 +461,9 @@ representations.
   Keywords:
   builder pattern, layer creation, design pattern, factory, abstract class
 
-<a id="torchrdit.layers.LayerBuilder.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-@abstractmethod
-def __init__() -> None
-```
-
-Initialize the LayerBuilder instance.
-
-Sets the layer attribute to None, to be populated by create_layer.
-
 <a id="torchrdit.layers.LayerBuilder.create_layer"></a>
 
-#### create\_layer
+### LayerBuilder.create\_layer
 
 ```python
 @abstractmethod
@@ -541,7 +480,7 @@ Keywords:
 
 <a id="torchrdit.layers.LayerBuilder.update_thickness"></a>
 
-#### update\_thickness
+### LayerBuilder.update\_thickness
 
 ```python
 def update_thickness(thickness)
@@ -558,7 +497,7 @@ Update the thickness of the layer being built.
 
 <a id="torchrdit.layers.LayerBuilder.update_material_name"></a>
 
-#### update\_material\_name
+### LayerBuilder.update\_material\_name
 
 ```python
 def update_material_name(material_name)
@@ -576,7 +515,7 @@ Set the material for the layer being built.
 
 <a id="torchrdit.layers.LayerBuilder.set_optimize"></a>
 
-#### set\_optimize
+### LayerBuilder.set\_optimize
 
 ```python
 def set_optimize(is_optimize)
@@ -594,7 +533,7 @@ Set whether the layer's parameters should be optimized.
 
 <a id="torchrdit.layers.LayerBuilder.get_layer_instance"></a>
 
-#### get\_layer\_instance
+### LayerBuilder.get\_layer\_instance
 
 ```python
 def get_layer_instance()
@@ -611,7 +550,7 @@ Get the constructed layer instance.
 
 <a id="torchrdit.layers.LayerBuilder.set_dispersive"></a>
 
-#### set\_dispersive
+### LayerBuilder.set\_dispersive
 
 ```python
 def set_dispersive(is_dispersive)
@@ -677,47 +616,6 @@ solver.add_layer(
   Keywords:
   homogeneous layer, uniform material, bulk material, thin film, constant properties
 
-<a id="torchrdit.layers.HomogeneousLayer.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__(thickness: float = 0.0,
-             material_name: str = "",
-             is_optimize: bool = False,
-             **kwargs) -> None
-```
-
-Initialize a HomogeneousLayer instance.
-
-**Arguments**:
-
-- `thickness` _float_ - Thickness of the layer in the simulation's length units.
-  Default is 0.0.
-- `material_name` _str_ - Name of the material to use for this layer.
-  Must be a material that exists in the solver's material library.
-  Default is an empty string.
-- `is_optimize` _bool_ - Whether the layer's parameters should be included in
-  optimization procedures. Default is False.
-- `**kwargs` - Additional keyword arguments passed to the parent class.
-  
-  Keywords:
-  initialize homogeneous layer, create uniform layer
-
-<a id="torchrdit.layers.HomogeneousLayer.__str__"></a>
-
-#### \_\_str\_\_
-
-```python
-def __str__() -> str
-```
-
-Get a string representation of the homogeneous layer.
-
-**Returns**:
-
-- `str` - A string describing the homogeneous layer instance.
-
 <a id="torchrdit.layers.GratingLayer"></a>
 
 ## GratingLayer Objects
@@ -781,47 +679,6 @@ solver.update_er_with_mask(
   grating layer, patterned layer, inhomogeneous, photonic crystal, metamaterial,
   spatial variation, material distribution, photonic device
 
-<a id="torchrdit.layers.GratingLayer.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__(thickness: float = 0.0,
-             material_name: str = "",
-             is_optimize: bool = False,
-             **kwargs) -> None
-```
-
-Initialize a GratingLayer instance.
-
-**Arguments**:
-
-- `thickness` _float_ - Thickness of the layer in the simulation's length units.
-  Default is 0.0.
-- `material_name` _str_ - Name of the material to use as the foreground material.
-  Must be a material that exists in the solver's material library.
-  Default is an empty string.
-- `is_optimize` _bool_ - Whether the layer's parameters should be included in
-  optimization procedures. Default is False.
-- `**kwargs` - Additional keyword arguments passed to the parent class.
-  
-  Keywords:
-  initialize grating layer, create patterned layer
-
-<a id="torchrdit.layers.GratingLayer.__str__"></a>
-
-#### \_\_str\_\_
-
-```python
-def __str__() -> str
-```
-
-Get a string representation of the grating layer.
-
-**Returns**:
-
-- `str` - A string describing the grating layer instance.
-
 <a id="torchrdit.layers.HomogeneousLayerBuilder"></a>
 
 ## HomogeneousLayerBuilder Objects
@@ -849,21 +706,9 @@ uniform regions.
   Keywords:
   builder pattern, homogeneous layer, uniform material, layer creation
 
-<a id="torchrdit.layers.HomogeneousLayerBuilder.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__() -> None
-```
-
-Initialize a HomogeneousLayerBuilder instance.
-
-Initializes the builder with no layer instance created yet.
-
 <a id="torchrdit.layers.HomogeneousLayerBuilder.create_layer"></a>
 
-#### create\_layer
+### HomogeneousLayerBuilder.create\_layer
 
 ```python
 def create_layer()
@@ -906,21 +751,9 @@ patterned structures.
   builder pattern, grating layer, patterned layer, inhomogeneous material,
   layer creation, photonic crystal, metamaterial
 
-<a id="torchrdit.layers.GratingLayerBuilder.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__() -> None
-```
-
-Initialize a GratingLayerBuilder instance.
-
-Initializes the builder with no layer instance created yet.
-
 <a id="torchrdit.layers.GratingLayerBuilder.create_layer"></a>
 
-#### create\_layer
+### GratingLayerBuilder.create\_layer
 
 ```python
 def create_layer()
@@ -961,21 +794,9 @@ details of how they are constructed.
   Keywords:
   builder pattern, layer creation, director, instantiation coordinator
 
-<a id="torchrdit.layers.LayerDirector.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__() -> None
-```
-
-Initialize the LayerDirector instance.
-
-Creates a new LayerDirector with no configuration required.
-
 <a id="torchrdit.layers.LayerDirector.build_layer"></a>
 
-#### build\_layer
+### LayerDirector.build\_layer
 
 ```python
 def build_layer(layer_type,
@@ -1079,29 +900,9 @@ solver.update_trn_material("sio2")
   layer management, layer stack, structure definition, layer organization,
   layer manipulation, reflection region, transmission region, toeplitz matrix
 
-<a id="torchrdit.layers.LayerManager.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__(lattice_t1, lattice_t2, vec_p, vec_q) -> None
-```
-
-Initialize a LayerManager instance.
-
-**Arguments**:
-
-- `lattice_t1` _torch.Tensor_ - First lattice vector defining the unit cell.
-- `lattice_t2` _torch.Tensor_ - Second lattice vector defining the unit cell.
-- `vec_p` _torch.Tensor_ - Vector of p-coordinates in the unit cell grid.
-- `vec_q` _torch.Tensor_ - Vector of q-coordinates in the unit cell grid.
-  
-  Keywords:
-  initialization, layer manager creation
-
 <a id="torchrdit.layers.LayerManager.gen_toeplitz_matrix"></a>
 
-#### gen\_toeplitz\_matrix
+### LayerManager.gen\_toeplitz\_matrix
 
 ```python
 def gen_toeplitz_matrix(layer_index: int,
@@ -1142,7 +943,7 @@ Fourier space.
 
 <a id="torchrdit.layers.LayerManager.add_layer"></a>
 
-#### add\_layer
+### LayerManager.add\_layer
 
 ```python
 @tensor_params_check(check_start_index=2, check_stop_index=2)
@@ -1173,6 +974,10 @@ reflection region) and subsequent layers building upward.
   optimization procedures. Default is False.
 - `is_dispersive` _bool_ - Whether the material has frequency-dependent properties.
   Default is False.
+- `slice_count` _int_ - Number of identical sub-slices to use when propagating
+  through this layer. Values greater than 1 split the layer
+  thickness evenly and repeatedly combine the slice scattering
+  matrices. Default is 1.
   
 
 **Notes**:
@@ -1185,7 +990,7 @@ reflection region) and subsequent layers building upward.
 
 <a id="torchrdit.layers.LayerManager.replace_layer_to_homogeneous"></a>
 
-#### replace\_layer\_to\_homogeneous
+### LayerManager.replace\_layer\_to\_homogeneous
 
 ```python
 def replace_layer_to_homogeneous(layer_index)
@@ -1199,13 +1004,14 @@ layer that has the same thickness, material name, and other properties.
 **Arguments**:
 
 - `layer_index` _int_ - Index of the layer to convert in the layers list.
+  The existing layer's slice_count is preserved for the replacement.
   
   Keywords:
   convert layer, homogeneous layer, layer modification
 
 <a id="torchrdit.layers.LayerManager.replace_layer_to_grating"></a>
 
-#### replace\_layer\_to\_grating
+### LayerManager.replace\_layer\_to\_grating
 
 ```python
 def replace_layer_to_grating(layer_index)
@@ -1219,13 +1025,14 @@ layer that has the same thickness, material name, and other properties.
 **Arguments**:
 
 - `layer_index` _int_ - Index of the layer to convert in the layers list.
+  The existing layer's slice_count is preserved for the replacement.
   
   Keywords:
   convert layer, grating layer, patterned layer, layer modification
 
 <a id="torchrdit.layers.LayerManager.update_layer_thickness"></a>
 
-#### update\_layer\_thickness
+### LayerManager.update\_layer\_thickness
 
 ```python
 @tensor_params_check(check_start_index=2, check_stop_index=2)
@@ -1247,7 +1054,7 @@ This method changes the thickness of the layer at the specified index.
 
 <a id="torchrdit.layers.LayerManager.update_trn_layer"></a>
 
-#### update\_trn\_layer
+### LayerManager.update\_trn\_layer
 
 ```python
 def update_trn_layer(material_name: str, is_dispersive: bool)
@@ -1269,7 +1076,7 @@ layer stack (transmission region).
 
 <a id="torchrdit.layers.LayerManager.update_ref_layer"></a>
 
-#### update\_ref\_layer
+### LayerManager.update\_ref\_layer
 
 ```python
 def update_ref_layer(material_name: str, is_dispersive: bool)
@@ -1291,7 +1098,7 @@ layer stack (reflection region).
 
 <a id="torchrdit.layers.LayerManager.ref_material_name"></a>
 
-#### ref\_material\_name
+### LayerManager.ref\_material\_name
 
 ```python
 @property
@@ -1309,7 +1116,7 @@ Get the name of the material used in the reflection region.
 
 <a id="torchrdit.layers.LayerManager.trn_material_name"></a>
 
-#### trn\_material\_name
+### LayerManager.trn\_material\_name
 
 ```python
 @property
@@ -1327,7 +1134,7 @@ Get the name of the material used in the transmission region.
 
 <a id="torchrdit.layers.LayerManager.is_ref_dispersive"></a>
 
-#### is\_ref\_dispersive
+### LayerManager.is\_ref\_dispersive
 
 ```python
 @property
@@ -1345,7 +1152,7 @@ Check if the reflection region material has frequency-dependent properties.
 
 <a id="torchrdit.layers.LayerManager.is_trn_dispersive"></a>
 
-#### is\_trn\_dispersive
+### LayerManager.is\_trn\_dispersive
 
 ```python
 @property
@@ -1363,7 +1170,7 @@ Check if the transmission region material has frequency-dependent properties.
 
 <a id="torchrdit.layers.LayerManager.nlayer"></a>
 
-#### nlayer
+### LayerManager.nlayer
 
 ```python
 @property

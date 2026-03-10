@@ -11,6 +11,7 @@ of different material data formats and sources, including:
 - Direct permittivity/permeability specification
 - Refractive index and extinction coefficient (n, k) specification
 - Loading from data files with different formats (freq-eps, wl-eps, freq-nk, wl-nk)
+- In-memory dispersive samples provided as (wavelength_um, eps) or (wavelength_um, n, k)
 
 Plasmonic Material Handling:
     Materials near surface plasmon resonance (ε ≈ -1) are automatically stabilized
@@ -76,7 +77,7 @@ Keywords:
 
 import os
 from functools import lru_cache
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -100,7 +101,7 @@ def handle_plasmonic_materials(
 
     Uses negative imaginary convention where lossy materials have Im(ε) < 0.
 
-    Args:
+	        Args:
         epsilon: Complex permittivity tensor
         wavelength: Optional wavelength for adaptive damping (not implemented yet)
         min_loss: Minimum loss value (positive, will be applied as negative)
@@ -214,6 +215,14 @@ class MaterialClass:
         data_format="wl-eps",
         data_unit="um"
     )
+
+    # In-memory dispersive data (wavelengths in um)
+    silica_inmem = create_material(
+        name="silica_inmem",
+        dielectric_dispersion=True,
+        user_dielectric_wavelengths_um=[1.0, 1.5, 2.0],
+        user_dielectric_eps=[2.10-0.00j, 2.08-0.00j, 2.05-0.00j],
+    )
     # Use in a simulation with specific wavelengths
     import numpy as np
     wavelengths = np.array([1.31, 1.55])
@@ -246,6 +255,10 @@ class MaterialClass:
         max_poly_fit_order: int = 10,
         data_proxy: Optional[MaterialDataProxy] = None,
         stabilization_params: Optional[Dict[str, float]] = None,
+        user_dielectric_wavelengths_um: Optional[Sequence[float]] = None,
+        user_dielectric_eps: Optional[Sequence[complex]] = None,
+        user_dielectric_n: Optional[Sequence[float]] = None,
+        user_dielectric_k: Optional[Sequence[float]] = None,
     ) -> None:
         """Initialize a MaterialClass instance with electromagnetic properties.
 
@@ -263,9 +276,26 @@ class MaterialClass:
             permeability: Relative permeability (μr) of the material. Default is 1.0
                          (non-magnetic material).
             dielectric_dispersion: Whether the material has wavelength/frequency-dependent
-                                  permittivity. If True, a data file must be provided.
+                                  permittivity. If True, exactly one dispersive data source must be provided:
+                                  - user_dielectric_file (file-based), or
+                                  - (user_dielectric_wavelengths_um + user_dielectric_eps), or
+                                  - (user_dielectric_wavelengths_um + user_dielectric_n [+ optional user_dielectric_k]).
             user_dielectric_file: Path to the data file containing the dispersive properties.
-                                 Required if dielectric_dispersion is True.
+                                 Mutually exclusive with in-memory dispersive inputs.
+	            user_dielectric_wavelengths_um: In-memory dispersive wavelength samples in microns (μm).
+	                                 Required when providing in-memory dispersive inputs.
+	                                 Mutually exclusive with user_dielectric_file.
+	                                 Accepts Python sequences, NumPy arrays, or torch tensors; values
+	                                 are converted to CPU NumPy internally (no autograd gradients).
+	            user_dielectric_eps: In-memory complex permittivity samples at user_dielectric_wavelengths_um.
+	                                 TorchRDIT uses an exp(-iωt) convention; lossy media typically have Im(ε) < 0.
+	                                 If samples are provided with Im(ε) > 0, they are conjugated to match
+	                                 the convention.
+	                                 Mutually exclusive with (user_dielectric_n, user_dielectric_k).
+	            user_dielectric_n: In-memory refractive index samples at user_dielectric_wavelengths_um.
+	                                 Mutually exclusive with user_dielectric_eps.
+	            user_dielectric_k: In-memory extinction coefficient samples at user_dielectric_wavelengths_um.
+	                                 Optional when user_dielectric_n is provided (defaults to 0).
             data_format: Format of the data in the file. Must be one of:
                         'freq-eps': Frequency and permittivity (real, imaginary)
                         'wl-eps': Wavelength and permittivity (real, imaginary)
@@ -282,7 +312,8 @@ class MaterialClass:
                                  - 'threshold': Detection window around ε = -1 (default: 0.01)
 
         Raises:
-            ValueError: If dispersive material is missing a data file,
+            ValueError: If dispersive material is missing a data source,
+                       if mutually exclusive inputs are provided,
                        if the data file doesn't exist, or if the data format is invalid.
 
         Examples:
@@ -304,6 +335,14 @@ class MaterialClass:
             user_dielectric_file="materials/SiO2.txt",
             data_format="wl-eps",
             data_unit="um"
+        )
+
+        # Dispersive from in-memory samples (wavelengths in um)
+        silica_inmem = MaterialClass(
+            name="silica_inmem",
+            dielectric_dispersion=True,
+            user_dielectric_wavelengths_um=[1.0, 1.5, 2.0],
+            user_dielectric_eps=[2.10-0.00j, 2.08-0.00j, 2.05-0.00j],
         )
         ```
 
@@ -332,6 +371,21 @@ class MaterialClass:
         # Use the provided proxy or the shared class proxy
         self._data_proxy = data_proxy or self._shared_proxy
         self._fitted_data: Dict[str, Any] = {}
+
+        inmem_any = any(
+            x is not None
+            for x in (
+                user_dielectric_wavelengths_um,
+                user_dielectric_eps,
+                user_dielectric_n,
+                user_dielectric_k,
+            )
+        )
+        any_dispersive_source = bool(user_dielectric_file) or inmem_any
+        if not dielectric_dispersion and any_dispersive_source:
+            raise ValueError(
+                "dielectric_dispersion must be True when providing user_dielectric_file or in-memory dispersive data"
+            )
 
         if not dielectric_dispersion:
             # Non-dispersive material
@@ -366,21 +420,55 @@ class MaterialClass:
             # Dispersive material
             self._isdiedispersive = True
 
-            # Validate data file
-            if not user_dielectric_file:
-                raise ValueError("File path of the dispersive data must be defined!")
-
-            if not os.path.exists(user_dielectric_file):
-                raise ValueError(f"Material data file not found: {user_dielectric_file}")
-
-            # Load the data using the proxy
-            try:
-                self._loadeder = self._data_proxy.load_data(
-                    user_dielectric_file, self._data_format, self._data_unit, "um"
+            if inmem_any and user_dielectric_file:
+                raise ValueError(
+                    "In-memory dispersive inputs cannot be used together with user_dielectric_file"
                 )
-                self._er = None
-            except ValueError as e:
-                raise ValueError(f"Error loading dispersive data for {name}: {str(e)}")
+
+            if inmem_any:
+                # In-memory dispersive material. Wavelength unit is always um.
+                if user_dielectric_eps is not None and (user_dielectric_n is not None or user_dielectric_k is not None):
+                    raise ValueError("Provide either user_dielectric_eps or (user_dielectric_n, user_dielectric_k), not both")
+
+                if user_dielectric_eps is not None:
+                    self._loadeder = self._data_proxy.build_wl_eps_data_from_arrays(
+                        user_dielectric_wavelengths_um,
+                        eps=user_dielectric_eps,
+                    )
+                    self._data_format = "wl-eps"
+                    self._data_unit = "um"
+                    self._er = None
+                else:
+                    # n/k path
+                    self._loadeder = self._data_proxy.build_wl_eps_data_from_arrays(
+                        user_dielectric_wavelengths_um,
+                        n=user_dielectric_n,
+                        k=user_dielectric_k,
+                    )
+                    self._data_format = "wl-nk"
+                    self._data_unit = "um"
+                    self._er = None
+            else:
+                # File-based dispersive material
+                if not user_dielectric_file:
+                    raise ValueError(
+                        "File path of the dispersive data must be defined "
+                        "(or provide in-memory dispersive data via "
+                        "user_dielectric_wavelengths_um + user_dielectric_eps, "
+                        "or user_dielectric_wavelengths_um + user_dielectric_n (+ optional user_dielectric_k))!"
+                    )
+
+                if not os.path.exists(user_dielectric_file):
+                    raise ValueError(f"Material data file not found: {user_dielectric_file}")
+
+                # Load the data using the proxy
+                try:
+                    self._loadeder = self._data_proxy.load_data(
+                        user_dielectric_file, self._data_format, self._data_unit, "um"
+                    )
+                    self._er = None
+                except ValueError as e:
+                    raise ValueError(f"Error loading dispersive data for {name}: {str(e)}")
 
         self._ur = torch.tensor(permeability, dtype=torch.float32)
 
@@ -492,8 +580,10 @@ class MaterialClass:
         lam_min = np.min(sim_wavelengths)
         lam_max = np.max(sim_wavelengths)
 
-        # Check if simulation wavelengths are in range
-        if lam_min < np.min(wl_list) or lam_max > np.max(wl_list):
+        # With a single in-memory dispersive sample, treat the material as constant
+        # across wavelengths and allow evaluation anywhere. Multi-point datasets
+        # retain strict range checking to avoid uncontrolled extrapolation.
+        if len(wl_list) > 1 and (lam_min < np.min(wl_list) or lam_max > np.max(wl_list)):
             raise ValueError(
                 f"Required wavelengths for material [{self.name}] are out of range "
                 f"[{np.min(wl_list):.2f}um, {np.max(wl_list):.2f}um]!"

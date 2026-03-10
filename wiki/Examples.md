@@ -1,6 +1,6 @@
 # TorchRDIT Examples
 
-This page contains examples showing how to use TorchRDIT for common electromagnetic simulation tasks. The official repository includes many examples in the `examples/` folder that demonstrate different aspects of the library.
+This page contains examples showing how to use TorchRDIT for common electromagnetic simulation tasks. The official repository includes many examples in the `torchrdit/examples/` folder that demonstrate different aspects of the library.
 
 ## Example Categories
 
@@ -30,7 +30,7 @@ The examples are organized into several categories:
 To run any of the examples, navigate to the repository root and run:
 
 ```bash
-python examples/example_gmrf_variable_optimize.py
+uv run python torchrdit/examples/example_gmrf_variable_optimize.py
 ```
 
 Most examples generate visualization outputs automatically, which are saved to the same directory. The examples use relative imports, so they must be run from the repository root.
@@ -43,7 +43,7 @@ The examples require the following dependencies:
 - Matplotlib
 - tqdm (for progress bars in optimization examples)
 
-Some examples also require the data files included in the `examples` directory:
+Some examples also require the data files included in the `torchrdit/examples` directory:
 - `Si_C-e.txt` - Silicon Carbide permittivity data
 - `SiO2-e.txt` - Silicon Dioxide permittivity data
 
@@ -132,17 +132,27 @@ device.update_er_with_mask(mask=mask, layer_index=0)
 ### Dispersive Materials
 
 ```python
-# Creating materials with dispersion from data files
-material_sic = create_material(
-    name='SiC',
-    dielectric_dispersion=True,
-    user_dielectric_file='Si_C-e.txt',
-    data_format='freq-eps',
-    data_unit='thz'
-)
+# Dispersive materials are typically specified via `dielectric_file` in a config.
+# When loading a JSON config file, relative `dielectric_file` paths resolve automatically:
+# config directory → caller script directory → current working directory.
+#
+# Recommended usage (portable, no `base_path` required):
+from torchrdit.builder import SolverBuilder
 
-# Visualize fitted permittivity
-display_fitted_permittivity(device, fig_ax=axes)
+config = {
+    "algorithm": "RCWA",
+    "wavelengths": [1.55],
+    "grids": [64, 64],
+    "harmonics": [3, 3],
+    "materials": {
+        "SiC": {"dielectric_dispersion": True, "dielectric_file": "Si_C-e.txt", "data_format": "freq-eps", "data_unit": "thz"},
+    },
+    "layers": [{"material": "SiC", "thickness": 0.1, "is_homogeneous": True}],
+}
+builder = SolverBuilder().from_config(config)
+solver = builder.build()
+src = solver.add_source(theta=0.0, phi=0.0, pte=1.0, ptm=0.0)
+results = solver.solve(src)
 ```
 
 ### Automatic Differentiation
@@ -164,32 +174,29 @@ print(f"The gradient with respect to the mask is {torch.mean(mask.grad)}")
 ### Optimization
 
 ```python
-# Define an objective function
-def objective_GMRF(dev, src, radius):
-    # ... calculation logic
-    return loss
+import torch
+from torchrdit.solver import get_solver_builder
 
-# Optimization loop
-for epoch in trange(num_epochs):
-    # Zero gradients
-    optimizer.zero_grad()
+# Use builder API for optimization
+# Enable gradient tracking on parameters
+mask.requires_grad = True
 
-    # Forward pass
-    loss = objective_GMRF(dev, src, radius)
+# Forward solve
+    data = device.solve(src)
 
-    # Backward pass
-    loss.backward()
+    # Compute loss and backward pass
+loss = -torch.sum(data.transmission[0])
+loss.backward()
 
-    # Update parameters
-    optimizer.step()
-```
+# Access gradients for optimization
+print(f"The gradient with respect to the mask is {torch.mean(mask.grad)}")
 
 These examples demonstrate the key capabilities of TorchRDIT, including differentiable simulation, optimization, and support for complex geometries and materials.
 
 ## Available Example Files
 
 
-### example_gds_export
+### torchrdit/examples/example_gds_export.py
 
 # Example - GDS Export/Import for Photonic Structures
 
@@ -262,18 +269,18 @@ um = 1.0
 nm = 1e-3 * um
 
 # Create coordinate grid
-rdim = [256, 256]  # Resolution
+grids = [256, 256]  # Resolution
 size = 2.0 * um    # Physical size
 
 # Cartesian coordinate system
 X, Y = torch.meshgrid(
-    torch.linspace(-size/2, size/2, rdim[0]),
-    torch.linspace(-size/2, size/2, rdim[1]),
+    torch.linspace(-size/2, size/2, grids[0]),
+    torch.linspace(-size/2, size/2, grids[1]),
     indexing='xy'
 )
 
 # Initialize shape generator
-shape_gen = ShapeGenerator(X, Y, rdim)
+shape_gen = ShapeGenerator(X, Y, grids)
 
 print("\n1. Simple Shapes Export")
 print("-" * 40)
@@ -334,7 +341,7 @@ print("-" * 40)
 # - One hole contains a triangular island (nested structure)
 
 # Initialize mask
-complex_mask = torch.zeros(rdim)
+complex_mask = torch.zeros(grids)
 
 # Step 1: Create main rectangle
 # This could represent a photonic device or waveguide section
@@ -347,8 +354,8 @@ complex_mask[rect_top:rect_bottom, rect_left:rect_right] = 1
 hole1_center_row, hole1_center_col = 128, 80
 hole1_radius = 20
 
-for i in range(rdim[0]):
-    for j in range(rdim[1]):
+for i in range(grids[0]):
+    for j in range(grids[1]):
         if rect_top <= i < rect_bottom and rect_left <= j < rect_right:
             dist = np.sqrt((i - hole1_center_row)**2 + (j - hole1_center_col)**2)
             if dist < hole1_radius:
@@ -359,8 +366,8 @@ for i in range(rdim[0]):
 hole2_center_row, hole2_center_col = 128, 150
 hole2_radius = 35
 
-for i in range(rdim[0]):
-    for j in range(rdim[1]):
+for i in range(grids[0]):
+    for j in range(grids[1]):
         if rect_top <= i < rect_bottom and rect_left <= j < rect_right:
             dist = np.sqrt((i - hole2_center_row)**2 + (j - hole2_center_col)**2)
             if dist < hole2_radius:
@@ -394,8 +401,8 @@ def point_in_triangle(px, py, v0, v1, v2):
     return not (has_neg and has_pos)
 
 # Add triangle inside Hole 2
-for i in range(rdim[0]):
-    for j in range(rdim[1]):
+for i in range(grids[0]):
+    for j in range(grids[1]):
         dist_to_hole2 = np.sqrt((i - hole2_center_row)**2 + (j - hole2_center_col)**2)
         if dist_to_hole2 < hole2_radius:
             if point_in_triangle(i, j, triangle_vertices[0], triangle_vertices[1], triangle_vertices[2]):
@@ -517,8 +524,8 @@ lattice_t1 = torch.tensor([a/2, -a*np.sqrt(3)/2])
 lattice_t2 = torch.tensor([a/2, a*np.sqrt(3)/2])
 
 # Create parametric coordinates
-vec_p = torch.linspace(-0.5, 0.5, rdim[0])
-vec_q = torch.linspace(-0.5, 0.5, rdim[1])
+vec_p = torch.linspace(-0.5, 0.5, grids[0])
+vec_q = torch.linspace(-0.5, 0.5, grids[1])
 mesh_q, mesh_p = torch.meshgrid(vec_q, vec_p, indexing="xy")
 
 # Transform to physical coordinates using lattice vectors
@@ -526,7 +533,7 @@ X_hex = mesh_p * lattice_t1[0] + mesh_q * lattice_t2[0]
 Y_hex = mesh_p * lattice_t1[1] + mesh_q * lattice_t2[1]
 
 # Create shape generator for hexagonal lattice
-shape_gen_hex = ShapeGenerator(X_hex, Y_hex, rdim, lattice_t1=lattice_t1, lattice_t2=lattice_t2)
+shape_gen_hex = ShapeGenerator(X_hex, Y_hex, grids, lattice_t1=lattice_t1, lattice_t2=lattice_t2)
 
 # Create a pattern on hexagonal lattice
 hex_mask = shape_gen_hex.generate_circle_mask(
@@ -596,7 +603,7 @@ plt.close()
 print(f"\n✓ Summary visualization saved to: {output_dir / 'gds_export_summary.png'}")
 ```
 
-### example_gmrf_dispersive
+### torchrdit/examples/example_gmrf_dispersive.py
 
 # Example - GMRF with hexagonal unit cells with dispersive materials (Builder Pattern)
 
@@ -834,7 +841,7 @@ for i in range(len(torchrdit_sim.lam0)):
 
 ```
 
-### example_gmrf_rdit
+### torchrdit/examples/example_gmrf_rdit.py
 
 # Example - GMRF with hexagonal unit cells using R-DIT
 
@@ -1146,7 +1153,7 @@ except ValueError as e:
     print(f"Could not analyze (1,0) order: {e}")
 ```
 
-### example_gmrf_variable_optimize
+### torchrdit/examples/example_gmrf_variable_optimize.py
 
 # Example - Optimization of a guided-mode resonance filter (GMRF)
 
@@ -1209,7 +1216,7 @@ DEGREES = np.pi / 180
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def GMRF_simulator(radius, lams, rdit_orders=10, kdims=9, is_showinfo=False):
+def GMRF_simulator(radius, lams, rdit_orders=10, harmonicss=9, is_showinfo=False):
     """
     Simulate the GMRF device with the given parameters.
 
@@ -1217,7 +1224,7 @@ def GMRF_simulator(radius, lams, rdit_orders=10, kdims=9, is_showinfo=False):
         radius: Radius of the holes in the hexagonal pattern
         lams: Array of wavelengths to simulate
         rdit_orders: Number of orders for the RDIT algorithm
-        kdims: Dimensions of the k-space grid
+        harmonicss: Dimensions of the k-space grid
         is_showinfo: Whether to show additional info during simulation
 
     Returns:
@@ -1257,7 +1264,7 @@ def GMRF_simulator(radius, lams, rdit_orders=10, kdims=9, is_showinfo=False):
     builder.with_algorithm(Algorithm.RDIT)
     builder.with_precision(Precision.DOUBLE)
     builder.with_real_dimensions([512, 512])
-    builder.with_k_dimensions([kdims, kdims])
+    builder.with_k_dimensions([harmonicss, harmonicss])
     builder.with_wavelengths(lams)
     builder.with_length_unit("um")
     builder.with_lattice_vectors(t1, t2)
@@ -1530,7 +1537,7 @@ def setup_gmrf_solver(lam_opt):
     material_fs = create_material(name="FusedSilica", permittivity=n_fs**2)
 
     r_dit_order = 10
-    kdims = 9
+    harmonicss = 9
 
     # Create and configure solver using Builder pattern
     builder = get_solver_builder()
@@ -1539,7 +1546,7 @@ def setup_gmrf_solver(lam_opt):
     builder.with_algorithm(Algorithm.RDIT)
     builder.with_precision(Precision.DOUBLE)
     builder.with_real_dimensions([512, 512])
-    builder.with_k_dimensions([kdims, kdims])
+    builder.with_k_dimensions([harmonicss, harmonicss])
     builder.with_wavelengths(lam_opt)
     builder.with_length_unit("um")
     builder.with_lattice_vectors(t1, t2)
@@ -1623,7 +1630,7 @@ def main():
 
     # Simulate at a single wavelength
     lam00 = np.array([1540 * NM])
-    data_rdit = GMRF_simulator(r0_rdit, lam00, rdit_orders=10, kdims=15, is_showinfo=False)
+    data_rdit = GMRF_simulator(r0_rdit, lam00, rdit_orders=10, harmonicss=15, is_showinfo=False)
 
     # Print efficiency and calculate gradient
     print(f"The T efficiency (R-DIT) is {data_rdit.transmission[0].to('cpu') * 100:.2f}%")
@@ -1645,7 +1652,7 @@ def main():
     lam2 = 1550 * NM
     lamswp_gmrf = np.linspace(lam1, lam2, nlam, endpoint=True)
 
-    data_gmrfswp_rdit = GMRF_simulator(r1_rdit, lamswp_gmrf, rdit_orders=10, kdims=11)
+    data_gmrfswp_rdit = GMRF_simulator(r1_rdit, lamswp_gmrf, rdit_orders=10, harmonicss=11)
 
     # Plot initial spectrum
     fig, ax = plot_spectrum(lamswp0=lamswp_gmrf, data_rdit=data_gmrfswp_rdit)
@@ -1673,7 +1680,7 @@ def main():
     print("-" * 70)
 
     # Simulate optimized design
-    data_optimized_rdit = GMRF_simulator(r_optimized.detach(), lamswp_gmrf, rdit_orders=10, kdims=9, is_showinfo=True)
+    data_optimized_rdit = GMRF_simulator(r_optimized.detach(), lamswp_gmrf, rdit_orders=10, harmonicss=9, is_showinfo=True)
 
     # Plot comparison
     fig, ax = plot_spectrum_compare_opt(lamswp0=lamswp_gmrf, data_org=data_gmrfswp_rdit, data_opt=data_optimized_rdit)
@@ -1695,7 +1702,7 @@ if __name__ == "__main__":
 
 ```
 
-### example_source_batching
+### torchrdit/examples/example_source_batching.py
 
 Example: Source Batching for Efficient Multi-Angle and Multi-Polarization Simulations
 
@@ -1747,8 +1754,8 @@ def example_angle_sweep():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),  # 1.55 μm wavelength
-        rdim=[512, 512],
-        kdim=[5, 5],
+        grids=[512, 512],
+        harmonics=[5, 5],
         device='cpu'
     )
     
@@ -1864,8 +1871,8 @@ def example_polarization_sweep():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[5, 5],
+        grids=[256, 256],
+        harmonics=[5, 5],
         device='cpu'
     )
     
@@ -1999,8 +2006,8 @@ def example_optimization_with_batched_sources():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[5, 5],
+        grids=[256, 256],
+        harmonics=[5, 5],
         device='cpu'
     )
     
@@ -2144,8 +2151,8 @@ def example_wavelength_and_angle_sweep():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=wavelengths,
-        rdim=[256, 256],
-        kdim=[5, 5],
+        grids=[256, 256],
+        harmonics=[5, 5],
         device='cpu'
     )
     
@@ -2241,7 +2248,7 @@ if __name__ == "__main__":
     main()
 ```
 
-### source_batching_advanced
+### torchrdit/examples/source_batching_advanced.py
 
 Source Batching Advanced Examples for TorchRDIT v0.1.22
 
@@ -2286,8 +2293,8 @@ def example_multi_angle_optimization():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[7, 7],
+        grids=[256, 256],
+        harmonics=[7, 7],
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     
@@ -2394,8 +2401,8 @@ def example_robust_design():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[7, 7],
+        grids=[256, 256],
+        harmonics=[7, 7],
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     
@@ -2561,8 +2568,8 @@ def example_large_sweep_chunking():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[5, 5]
+        grids=[256, 256],
+        harmonics=[5, 5]
     )
     
     si = create_material(name="Si", permittivity=12.25)
@@ -2614,8 +2621,8 @@ def example_gradient_validation():
         solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[128, 128],
-            kdim=[5, 5],
+            grids=[128, 128],
+            harmonics=[5, 5],
             device='cuda' if torch.cuda.is_available() else 'cpu'
         )
         si = create_material(name="Si", permittivity=12.25)
@@ -2725,7 +2732,7 @@ if __name__ == "__main__":
     main()
 ```
 
-### source_batching_basic
+### torchrdit/examples/source_batching_basic.py
 
 Source Batching Basic Usage Examples for TorchRDIT v0.1.22
 
@@ -2770,8 +2777,8 @@ def example_single_vs_batched():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),  # 1.55 μm wavelength
-        rdim=[512, 512],        # Real-space dimensions
-        kdim=[7, 7],            # k-space dimensions
+        grids=[512, 512],        # Real-space dimensions
+        harmonics=[7, 7],            # k-space dimensions
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     
@@ -2841,8 +2848,8 @@ def example_angle_sweep():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[512, 512],
-        kdim=[11, 11]
+        grids=[512, 512],
+        harmonics=[11, 11]
     )
     
     # Add materials
@@ -2923,8 +2930,8 @@ def example_polarization_analysis():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[7, 7]
+        grids=[256, 256],
+        harmonics=[7, 7]
     )
     
     # Add materials
@@ -3012,8 +3019,8 @@ def example_parameter_sweep():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[5, 5]
+        grids=[256, 256],
+        harmonics=[5, 5]
     )
     
     # Add materials and simple structure
@@ -3079,7 +3086,7 @@ if __name__ == "__main__":
     main()
 ```
 
-### source_batching_performance
+### torchrdit/examples/source_batching_performance.py
 
 Source Batching Performance Comparison for TorchRDIT v0.1.22
 
@@ -3128,8 +3135,8 @@ def benchmark_scaling():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[7, 7],
+        grids=[256, 256],
+        harmonics=[7, 7],
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     
@@ -3223,7 +3230,7 @@ def benchmark_complexity():
     """Benchmark performance with different structure complexities."""
     print("\n=== Benchmark 2: Impact of Structure Complexity ===")
     
-    kdim_values = [3, 5, 7, 9, 11]
+    harmonics_values = [3, 5, 7, 9, 11]
     speedups = []
     
     # Fixed number of sources
@@ -3231,13 +3238,13 @@ def benchmark_complexity():
     deg = np.pi / 180
     angles = np.linspace(0, 60, n_sources) * deg
     
-    for kdim in kdim_values:
+    for harmonics in harmonics_values:
         # Create solver with varying complexity
         solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[256, 256],
-            kdim=[kdim, kdim],
+            grids=[256, 256],
+            harmonics=[harmonics, harmonics],
             device='cuda' if torch.cuda.is_available() else 'cpu'
         )
         
@@ -3271,13 +3278,13 @@ def benchmark_complexity():
         speedup = seq_time / batch_time
         speedups.append(speedup)
         
-        print(f"kdim={kdim}x{kdim}: Sequential≈{seq_time:.3f}s, "
+        print(f"harmonics={harmonics}x{harmonics}: Sequential≈{seq_time:.3f}s, "
               f"Batched={batch_time:.3f}s, Speedup={speedup:.2f}x")
     
     # Plot
     plt.figure(figsize=(8, 6))
-    plt.plot(kdim_values, speedups, 'bo-', linewidth=2, markersize=8)
-    plt.xlabel('Fourier Harmonics (kdim)')
+    plt.plot(harmonics_values, speedups, 'bo-', linewidth=2, markersize=8)
+    plt.xlabel('Fourier Harmonics (harmonics)')
     plt.ylabel('Speedup Factor')
     plt.title(f'Speedup vs Structure Complexity ({n_sources} sources)')
     plt.grid(True, alpha=0.3)
@@ -3294,8 +3301,8 @@ def benchmark_wavelength_angle_sweep():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=wavelengths,
-        rdim=[256, 256],
-        kdim=[5, 5],
+        grids=[256, 256],
+        harmonics=[5, 5],
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     
@@ -3364,8 +3371,8 @@ def benchmark_memory_usage():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[512, 512],
-        kdim=[9, 9],
+        grids=[512, 512],
+        harmonics=[9, 9],
         device='cuda'
     )
     
@@ -3466,8 +3473,8 @@ def benchmark_optimization_overhead():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[5, 5],
+        grids=[256, 256],
+        harmonics=[5, 5],
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     

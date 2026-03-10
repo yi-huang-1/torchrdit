@@ -4,7 +4,7 @@
 
 <a id="torchrdit"></a>
 
-# torchrdit
+# Module torchrdit
 
 TorchRDIT: GPU-accelerated electromagnetic solver for meta-optics design.
 

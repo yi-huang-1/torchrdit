@@ -23,8 +23,8 @@ class TestSourceBatchingGradients:
         return create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[64, 64],
-            kdim=[3, 3],
+            grids=[64, 64],
+            harmonics=[3, 3],
             device='cpu'
         )
     
@@ -50,15 +50,15 @@ class TestSourceBatchingGradients:
         solver1 = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[64, 64],
-            kdim=[3, 3],
+            grids=[64, 64],
+            harmonics=[3, 3],
             device='cpu'
         )
         solver2 = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[64, 64],
-            kdim=[3, 3],
+            grids=[64, 64],
+            harmonics=[3, 3],
             device='cpu'
         )
         
@@ -114,8 +114,8 @@ class TestSourceBatchingGradients:
         solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=wavelengths,
-            rdim=[48, 48],  # Smaller for speed
-            kdim=[3, 3],
+            grids=[48, 48],  # Smaller for speed
+            harmonics=[3, 3],
             device='cpu'
         )
         
@@ -157,15 +157,15 @@ class TestSourceBatchingGradients:
         solver1 = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[64, 64],
-            kdim=[3, 3],
+            grids=[64, 64],
+            harmonics=[3, 3],
             device='cpu'
         )
         solver2 = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[64, 64],
-            kdim=[3, 3],
+            grids=[64, 64],
+            harmonics=[3, 3],
             device='cpu'
         )
         
@@ -237,8 +237,8 @@ class TestSourceBatchingGradients:
         solver1 = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[64, 64],
-            kdim=[3, 3],
+            grids=[64, 64],
+            harmonics=[3, 3],
             device='cpu'
         )
         self.setup_parametric_structure(solver1, radius)
@@ -252,8 +252,8 @@ class TestSourceBatchingGradients:
             solver2 = create_solver(
                 algorithm=Algorithm.RDIT,
                 lam0=np.array([1.55]),
-                rdim=[64, 64],
-                kdim=[3, 3],
+                grids=[64, 64],
+                harmonics=[3, 3],
                 device='cpu'
             )
             radius_plus = radius + epsilon
@@ -265,8 +265,8 @@ class TestSourceBatchingGradients:
             solver3 = create_solver(
                 algorithm=Algorithm.RDIT,
                 lam0=np.array([1.55]),
-                rdim=[64, 64],
-                kdim=[3, 3],
+                grids=[64, 64],
+                harmonics=[3, 3],
                 device='cpu'
             )
             radius_minus = radius - epsilon

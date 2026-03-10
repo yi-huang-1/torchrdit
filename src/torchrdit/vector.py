@@ -772,14 +772,14 @@ class TangentFieldGenerator:
         self,
         lattice_t1: torch.Tensor,
         lattice_t2: torch.Tensor,
-        kdim: Tuple[int, int],
+        harmonics: Tuple[int, int],
         *,
         fourier_loss_weight: float = 1e-2,
         smoothness_loss_weight: float = 1e-3,
         steps: int = 1,
     ) -> None:
         self._lattice_vectors = LatticeVectors(u=lattice_t1, v=lattice_t2)
-        approximate_terms = int(kdim[0] * kdim[1])
+        approximate_terms = int(harmonics[0] * harmonics[1])
         self._expansion_manager = FourierExpansionManager(
             self._lattice_vectors,
             approximate_terms,
@@ -1106,7 +1106,7 @@ def compute_tangent_field(
     YO: torch.Tensor,
     lattice_t1: torch.Tensor,
     lattice_t2: torch.Tensor,
-    kdim: Tuple[int, int],
+    harmonics: Tuple[int, int],
     *,
     scheme: str = "POL",
     fourier_loss_weight: float = 1e-2,
@@ -1121,7 +1121,7 @@ def compute_tangent_field(
         YO (torch.Tensor): Y-coordinate grid with the same shape as ``mask``.
         lattice_t1 (torch.Tensor): First lattice vector in real space.
         lattice_t2 (torch.Tensor): Second lattice vector in real space.
-        kdim (Tuple[int, int]): Number of Fourier harmonics along each axis.
+        harmonics (Tuple[int, int]): Number of Fourier harmonics along each axis.
         scheme (str): Tangent vector scheme used for Fast Fourier Factorization.
 
             * ``"POL"`` – global-magnitude normalized polarization vectors.
@@ -1139,7 +1139,7 @@ def compute_tangent_field(
     generator = TangentFieldGenerator(
         lattice_t1=lattice_t1,
         lattice_t2=lattice_t2,
-        kdim=kdim,
+        harmonics=harmonics,
         fourier_loss_weight=fourier_loss_weight,
         smoothness_loss_weight=smoothness_loss_weight,
         steps=steps,

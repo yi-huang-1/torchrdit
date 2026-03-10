@@ -39,7 +39,7 @@ DEGREES = np.pi / 180
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def GMRF_simulator(radius, lams, rdit_orders=10, kdims=9, is_showinfo=False):
+def GMRF_simulator(radius, lams, rdit_orders=10, harmonicss=9, is_showinfo=False):
     """
     Simulate the GMRF device with the given parameters.
 
@@ -47,7 +47,7 @@ def GMRF_simulator(radius, lams, rdit_orders=10, kdims=9, is_showinfo=False):
         radius: Radius of the holes in the hexagonal pattern
         lams: Array of wavelengths to simulate
         rdit_orders: Number of orders for the RDIT algorithm
-        kdims: Dimensions of the k-space grid
+        harmonicss: Dimensions of the k-space grid
         is_showinfo: Whether to show additional info during simulation
 
     Returns:
@@ -87,7 +87,7 @@ def GMRF_simulator(radius, lams, rdit_orders=10, kdims=9, is_showinfo=False):
     builder.with_algorithm(Algorithm.RDIT)
     builder.with_precision(Precision.DOUBLE)
     builder.with_real_dimensions([512, 512])
-    builder.with_k_dimensions([kdims, kdims])
+    builder.with_k_dimensions([harmonicss, harmonicss])
     builder.with_wavelengths(lams)
     builder.with_length_unit("um")
     builder.with_lattice_vectors(t1, t2)
@@ -360,7 +360,7 @@ def setup_gmrf_solver(lam_opt):
     material_fs = create_material(name="FusedSilica", permittivity=n_fs**2)
 
     r_dit_order = 10
-    kdims = 9
+    harmonicss = 9
 
     # Create and configure solver using Builder pattern
     builder = get_solver_builder()
@@ -369,7 +369,7 @@ def setup_gmrf_solver(lam_opt):
     builder.with_algorithm(Algorithm.RDIT)
     builder.with_precision(Precision.DOUBLE)
     builder.with_real_dimensions([512, 512])
-    builder.with_k_dimensions([kdims, kdims])
+    builder.with_k_dimensions([harmonicss, harmonicss])
     builder.with_wavelengths(lam_opt)
     builder.with_length_unit("um")
     builder.with_lattice_vectors(t1, t2)
@@ -453,7 +453,7 @@ def main():
 
     # Simulate at a single wavelength
     lam00 = np.array([1540 * NM])
-    data_rdit = GMRF_simulator(r0_rdit, lam00, rdit_orders=10, kdims=15, is_showinfo=False)
+    data_rdit = GMRF_simulator(r0_rdit, lam00, rdit_orders=10, harmonicss=15, is_showinfo=False)
 
     # Print efficiency and calculate gradient
     print(f"The T efficiency (R-DIT) is {data_rdit.transmission[0].to('cpu') * 100:.2f}%")
@@ -475,7 +475,7 @@ def main():
     lam2 = 1550 * NM
     lamswp_gmrf = np.linspace(lam1, lam2, nlam, endpoint=True)
 
-    data_gmrfswp_rdit = GMRF_simulator(r1_rdit, lamswp_gmrf, rdit_orders=10, kdims=11)
+    data_gmrfswp_rdit = GMRF_simulator(r1_rdit, lamswp_gmrf, rdit_orders=10, harmonicss=11)
 
     # Plot initial spectrum
     fig, ax = plot_spectrum(lamswp0=lamswp_gmrf, data_rdit=data_gmrfswp_rdit)
@@ -503,7 +503,7 @@ def main():
     print("-" * 70)
 
     # Simulate optimized design
-    data_optimized_rdit = GMRF_simulator(r_optimized.detach(), lamswp_gmrf, rdit_orders=10, kdims=9, is_showinfo=True)
+    data_optimized_rdit = GMRF_simulator(r_optimized.detach(), lamswp_gmrf, rdit_orders=10, harmonicss=9, is_showinfo=True)
 
     # Plot comparison
     fig, ax = plot_spectrum_compare_opt(lamswp0=lamswp_gmrf, data_org=data_gmrfswp_rdit, data_opt=data_optimized_rdit)

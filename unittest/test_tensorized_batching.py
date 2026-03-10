@@ -23,8 +23,8 @@ class TestTensorizedBatching:
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=np.array([1.55]),
-            kdim=[3, 3],
-            rdim=[256, 256],
+            harmonics=[3, 3],
+            grids=[256, 256],
             device='cpu'
         )
         
@@ -232,7 +232,7 @@ class TestTensorizedBatching:
         )
         
         # Check output shapes
-        n_harmonics_squared = solver.kdim[0] * solver.kdim[1]
+        n_harmonics_squared = solver.harmonics[0] * solver.harmonics[1]
         
         # Vector quantities should have shape (n_sources, n_freqs, n_harmonics_squared)
         for key in ['mat_kx', 'mat_ky', 'mat_kz_ref', 'mat_kz_trn', 'mat_kz']:

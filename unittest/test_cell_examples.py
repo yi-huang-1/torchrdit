@@ -40,7 +40,7 @@ class TestCellDocExamples(unittest.TestCase):
         import torch
         
         # Create a basic cell with default properties
-        cell = Cell3D(rdim=[256, 256], kdim=[5, 5])
+        cell = Cell3D(grids=[256, 256], harmonics=[5, 5])
         
         # Add materials
         si = create_material(name="Si", permittivity=11.7)
@@ -50,8 +50,8 @@ class TestCellDocExamples(unittest.TestCase):
         cell.add_layer(material_name="Si", thickness=torch.tensor(0.2))
         
         # Verify the cell was created correctly
-        self.assertEqual(cell.rdim, [256, 256])
-        self.assertEqual(cell.kdim, [5, 5])
+        self.assertEqual(cell.grids, [256, 256])
+        self.assertEqual(cell.harmonics, [5, 5])
         self.assertEqual(len(cell.layers), 1)
         self.assertTrue(torch.isclose(cell.layers[0].thickness, torch.tensor(0.2)).item())
         self.assertEqual(cell.layers[0].material_name, "Si")
@@ -64,13 +64,13 @@ class TestCellDocExamples(unittest.TestCase):
         # Create an RDIT solver
         rdit_solver = create_solver(
             algorithm=Algorithm.RDIT,
-            rdim=[1024, 1024],
-            kdim=[7, 7]
+            grids=[1024, 1024],
+            harmonics=[7, 7]
         )
         
         # Verify solver was created correctly
-        self.assertEqual(rdit_solver.rdim, [1024, 1024])
-        self.assertEqual(rdit_solver.kdim, [7, 7])
+        self.assertEqual(rdit_solver.grids, [1024, 1024])
+        self.assertEqual(rdit_solver.harmonics, [7, 7])
         self.assertEqual(rdit_solver.algorithm.name, "R-DIT")
         
         # Create an RCWA solver with non-rectangular lattice
@@ -78,13 +78,13 @@ class TestCellDocExamples(unittest.TestCase):
             algorithm=Algorithm.RCWA,
             t1=torch.tensor([[1.0, 0.0]]),
             t2=torch.tensor([[0.5, 0.866]]),  # 30-degree lattice
-            rdim=[512, 512],
-            kdim=[5, 5]
+            grids=[512, 512],
+            harmonics=[5, 5]
         )
         
         # Verify solver was created correctly
-        self.assertEqual(rcwa_solver.rdim, [512, 512])
-        self.assertEqual(rcwa_solver.kdim, [5, 5])
+        self.assertEqual(rcwa_solver.grids, [512, 512])
+        self.assertEqual(rcwa_solver.harmonics, [5, 5])
         self.assertEqual(rcwa_solver.algorithm.name, "RCWA")
         self.assertEqual(rcwa_solver.cell_type, CellType.Other)  # Non-rectangular lattice
     
@@ -207,8 +207,8 @@ class TestCellDocExamples(unittest.TestCase):
         X, Y = cell.get_layout()
         
         # Verify return values
-        self.assertEqual(X.shape, tuple(cell.rdim))
-        self.assertEqual(Y.shape, tuple(cell.rdim))
+        self.assertEqual(X.shape, tuple(cell.grids))
+        self.assertEqual(Y.shape, tuple(cell.grids))
         
         # Simple verification that these are coordinate grids
         self.assertAlmostEqual(X[0, 0].item(), -0.5, delta=0.01)

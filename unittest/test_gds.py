@@ -22,7 +22,7 @@ class TestGDSFunctionality(unittest.TestCase):
     
     def setUp(self):
         """Set up common test fixtures."""
-        self.rdim = [256, 256]
+        self.grids = [256, 256]
         self.temp_dir = tempfile.mkdtemp()
         
     def tearDown(self):
@@ -57,13 +57,13 @@ class TestGDSFunctionality(unittest.TestCase):
             t2 = torch.tensor([a/2, a*np.sqrt(3)/2], dtype=torch.float32)
             
         # Create coordinate mesh
-        vec_p = torch.linspace(-0.5, 0.5, self.rdim[0])
-        vec_q = torch.linspace(-0.5, 0.5, self.rdim[1])
+        vec_p = torch.linspace(-0.5, 0.5, self.grids[0])
+        vec_q = torch.linspace(-0.5, 0.5, self.grids[1])
         mesh_q, mesh_p = torch.meshgrid(vec_q, vec_p, indexing="xy")
         X = mesh_p * t1[0] + mesh_q * t2[0]
         Y = mesh_p * t1[1] + mesh_q * t2[1]
         
-        return ShapeGenerator(X, Y, self.rdim, lattice_t1=t1, lattice_t2=t2)
+        return ShapeGenerator(X, Y, self.grids, lattice_t1=t1, lattice_t2=t2)
     
     def _roundtrip_and_assert(self, shape_gen, mask, name: str):
         gds_path = os.path.join(self.temp_dir, f"{name}.gds")
@@ -161,14 +161,14 @@ class TestGDSFunctionality(unittest.TestCase):
         """Test GDS export/import for complex topology with holes and islands."""
         # Create coordinate grid
         X, Y = torch.meshgrid(
-            torch.linspace(-2, 2, self.rdim[0]), 
-            torch.linspace(-2, 2, self.rdim[1]), 
+            torch.linspace(-2, 2, self.grids[0]), 
+            torch.linspace(-2, 2, self.grids[1]), 
             indexing='xy'
         )
-        shape_gen = ShapeGenerator(X, Y, self.rdim)
+        shape_gen = ShapeGenerator(X, Y, self.grids)
         
         # Create complex mask (rectangle with 2 holes, one containing triangle)
-        mask = torch.zeros(self.rdim)
+        mask = torch.zeros(self.grids)
         
         # Main rectangle
         rect_top, rect_bottom = 28, 228
@@ -204,11 +204,11 @@ class TestGDSFunctionality(unittest.TestCase):
         
         # Generate triangle mask using vectorized operation
         triangle_mask = point_in_triangle_vectorized(
-            self.rdim, triangle_vertices[0], triangle_vertices[1], triangle_vertices[2]
+            self.grids, triangle_vertices[0], triangle_vertices[1], triangle_vertices[2]
         )
         
         # Apply triangle only within hole2
-        Y, X = np.ogrid[:self.rdim[0], :self.rdim[1]]
+        Y, X = np.ogrid[:self.grids[0], :self.grids[1]]
         dist_sq = (X - hole2_center[1])**2 + (Y - hole2_center[0])**2
         within_hole2 = dist_sq < hole2_radius**2
         

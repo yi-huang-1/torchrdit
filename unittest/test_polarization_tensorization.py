@@ -31,8 +31,8 @@ class TestPolarizationTensorization:
             lam0=np.array(
                 [1.55, 1.31, 1.064]
             ),  # Multiple wavelengths for comprehensive testing
-            rdim=[512, 512],
-            kdim=[5, 5],
+            grids=[512, 512],
+            harmonics=[5, 5],
             device="cpu",  # Use CPU for consistent testing
             debug_batching=True,  # Enable debug output for development
         )

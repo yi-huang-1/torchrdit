@@ -3,7 +3,6 @@
 * [torchrdit.builder](#torchrdit.builder)
   * [flip\_config](#torchrdit.builder.flip_config)
   * [SolverBuilder](#torchrdit.builder.SolverBuilder)
-    * [\_\_init\_\_](#torchrdit.builder.SolverBuilder.__init__)
     * [with\_algorithm](#torchrdit.builder.SolverBuilder.with_algorithm)
     * [with\_algorithm\_instance](#torchrdit.builder.SolverBuilder.with_algorithm_instance)
     * [with\_precision](#torchrdit.builder.SolverBuilder.with_precision)
@@ -26,11 +25,11 @@
 
 <a id="torchrdit.builder"></a>
 
-# torchrdit.builder
+# Module torchrdit.builder
 
 <a id="torchrdit.builder.flip_config"></a>
 
-#### flip\_config
+### flip\_config
 
 ```python
 def flip_config(config: Dict[str, Any]) -> Dict[str, Any]
@@ -124,19 +123,9 @@ solver = SolverBuilder().from_config("config.json").build()
   Keywords:
   builder pattern, solver configuration, RCWA, R-DIT, electromagnetic solver
 
-<a id="torchrdit.builder.SolverBuilder.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__()
-```
-
-Initialize the builder with default values for all solver parameters.
-
 <a id="torchrdit.builder.SolverBuilder.with_algorithm"></a>
 
-#### with\_algorithm
+### SolverBuilder.with\_algorithm
 
 ```python
 def with_algorithm(algorithm_type: Algorithm) -> "SolverBuilder"
@@ -168,7 +157,7 @@ builder = SolverBuilder().with_algorithm(Algorithm.RDIT)
 
 <a id="torchrdit.builder.SolverBuilder.with_algorithm_instance"></a>
 
-#### with\_algorithm\_instance
+### SolverBuilder.with\_algorithm\_instance
 
 ```python
 def with_algorithm_instance(algorithm: SolverAlgorithm) -> "SolverBuilder"
@@ -205,7 +194,7 @@ builder = SolverBuilder().with_algorithm_instance(custom_algorithm)
 
 <a id="torchrdit.builder.SolverBuilder.with_precision"></a>
 
-#### with\_precision
+### SolverBuilder.with\_precision
 
 ```python
 def with_precision(precision: Precision) -> "SolverBuilder"
@@ -240,7 +229,7 @@ builder = SolverBuilder().with_precision(Precision.DOUBLE)
 
 <a id="torchrdit.builder.SolverBuilder.with_wavelengths"></a>
 
-#### with\_wavelengths
+### SolverBuilder.with\_wavelengths
 
 ```python
 def with_wavelengths(lam0: Union[float, np.ndarray]) -> "SolverBuilder"
@@ -276,7 +265,7 @@ builder = SolverBuilder().with_wavelengths(wavelengths)
 
 <a id="torchrdit.builder.SolverBuilder.with_length_unit"></a>
 
-#### with\_length\_unit
+### SolverBuilder.with\_length\_unit
 
 ```python
 def with_length_unit(unit: str) -> "SolverBuilder"
@@ -309,17 +298,17 @@ builder = SolverBuilder().with_length_unit('nm')
 
 <a id="torchrdit.builder.SolverBuilder.with_real_dimensions"></a>
 
-#### with\_real\_dimensions
+### SolverBuilder.with\_real\_dimensions
 
 ```python
-def with_real_dimensions(rdim: List[int]) -> "SolverBuilder"
+def with_real_dimensions(grids: List[int]) -> "SolverBuilder"
 ```
 
 Set the dimensions in real space for discretization.
 
 **Arguments**:
 
-- `rdim` _List[int]_ - The dimensions in real space as [height, width].
+- `grids` _List[int]_ - The dimensions in real space as [height, width].
   
 
 **Returns**:
@@ -342,17 +331,17 @@ builder = SolverBuilder().with_real_dimensions([1024, 1024])
 
 <a id="torchrdit.builder.SolverBuilder.with_k_dimensions"></a>
 
-#### with\_k\_dimensions
+### SolverBuilder.with\_k\_dimensions
 
 ```python
-def with_k_dimensions(kdim: List[int]) -> "SolverBuilder"
+def with_k_dimensions(harmonics: List[int]) -> "SolverBuilder"
 ```
 
 Set the dimensions in k-space (Fourier space) for harmonics.
 
 **Arguments**:
 
-- `kdim` _List[int]_ - The dimensions in k-space as [height, width].
+- `harmonics` _List[int]_ - The dimensions in k-space as [height, width].
   Higher values include more harmonics for better accuracy at
   the cost of computational complexity.
   
@@ -377,7 +366,7 @@ builder = SolverBuilder().with_k_dimensions([5, 5])
 
 <a id="torchrdit.builder.SolverBuilder.with_materials"></a>
 
-#### with\_materials
+### SolverBuilder.with\_materials
 
 ```python
 def with_materials(materials: List[Any]) -> "SolverBuilder"
@@ -411,7 +400,7 @@ builder = SolverBuilder().with_materials([air, silicon])
 
 <a id="torchrdit.builder.SolverBuilder.add_material"></a>
 
-#### add\_material
+### SolverBuilder.add\_material
 
 ```python
 def add_material(material: Any) -> "SolverBuilder"
@@ -445,7 +434,7 @@ builder.add_material(create_material(name="Si", permittivity=12.0))
 
 <a id="torchrdit.builder.SolverBuilder.with_trn_material"></a>
 
-#### with\_trn\_material
+### SolverBuilder.with\_trn\_material
 
 ```python
 def with_trn_material(material: Union[str, Any]) -> "SolverBuilder"
@@ -485,7 +474,7 @@ builder = SolverBuilder().with_trn_material(air)
 
 <a id="torchrdit.builder.SolverBuilder.with_ref_material"></a>
 
-#### with\_ref\_material
+### SolverBuilder.with\_ref\_material
 
 ```python
 def with_ref_material(material: Union[str, Any]) -> "SolverBuilder"
@@ -525,7 +514,7 @@ builder = SolverBuilder().with_ref_material(silicon)
 
 <a id="torchrdit.builder.SolverBuilder.with_lattice_vectors"></a>
 
-#### with\_lattice\_vectors
+### SolverBuilder.with\_lattice\_vectors
 
 ```python
 def with_lattice_vectors(t1: torch.Tensor,
@@ -565,7 +554,7 @@ builder = SolverBuilder().with_lattice_vectors(t1, t2)
 
 <a id="torchrdit.builder.SolverBuilder.with_fff"></a>
 
-#### with\_fff
+### SolverBuilder.with\_fff
 
 ```python
 def with_fff(use_fff: bool) -> "SolverBuilder"
@@ -601,7 +590,7 @@ builder = SolverBuilder().with_fff(False)
 
 <a id="torchrdit.builder.SolverBuilder.with_fff_vector_options"></a>
 
-#### with\_fff\_vector\_options
+### SolverBuilder.with\_fff\_vector\_options
 
 ```python
 def with_fff_vector_options(*,
@@ -615,7 +604,15 @@ Configure tangent vector field generation behaviour.
 
 **Arguments**:
 
-- `scheme` - Tangent field scheme (e.g., ``'POL'``, ``'NORMAL'``).
+- `scheme` - Tangent field scheme used by Fast Fourier Factorization. Supported
+  values mirror :func:`torchrdit.vector.compute_tangent_field`:
+  
+  * ``"POL"`` – polarization-preserving tangents normalized by the global maximum.
+  * ``"NORMAL"`` – per-pixel unit tangents for geometry-driven factorization.
+  * ``"JONES"`` – convert refined tangents into Jones vectors after the solve.
+  * ``"JONES_DIRECT"`` – execute the Newton solve directly in Jones space.
+  
+  Defaults to the builder's current choice (``"POL"`` for new instances).
 - `fourier_weight` - Weight for the Fourier-domain loss term.
 - `smoothness_weight` - Weight for the spatial smoothness penalty.
 - `steps` - Number of Newton iterations for tangent field refinement.
@@ -635,7 +632,7 @@ Configure tangent vector field generation behaviour.
 
 <a id="torchrdit.builder.SolverBuilder.with_device"></a>
 
-#### with\_device
+### SolverBuilder.with\_device
 
 ```python
 def with_device(device: Union[str, torch.device]) -> "SolverBuilder"
@@ -671,7 +668,7 @@ builder = SolverBuilder().with_device('cuda:1')
 
 <a id="torchrdit.builder.SolverBuilder.with_rdit_order"></a>
 
-#### with\_rdit\_order
+### SolverBuilder.with\_rdit\_order
 
 ```python
 def with_rdit_order(order: int) -> "SolverBuilder"
@@ -715,7 +712,7 @@ builder = SolverBuilder() \
 
 <a id="torchrdit.builder.SolverBuilder.add_layer"></a>
 
-#### add\_layer
+### SolverBuilder.add\_layer
 
 ```python
 def add_layer(layer_config: Dict[str, Any]) -> "SolverBuilder"
@@ -758,7 +755,7 @@ builder.add_layer({
 
 <a id="torchrdit.builder.SolverBuilder.from_config"></a>
 
-#### from\_config
+### SolverBuilder.from\_config
 
 ```python
 def from_config(config: Union[str, Dict[str, Any]],
@@ -783,6 +780,14 @@ dictionary, which is useful for storing and sharing complex configurations.
 - `SolverBuilder` - The builder instance for method chaining.
   
 
+**Notes**:
+
+  Fast Fourier Factorization (FFF) options in JSON configs use the
+  solver-style keys: ``is_use_fff``, ``fff_vector_scheme``,
+  ``fff_fourier_weight``, ``fff_smoothness_weight``, and
+  ``fff_vector_steps``.
+  
+
 **Examples**:
 
 ```python
@@ -795,7 +800,9 @@ builder = SolverBuilder().from_config("config.json", flip=True)
 config_dict = {
     "algorithm": "RDIT",
     "wavelengths": [1.55],
-    "kdim": [5, 5],
+    "harmonics": [5, 5],
+    "is_use_fff": True,
+    "fff_vector_scheme": "POL",
     "materials": {...},
     "layers": [...]
 }
@@ -812,7 +819,7 @@ builder = SolverBuilder().from_config(config_dict)
 
 <a id="torchrdit.builder.SolverBuilder.build"></a>
 
-#### build
+### SolverBuilder.build
 
 ```python
 def build()

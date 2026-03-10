@@ -33,8 +33,8 @@ def example_angle_sweep():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),  # 1.55 μm wavelength
-        rdim=[512, 512],
-        kdim=[5, 5],
+        grids=[512, 512],
+        harmonics=[5, 5],
         device='cpu'
     )
     
@@ -150,8 +150,8 @@ def example_polarization_sweep():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[5, 5],
+        grids=[256, 256],
+        harmonics=[5, 5],
         device='cpu'
     )
     
@@ -285,8 +285,8 @@ def example_optimization_with_batched_sources():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[5, 5],
+        grids=[256, 256],
+        harmonics=[5, 5],
         device='cpu'
     )
     
@@ -430,8 +430,8 @@ def example_wavelength_and_angle_sweep():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=wavelengths,
-        rdim=[256, 256],
-        kdim=[5, 5],
+        grids=[256, 256],
+        harmonics=[5, 5],
         device='cpu'
     )
     

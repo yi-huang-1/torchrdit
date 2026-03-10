@@ -17,7 +17,7 @@ from torchrdit.shapes import ShapeGenerator
 from torchrdit.gds import mask_to_gds, gds_to_mask
 
 # Create shape generator
-shape_gen = ShapeGenerator(X, Y, rdim)
+shape_gen = ShapeGenerator(X, Y, grids)
 
 # Generate a mask
 mask = shape_gen.generate_circle_mask(center=(0, 0), radius=0.5)
@@ -401,7 +401,7 @@ def mask_to_gds(
     from torchrdit.gds import mask_to_gds
 
     # Create shape generator and mask
-    shape_gen = ShapeGenerator(X, Y, rdim)
+    shape_gen = ShapeGenerator(X, Y, grids)
     mask = shape_gen.generate_circle_mask(center=(0, 0), radius=0.5)
 
     # Export to GDS
@@ -688,7 +688,7 @@ def gds_to_mask(json_path: Union[str, Path], shape_generator, soft_edge: float =
     from torchrdit.gds import gds_to_mask
 
     # Create shape generator
-    shape_gen = ShapeGenerator(X, Y, rdim)
+    shape_gen = ShapeGenerator(X, Y, grids)
 
     # Import mask from GDS JSON
     mask = gds_to_mask("device.json", shape_gen)
@@ -704,7 +704,7 @@ def gds_to_mask(json_path: Union[str, Path], shape_generator, soft_edge: float =
     vertices_list = load_gds_vertices(json_path)
 
     # Start with empty mask
-    reconstructed = torch.zeros(shape_generator.rdim, dtype=shape_generator.tfloat, device=shape_generator.XO.device)
+    reconstructed = torch.zeros(shape_generator.grids, dtype=shape_generator.tfloat, device=shape_generator.XO.device)
 
     # Check if this is nested format (from gds_export) or flat format
     if len(vertices_list) > 0 and isinstance(vertices_list[0], list) and len(vertices_list[0]) > 0:

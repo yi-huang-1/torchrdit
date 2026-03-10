@@ -32,8 +32,8 @@ class TestMathematicalEquivalence:
             algorithm=Algorithm.RDIT,
             precision=Precision.DOUBLE,  # Use double precision for accuracy
             lam0=self.wavelengths,
-            rdim=[256, 256],
-            kdim=[3, 3],
+            grids=[256, 256],
+            harmonics=[3, 3],
             device=self.device,
         )
 
@@ -136,15 +136,15 @@ class TestMathematicalEquivalence:
 
         # Verify shapes
         n_freqs = len(self.wavelengths)
-        kdim = self.solver.kdim
+        harmonics = self.solver.harmonics
 
-        # Single source shapes: (n_freqs, kdim[0], kdim[1])
-        assert kx_single.shape == (n_freqs, kdim[0], kdim[1])
-        assert ky_single.shape == (n_freqs, kdim[0], kdim[1])
+        # Single source shapes: (n_freqs, harmonics[0], harmonics[1])
+        assert kx_single.shape == (n_freqs, harmonics[0], harmonics[1])
+        assert ky_single.shape == (n_freqs, harmonics[0], harmonics[1])
 
-        # Batched shapes: (1, n_freqs, kdim[0], kdim[1])
-        assert kx_batched.shape == (1, n_freqs, kdim[0], kdim[1])
-        assert ky_batched.shape == (1, n_freqs, kdim[0], kdim[1])
+        # Batched shapes: (1, n_freqs, harmonics[0], harmonics[1])
+        assert kx_batched.shape == (1, n_freqs, harmonics[0], harmonics[1])
+        assert ky_batched.shape == (1, n_freqs, harmonics[0], harmonics[1])
 
         # Compare values
         self._assert_tensors_equal(kx_single, kx_batched[0], "kx_0 multi-freq")
@@ -188,8 +188,8 @@ class TestEdgeCases:
             algorithm=Algorithm.RDIT,
             precision=Precision.DOUBLE,
             lam0=np.array([1.55]),
-            rdim=[256, 256],
-            kdim=[5, 5],  # Use larger kdim for better testing
+            grids=[256, 256],
+            harmonics=[5, 5],  # Use larger harmonics for better testing
             device=self.device,
         )
 
@@ -302,7 +302,7 @@ class TestEdgeCases:
         kx_batched, ky_batched, _, _ = self.solver._initialize_k_vectors()
 
         # Check that relaxation was applied (no exact zeros should remain)
-        zero_order_idx = self.solver.kdim[0] // 2, self.solver.kdim[1] // 2
+        zero_order_idx = self.solver.harmonics[0] // 2, self.solver.harmonics[1] // 2
 
         kx_zero_single = kx_single[0, zero_order_idx[0], zero_order_idx[1]]
         ky_zero_single = ky_single[0, zero_order_idx[0], zero_order_idx[1]]
@@ -341,8 +341,8 @@ class TestAutogradSmoke:
             algorithm=Algorithm.RDIT,
             precision=Precision.DOUBLE,
             lam0=np.array([1.55, 1.31]),
-            rdim=[64, 64],
-            kdim=[3, 3],
+            grids=[64, 64],
+            harmonics=[3, 3],
             device=self.device,
         )
 

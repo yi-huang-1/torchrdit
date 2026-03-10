@@ -29,8 +29,8 @@ class TestPhysicsValidation:
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=np.array([1.55]),
-            rdim=[64, 64],
-            kdim=[1, 1],  # Only fundamental order for normal incidence
+            grids=[64, 64],
+            harmonics=[1, 1],  # Only fundamental order for normal incidence
             device='cpu',
             precision=Precision.DOUBLE
         )
@@ -101,8 +101,8 @@ class TestPhysicsValidation:
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=np.array([1.55]),
-            rdim=[64, 64],
-            kdim=[1, 1],
+            grids=[64, 64],
+            harmonics=[1, 1],
             device='cpu',
             precision=Precision.DOUBLE
         )
@@ -171,8 +171,8 @@ class TestPhysicsValidation:
         solver = create_solver(
             algorithm=Algorithm.RDIT,  # Test with R-DIT algorithm
             lam0=np.array([1.55]),
-            rdim=[64, 64],  # No diffraction in homogeneous stack; keep small
-            kdim=[1, 1],
+            grids=[64, 64],  # No diffraction in homogeneous stack; keep small
+            harmonics=[1, 1],
             device='cpu'
         )
         
@@ -200,8 +200,8 @@ class TestPhysicsValidation:
         solver_reverse = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55]),
-            rdim=[64, 64],
-            kdim=[1, 1],
+            grids=[64, 64],
+            harmonics=[1, 1],
             device='cpu'
         )
         solver_reverse.add_materials([air, glass1, glass2])
@@ -233,8 +233,8 @@ class TestPhysicsValidation:
         solver = create_solver(
             algorithm=Algorithm.RCWA,
             lam0=np.array([1.55]),
-            rdim=[64, 64],  # Interface-only case; small grid suffices
-            kdim=[1, 1],
+            grids=[64, 64],  # Interface-only case; small grid suffices
+            harmonics=[1, 1],
             device='cpu',
             precision=Precision.DOUBLE
         )

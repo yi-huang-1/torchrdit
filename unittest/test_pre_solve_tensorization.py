@@ -27,8 +27,8 @@ class TestPreSolveTensorization:
         solver = create_solver(
             algorithm=Algorithm.RDIT,
             lam0=np.array([1.55, 1.31]),  # Multiple wavelengths
-            rdim=[512, 512],
-            kdim=[5, 5],
+            grids=[512, 512],
+            harmonics=[5, 5],
             device="cpu",  # Use CPU for consistent testing
         )
 

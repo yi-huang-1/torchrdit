@@ -29,8 +29,8 @@ def example_single_vs_batched():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),  # 1.55 μm wavelength
-        rdim=[512, 512],        # Real-space dimensions
-        kdim=[7, 7],            # k-space dimensions
+        grids=[512, 512],        # Real-space dimensions
+        harmonics=[7, 7],            # k-space dimensions
         device='cuda' if torch.cuda.is_available() else 'cpu'
     )
     
@@ -100,8 +100,8 @@ def example_angle_sweep():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[512, 512],
-        kdim=[11, 11]
+        grids=[512, 512],
+        harmonics=[11, 11]
     )
     
     # Add materials
@@ -182,8 +182,8 @@ def example_polarization_analysis():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[7, 7]
+        grids=[256, 256],
+        harmonics=[7, 7]
     )
     
     # Add materials
@@ -271,8 +271,8 @@ def example_parameter_sweep():
     solver = create_solver(
         algorithm=Algorithm.RDIT,
         lam0=np.array([1.55]),
-        rdim=[256, 256],
-        kdim=[5, 5]
+        grids=[256, 256],
+        harmonics=[5, 5]
     )
     
     # Add materials and simple structure

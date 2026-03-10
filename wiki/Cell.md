@@ -3,7 +3,6 @@
 * [torchrdit.cell](#torchrdit.cell)
   * [CellType](#torchrdit.cell.CellType)
   * [Cell3D](#torchrdit.cell.Cell3D)
-    * [\_\_init\_\_](#torchrdit.cell.Cell3D.__init__)
     * [get\_shape\_generator\_params](#torchrdit.cell.Cell3D.get_shape_generator_params)
     * [add\_materials](#torchrdit.cell.Cell3D.add_materials)
     * [add\_layer](#torchrdit.cell.Cell3D.add_layer)
@@ -16,12 +15,14 @@
     * [er2](#torchrdit.cell.Cell3D.er2)
     * [ur1](#torchrdit.cell.Cell3D.ur1)
     * [ur2](#torchrdit.cell.Cell3D.ur2)
+    * [grids](#torchrdit.cell.Cell3D.grids)
+    * [harmonics](#torchrdit.cell.Cell3D.harmonics)
     * [lengthunit](#torchrdit.cell.Cell3D.lengthunit)
     * [get\_cell\_type](#torchrdit.cell.Cell3D.get_cell_type)
 
 <a id="torchrdit.cell"></a>
 
-# torchrdit.cell
+# Module torchrdit.cell
 
 Module for defining base class (Cell3D) of solver classes in electromagnetic simulations.
 
@@ -126,8 +127,8 @@ with electromagnetic solvers.
 - `tfloat` _torch.dtype_ - Float data type used for calculations
 - `tint` _torch.dtype_ - Integer data type used for calculations
 - `nfloat` _np.dtype_ - NumPy float data type for compatibility
-- `rdim` _List[int]_ - Dimensions in real space [height, width]
-- `kdim` _List[int]_ - Dimensions in k-space [kheight, kwidth]
+- `grids` _List[int]_ - Dimensions in real space [height, width]
+- `harmonics` _List[int]_ - Dimensions in k-space [kx, ky]
 - `layer_manager` _LayerManager_ - Manager for handling material layers
   
 
@@ -145,8 +146,8 @@ from torchrdit.constants import Algorithm
 solver = create_solver(
     algorithm=Algorithm.RCWA,
     lam0=np.array([1.55]),
-    rdim=[256, 256],
-    kdim=[5, 5]
+    grids=[256, 256],
+    harmonics=[5, 5]
 )
 
 # Add materials
@@ -169,97 +170,9 @@ circle_mask = solver.get_circle_mask(center=(0, 0), radius=0.25)
   photonics, layers, materials, computational grid, Fourier transform,
   shape generation, inheritance
 
-<a id="torchrdit.cell.Cell3D.__init__"></a>
-
-#### \_\_init\_\_
-
-```python
-def __init__(lengthunit: str = "um",
-             rdim: List[int] = [512, 512],
-             kdim: List[int] = [3, 3],
-             materiallist: List[MaterialClass] = [],
-             t1: torch.Tensor = torch.tensor([[1.0, 0.0]]),
-             t2: torch.Tensor = torch.tensor([[0.0, 1.0]]),
-             device: Union[str, torch.device] = "cpu") -> None
-```
-
-Initialize a Cell3D object with geometric and material properties.
-
-This constructor sets up the computational grid in both real and Fourier space,
-initializes materials, and creates a coordinate system based on the
-provided lattice vectors. It also initializes the layer manager for handling
-material layers in the structure.
-
-**Notes**:
-
-  Users should generally not instantiate Cell3D directly, but rather
-  create a solver instance using the create_solver() function.
-  
-
-**Arguments**:
-
-- `lengthunit` _str_ - Unit of length for all dimensions in the simulation.
-  Common values: 'um' (micrometers), 'nm' (nanometers).
-  Default is 'um'.
-- `rdim` _List[int]_ - Dimensions of the real-space grid as [height, width].
-  This determines the spatial resolution of the simulation.
-  Default is [512, 512].
-- `kdim` _List[int]_ - Dimensions in Fourier space as [kheight, kwidth].
-  This determines the number of Fourier harmonics used in the simulation.
-  Default is [3, 3].
-- `materiallist` _List[MaterialClass]_ - List of material objects to be used in the simulation.
-  Each material should be an instance of MaterialClass.
-  Default is an empty list.
-- `t1` _torch.Tensor_ - First lattice vector defining the unit cell.
-  Default is [[1.0, 0.0]] (unit vector in x-direction).
-- `t2` _torch.Tensor_ - Second lattice vector defining the unit cell.
-  Default is [[0.0, 1.0]] (unit vector in y-direction).
-- `device` _Union[str, torch.device]_ - The device to run computations on ('cpu' or 'cuda').
-  Default is 'cpu'.
-  
-
-**Raises**:
-
-- `ValueError` - If any of the input parameters have invalid values or formats.
-  
-
-**Examples**:
-
-```python
-# Instead of creating Cell3D directly, create a solver:
-from torchrdit.solver import create_solver
-from torchrdit.constants import Algorithm
-import torch
-# Create an RDIT solver
-rdit_solver = create_solver(
-    algorithm=Algorithm.RDIT,
-    rdim=[1024, 1024],
-    kdim=[7, 7]
-)
-
-# Create an RCWA solver with non-rectangular lattice
-rcwa_solver = create_solver(
-    algorithm=Algorithm.RCWA,
-    t1=torch.tensor([[1.0, 0.0]]),
-    t2=torch.tensor([[0.5, 0.866]]),  # 30-degree lattice
-    rdim=[512, 512],
-    kdim=[5, 5]
-)
-
-# Create a solver with GPU acceleration
-gpu_solver = create_solver(
-    algorithm=Algorithm.RCWA,
-    device="cuda"
-)
-```
-  
-  Keywords:
-  initialization, base class, parent class, computational grid, lattice vectors,
-  spatial resolution, Fourier harmonics
-
 <a id="torchrdit.cell.Cell3D.get_shape_generator_params"></a>
 
-#### get\_shape\_generator\_params
+### Cell3D.get\_shape\_generator\_params
 
 ```python
 def get_shape_generator_params()
@@ -281,8 +194,8 @@ import torch
 from torchrdit.shapes import ShapeGenerator
 solver = create_solver(
     algorithm=Algorithm.RDIT,
-    rdim=[1024, 1024],
-    kdim=[7, 7]
+    grids=[1024, 1024],
+    harmonics=[7, 7]
 )
 params = solver.get_shape_generator_params()
 shape_gen = ShapeGenerator(**params)
@@ -290,7 +203,7 @@ shape_gen = ShapeGenerator(**params)
 
 <a id="torchrdit.cell.Cell3D.add_materials"></a>
 
-#### add\_materials
+### Cell3D.add\_materials
 
 ```python
 def add_materials(material_list: list = [])
@@ -322,8 +235,8 @@ from torchrdit.solver import create_solver
 from torchrdit.constants import Algorithm
 solver = create_solver(
     algorithm=Algorithm.RDIT,
-    rdim=[1024, 1024],
-    kdim=[7, 7]
+    grids=[1024, 1024],
+    harmonics=[7, 7]
 )
 # Create and add materials
 from torchrdit.utils import create_material
@@ -348,7 +261,7 @@ solver.add_materials([gold])
 
 <a id="torchrdit.cell.Cell3D.add_layer"></a>
 
-#### add\_layer
+### Cell3D.add\_layer
 
 ```python
 def add_layer(material_name: Any,
@@ -378,6 +291,10 @@ the reference region) and subsequent layers building upward.
 - `is_optimize` _bool_ - Whether this layer's parameters (e.g., thickness) should be
   included in optimization. Set to True if you plan to optimize
   this layer's properties. Default is False.
+- `slice_count` _int_ - Number of identical sub-slices used to model this layer
+  during propagation. Increasing the count splits the thickness
+  evenly across repeated slices, improving accuracy for thick
+  or high-index layers at the cost of runtime. Default is 1.
   
 
 **Raises**:
@@ -421,11 +338,11 @@ cell.add_layer(
   
   Keywords:
   layer, material, thickness, homogeneous, patterned, photonic structure,
-  multilayer, stack, optimization
+  multilayer, stack, optimization, slice_count
 
 <a id="torchrdit.cell.Cell3D.layers"></a>
 
-#### layers
+### Cell3D.layers
 
 ```python
 @property
@@ -459,7 +376,7 @@ for i, layer in enumerate(cell.layers):
 
 <a id="torchrdit.cell.Cell3D.update_trn_material"></a>
 
-#### update\_trn\_material
+### Cell3D.update\_trn\_material
 
 ```python
 def update_trn_material(trn_material: Any) -> None
@@ -506,7 +423,7 @@ cell.update_trn_material(trn_material=water)
 
 <a id="torchrdit.cell.Cell3D.update_ref_material"></a>
 
-#### update\_ref\_material
+### Cell3D.update\_ref\_material
 
 ```python
 def update_ref_material(ref_material: Any) -> None
@@ -553,7 +470,7 @@ cell.update_ref_material(ref_material=metal)
 
 <a id="torchrdit.cell.Cell3D.get_layer_structure"></a>
 
-#### get\_layer\_structure
+### Cell3D.get\_layer\_structure
 
 ```python
 def get_layer_structure()
@@ -590,7 +507,7 @@ cell.get_layer_structure()
 
 <a id="torchrdit.cell.Cell3D.get_layout"></a>
 
-#### get\_layout
+### Cell3D.get\_layout
 
 ```python
 def get_layout() -> Tuple[torch.Tensor, torch.Tensor]
@@ -605,7 +522,7 @@ creating custom shape masks.
 **Returns**:
 
   Tuple[torch.Tensor, torch.Tensor]: A tuple containing (X, Y) coordinate tensors,
-  each with shape (rdim[0], rdim[1]).
+  each with shape (grids[0], grids[1]).
   
 
 **Examples**:
@@ -632,7 +549,7 @@ plt.show()
 
 <a id="torchrdit.cell.Cell3D.er1"></a>
 
-#### er1
+### Cell3D.er1
 
 ```python
 @property
@@ -651,7 +568,7 @@ Get the permittivity of the reflection layer.
 
 <a id="torchrdit.cell.Cell3D.er2"></a>
 
-#### er2
+### Cell3D.er2
 
 ```python
 @property
@@ -670,7 +587,7 @@ Get the permittivity of the transmission layer.
 
 <a id="torchrdit.cell.Cell3D.ur1"></a>
 
-#### ur1
+### Cell3D.ur1
 
 ```python
 @property
@@ -689,7 +606,7 @@ Get the permeability of the reflection layer.
 
 <a id="torchrdit.cell.Cell3D.ur2"></a>
 
-#### ur2
+### Cell3D.ur2
 
 ```python
 @property
@@ -706,9 +623,31 @@ Get the permeability of the transmission layer.
   Keywords:
   permeability, transmission layer, material property, magnetic property
 
+<a id="torchrdit.cell.Cell3D.grids"></a>
+
+### Cell3D.grids
+
+```python
+@property
+def grids()
+```
+
+Real-space grid dimensions.
+
+<a id="torchrdit.cell.Cell3D.harmonics"></a>
+
+### Cell3D.harmonics
+
+```python
+@property
+def harmonics()
+```
+
+Fourier-space harmonic dimensions.
+
 <a id="torchrdit.cell.Cell3D.lengthunit"></a>
 
-#### lengthunit
+### Cell3D.lengthunit
 
 ```python
 @property
@@ -726,7 +665,7 @@ Get the length unit used in the simulation.
 
 <a id="torchrdit.cell.Cell3D.get_cell_type"></a>
 
-#### get\_cell\_type
+### Cell3D.get\_cell\_type
 
 ```python
 def get_cell_type()

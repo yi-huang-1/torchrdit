@@ -61,9 +61,9 @@ def redhstar_original(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.
     from torch.linalg import solve as tsolve
 
     # Input dimensions can be:
-    # - 2D: (kdim_0_tims_1, kdim_0_tims_1) for single source, single frequency
-    # - 3D: (n_freqs, kdim_0_tims_1, kdim_0_tims_1) for single source, multiple frequencies
-    # - 4D: (n_sources, n_freqs, kdim_0_tims_1, kdim_0_tims_1) for batched sources
+    # - 2D: (harmonics_0_tims_1, harmonics_0_tims_1) for single source, single frequency
+    # - 3D: (n_freqs, harmonics_0_tims_1, harmonics_0_tims_1) for single source, multiple frequencies
+    # - 4D: (n_sources, n_freqs, harmonics_0_tims_1, harmonics_0_tims_1) for batched sources
 
     # Construct identity matrix
     ndim = smat_a["S11"].ndim
