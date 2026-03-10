@@ -6,6 +6,7 @@ from .constants import Algorithm, Precision
 from .materials import MaterialClass
 from .utils import create_material
 from .algorithm import SolverAlgorithm
+from .device import resolve_device
 import os
 from .path_utils import infer_caller_dir, resolve_data_path
 
@@ -1100,6 +1101,9 @@ class SolverBuilder:
         # Lazy import to avoid circular dependencies
         from .solver import RCWASolver, RDITSolver
 
+        # Resolve device before constructing solver (Task 2 requirement)
+        device_resolution = resolve_device(self._device)
+
         # Create the appropriate solver type based on algorithm
         if self._algorithm_type == Algorithm.RCWA:
             solver = RCWASolver(
@@ -1116,7 +1120,7 @@ class SolverBuilder:
                 fff_smoothness_weight=self._fff_smoothness_weight,
                 fff_vector_steps=self._fff_vector_steps,
                 precision=self._precision,
-                device=self._device,
+                device=device_resolution.resolved_device,
             )
 
             # If custom algorithm instance provided, override the default
@@ -1138,7 +1142,7 @@ class SolverBuilder:
                 fff_smoothness_weight=self._fff_smoothness_weight,
                 fff_vector_steps=self._fff_vector_steps,
                 precision=self._precision,
-                device=self._device,
+                device=device_resolution.resolved_device,
             )
 
             # If custom algorithm instance provided, override the default
@@ -1163,5 +1167,8 @@ class SolverBuilder:
 
         if hasattr(self, "_ref_material") and self._ref_material is not None and hasattr(solver, "update_ref_material"):
             solver.update_ref_material(self._materials_dict.get(self._ref_material, self._ref_material))
+
+        # Store device resolution metadata on solver for public API access
+        solver._device_resolution = device_resolution
 
         return solver

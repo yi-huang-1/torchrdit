@@ -1040,6 +1040,22 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         else:
             raise TypeError(f"lam0 must be float or numpy.ndarray, got {type(value)}")
 
+    @property
+    def device_resolution(self):
+        """Get the device resolution metadata.
+
+        Returns the DeviceResolution object containing information about the
+        requested device, resolved device, fallback status, and fallback reason.
+
+        Returns:
+            DeviceResolution: Device resolution metadata with fields:
+                - requested_device: The device string that was requested
+                - resolved_device: The actual torch.device that was resolved to
+                - fell_back: Boolean indicating if fallback occurred
+                - reason: String explaining fallback reason, or None if no fallback
+        """
+        return self._device_resolution
+
     def add_source(self, theta: float, phi: float, pte: float, ptm: float, norm_te_dir: str = "y") -> dict:
         """Configure the incident electromagnetic wave source.
 

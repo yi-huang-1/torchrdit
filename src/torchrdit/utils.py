@@ -12,6 +12,7 @@ import torch
 import skimage.draw as skdraw
 
 from .materials import MaterialClass
+from .device import resolve_device
 
 # Function Type
 FuncType = Callable[..., Any]
@@ -379,6 +380,7 @@ def init_smatrix(shape: Tuple, dtype: torch.dtype, device: Union[str, torch.devi
         waves pass through without reflection (S11=S22=0) and without modification
         (S12=S21=I, where I is the identity matrix).
     """
+    device = resolve_device(device).resolved_device
     smatrix = {}
     if len(shape) == 3:
         smatrix["S11"] = torch.zeros(size=shape, dtype=dtype, device=device)
@@ -501,7 +503,7 @@ def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64
     return smatrix
 
 
-def _create_blur_kernel(radius: int, device: torch.device = torch.device("cpu"), tfloat: torch.dtype = torch.float32):
+def _create_blur_kernel(radius: int, device: Union[str, torch.device] = torch.device("cpu"), tfloat: torch.dtype = torch.float32):
     """Create a circular convolution kernel for blurring operations.
 
     Creates a normalized circular (disk-shaped) convolution kernel with the specified
@@ -529,6 +531,7 @@ def _create_blur_kernel(radius: int, device: torch.device = torch.device("cpu"),
     Keywords:
         convolution, kernel, blur, disk, circle, filter, topology optimization
     """
+    device = resolve_device(device).resolved_device
     row_ind, col_ind = skdraw.disk(center=(radius, radius), radius=radius + 1)
     kernel = torch.zeros(size=(2 * radius + 1, 2 * radius + 1), dtype=tfloat, device=device)
     kernel[row_ind, col_ind] = 1
@@ -539,7 +542,7 @@ def operator_blur(
     rho: torch.Tensor,
     radius: int = 2,
     num_blur: int = 1,
-    device: torch.device = torch.device("cpu"),
+    device: Union[str, torch.device] = torch.device("cpu"),
     tfloat: torch.dtype = torch.float32,
 ) -> torch.Tensor:
     """Apply a blur filter to a tensor using 2D convolution.
@@ -581,7 +584,7 @@ def operator_blur(
     Keywords:
         blur, convolution, filter, smoothing, topology optimization, feature size, batch processing
     """
-
+    device = resolve_device(device).resolved_device
     in_ch = rho.shape[1]
     out_ch = in_ch
 
@@ -660,7 +663,7 @@ def blur_filter(
     beta: int = 100,
     eta: float = 0.5,
     num_proj: int = 1,
-    device: torch.device = torch.device("cpu"),
+    device: Union[str, torch.device] = torch.device("cpu"),
     tfloat: torch.dtype = torch.float32,
 ):
     """Apply combined blur and projection filtering for topology optimization.
@@ -718,7 +721,7 @@ def blur_filter(
         topology optimization, filter, blur, projection, binary, manufacturability,
         feature size, inverse design, photonics
     """
-
+    device = resolve_device(device).resolved_device
     rho = operator_blur(rho, radius=radius, num_blur=num_blur, device=device, tfloat=tfloat)
     rho = operator_proj(rho, beta=beta, eta=eta, num_proj=num_proj)
 

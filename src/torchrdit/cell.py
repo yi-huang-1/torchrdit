@@ -27,6 +27,7 @@ import torch
 from .utils import tensor_params_check, create_material
 from .materials import MaterialClass
 from .constants import lengthunit_dict
+from .device import resolve_device
 from .layers import LayerManager
 
 if TYPE_CHECKING:
@@ -233,7 +234,9 @@ class Cell3D:
             initialization, base class, parent class, computational grid, lattice vectors,
             spatial resolution, Fourier harmonics
         """
-        self.device = device
+        resolution = resolve_device(device)
+        self.device = resolution.resolved_device
+        self._device_resolution = resolution
 
         if isinstance(grids, list) is False or len(grids) != 2:
             raise ValueError(f"Invalid input grids [{grids}]")
