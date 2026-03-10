@@ -59,7 +59,7 @@ def resolve_device(device: Union[str, torch.device]) -> DeviceResolution:
         if not torch.cuda.is_available():
             return _fallback(
                 device_str,
-                f"CUDA not available. Falling back to cpu.",
+                "CUDA not available. Falling back to cpu.",
             )
 
         index = None
