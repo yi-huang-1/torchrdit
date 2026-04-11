@@ -765,6 +765,21 @@ def _field_loss_value_jac_and_hessian(
     return loss_value, jac, hessian_matvec
 
 
+def _flat_real_to_complex_fourier(
+    flat_real: torch.Tensor, num_terms: int,
+) -> torch.Tensor:
+    """Reshape a flat real vector into complex Fourier coefficients.
+
+    Uses ``torch.complex`` rather than ``torch.view_as_complex`` so that
+    the operation is compatible with ``torch.func.hessian`` and
+    ``torch.compile``.
+    """
+    # flat_real: (num_terms * 2 * 2,)  →  (num_terms, 2, 2)
+    #   last dim: [re, im]  ;  second-last dim: [component_x, component_y]
+    coeffs = flat_real.reshape(num_terms, 2, 2)
+    return torch.complex(coeffs[..., 0], coeffs[..., 1])  # (num_terms, 2)
+
+
 def _field_loss_value_jac_and_dense_hessian(
     flat_real: torch.Tensor,
     expansion: Expansion,
@@ -776,11 +791,10 @@ def _field_loss_value_jac_and_dense_hessian(
     smoothness_loss_weight: float,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Evaluate loss, gradient, and dense Hessian via ``torch.func``."""
-    field_shape = (expansion.num_terms, 2)
+    num_terms = expansion.num_terms
 
     def loss_from_real(real_vec: torch.Tensor) -> torch.Tensor:
-        fourier_field = _real_to_complex(real_vec, field_shape)
-        fourier_field = fourier_field.reshape(expansion.num_terms, 2)
+        fourier_field = _flat_real_to_complex_fourier(real_vec, num_terms)
         return _field_loss(
             fourier_field,
             expansion=expansion,
@@ -1023,6 +1037,14 @@ class TangentFieldGenerator:
         grad = _compute_gradient(arr, primitive_lattice_vectors)
         gx = self._filter_and_adjust_resolution(grad[..., 0])
         gy = self._filter_and_adjust_resolution(grad[..., 1])
+
+        if not use_jones_direct:
+            # For POL/NORMAL/JONES the spatial field is physically real.
+            # filter_and_adjust produces spurious imaginary parts (~1e-16)
+            # because selecting a Fourier subset breaks conjugate symmetry.
+            # Taking .real here keeps the entire pipeline real-valued.
+            gx = gx.real
+            gy = gy.real
 
         grad = torch.stack([gx, gy], dim=-1)
         grad = _normalize(grad)
