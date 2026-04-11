@@ -595,73 +595,6 @@ class ConjugateGradientError(RuntimeError):
     """Raised when the conjugate-gradient solver fails to converge."""
 
 
-def _solve_sym_pos_linear_system(
-    matvec: Callable[[torch.Tensor], torch.Tensor],
-    rhs: torch.Tensor,
-    *,
-    tol: float | None = None,
-    max_iter: int | None = None,
-    damping: float = 0.0,
-) -> torch.Tensor:
-    """Solve ``A x = rhs`` using conjugate gradients with matvec callback."""
-    if tol is None:
-        tol = float(rhs.norm()) * 1e-6
-    if max_iter is None:
-        max_iter = max(int(rhs.shape[0]), 10)
-    damping = float(damping)
-
-    x = torch.zeros_like(rhs)
-    r = rhs.clone()
-    p = r.clone()
-    rs_old = torch.dot(r, r)
-    if rs_old.sqrt() <= tol:
-        return x
-
-    eps = torch.finfo(rhs.dtype).eps
-    converged = False
-    restarts = 0
-    max_restarts = 5
-    for _ in range(max_iter):
-        Ap = matvec(p)
-        if not torch.isfinite(Ap).all():
-            raise ConjugateGradientError("Conjugate gradient produced non-finite matvec result.")
-        if damping:
-            Ap = Ap + damping * p
-        denom = torch.dot(p, Ap)
-        if not torch.isfinite(denom):
-            raise ConjugateGradientError("Conjugate gradient produced non-finite curvature estimate.")
-        if torch.abs(denom) < eps:
-            if restarts < max_restarts:
-                p = r.clone()
-                restarts += 1
-                continue
-            if rs_old <= tol * tol:
-                converged = True
-                break
-            raise ConjugateGradientError("Conjugate gradient encountered near-zero curvature.")
-        alpha = rs_old / denom
-        x = x + alpha * p
-        r = r - alpha * Ap
-        rs_new = torch.dot(r, r)
-        if rs_new.sqrt() <= tol:
-            converged = True
-            break
-        beta = rs_new / rs_old
-        p = r + beta * p
-        rs_old = rs_new
-        if not torch.isfinite(x).all() or not torch.isfinite(r).all() or not torch.isfinite(p).all():
-            raise ConjugateGradientError("Conjugate gradient iterate became non-finite.")
-    if not converged:
-        residual = matvec(x) - rhs
-        if damping:
-            residual = residual + damping * x
-        if residual.norm() > tol:
-            raise ConjugateGradientError(
-                f"Conjugate gradient failed to converge within {max_iter} iterations."
-            )
-    return x
-
-
 def _compute_gradient(
     arr: torch.Tensor,
     primitive_lattice_vectors: LatticeVectors,
@@ -832,55 +765,6 @@ def _field_loss_real(
 def _complex_to_real(z: torch.Tensor) -> torch.Tensor:
     """Flatten a complex tensor into a real vector."""
     return torch.view_as_real(z).reshape(-1)
-
-
-def _real_to_complex(vec: torch.Tensor, shape: Tuple[int, ...]) -> torch.Tensor:
-    """Convert a flattened real vector back to complex form."""
-    return torch.view_as_complex(vec.reshape(shape + (2,)))
-
-
-def _field_loss_value_jac_and_hessian(
-    flat_real: torch.Tensor,
-    expansion: Expansion,
-    primitive_lattice_vectors: LatticeVectors,
-    fourier_penalty_weights: torch.Tensor,
-    target_field: torch.Tensor,
-    elementwise_alignment_loss_weight: torch.Tensor,
-    fourier_loss_weight: float,
-    smoothness_loss_weight: float,
-) -> Tuple[
-    torch.Tensor,
-    torch.Tensor,
-    Callable[[torch.Tensor], torch.Tensor],
-]:
-    """Evaluate loss, gradient, and Hessian-vector product callback."""
-    field_shape = (expansion.num_terms, 2)
-
-    def loss_from_real(real_vec: torch.Tensor) -> torch.Tensor:
-        fourier_field = _real_to_complex(real_vec, field_shape)
-        fourier_field = fourier_field.reshape(expansion.num_terms, 2)
-        return _field_loss(
-            fourier_field,
-            expansion=expansion,
-            primitive_lattice_vectors=primitive_lattice_vectors,
-            fourier_penalty_weights=fourier_penalty_weights,
-            target_field=target_field,
-            elementwise_alignment_loss_weight=elementwise_alignment_loss_weight,
-            fourier_loss_weight=fourier_loss_weight,
-            smoothness_loss_weight=smoothness_loss_weight,
-        )
-
-    loss_value = loss_from_real(flat_real)
-    jac = torch.autograd.grad(loss_value, flat_real, create_graph=True)[0]
-
-    def hessian_matvec(vec: torch.Tensor) -> torch.Tensor:
-        product = torch.dot(jac, vec)
-        hvp = torch.autograd.grad(product, flat_real, retain_graph=True)[0]
-        if not torch.isfinite(hvp).all():
-            raise ConjugateGradientError("Hessian matvec produced non-finite result.")
-        return hvp
-
-    return loss_value, jac, hessian_matvec
 
 
 def _flat_real_to_complex_fourier(

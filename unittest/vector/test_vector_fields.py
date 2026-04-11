@@ -188,21 +188,16 @@ def test_tangent_field_autograd(vector_module, base_solver, circle_mask):
     assert torch.isfinite(grad).all()
 
 
-def test_tangent_field_recovers_from_nonfinite_cg(monkeypatch, vector_module, base_solver, circle_mask):
-    """Force the conjugate-gradient solve to return NaNs and ensure the dense fallback kicks in."""
+def test_tangent_field_dense_solver_uses_linalg_solve(monkeypatch, vector_module, base_solver, circle_mask):
+    """Verify that the dense Hessian path calls torch.linalg.solve."""
 
-    def _nan_update_solver(matvec, rhs, **kwargs):
-        del matvec, kwargs
-        return torch.full_like(rhs, float("nan"))
-
-    fallback_calls = {"count": 0}
+    solve_calls = {"count": 0}
     original_solve = vector_module.torch.linalg.solve
 
     def _counting_solve(*args, **kwargs):
-        fallback_calls["count"] += 1
+        solve_calls["count"] += 1
         return original_solve(*args, **kwargs)
 
-    monkeypatch.setattr(vector_module, "_solve_sym_pos_linear_system", _nan_update_solver)
     monkeypatch.setattr(vector_module.torch.linalg, "solve", _counting_solve)
 
     tx, ty = vector_module.compute_tangent_field(
@@ -218,7 +213,7 @@ def test_tangent_field_recovers_from_nonfinite_cg(monkeypatch, vector_module, ba
 
     assert torch.isfinite(tx).all()
     assert torch.isfinite(ty).all()
-    assert fallback_calls["count"] >= 1
+    assert solve_calls["count"] >= 1
 
 
 def test_compute_gradient_recomputes_metric(vector_module, monkeypatch):
@@ -280,11 +275,16 @@ def test_fourier_penalty_weights_recomputed(vector_module, base_solver, circle_m
     assert call_count["value"] >= 2
 
 
-def test_tangent_field_does_not_call_dense_jacobian(vector_module, base_solver, circle_mask, monkeypatch):
-    def _boom(*args, **kwargs):
-        raise AssertionError("dense jacobian should not be invoked")
+def test_tangent_field_uses_torch_func_hessian(vector_module, base_solver, circle_mask, monkeypatch):
+    """Verify that the real path uses torch.func.hessian (not autograd)."""
+    hessian_calls = {"count": 0}
+    original_hessian = vector_module.torch.func.hessian
 
-    monkeypatch.setattr(vector_module.torch.autograd.functional, "jacobian", _boom)
+    def _counting_hessian(*args, **kwargs):
+        hessian_calls["count"] += 1
+        return original_hessian(*args, **kwargs)
+
+    monkeypatch.setattr(vector_module.torch.func, "hessian", _counting_hessian)
 
     tx, ty = vector_module.compute_tangent_field(
         mask=circle_mask,
@@ -299,24 +299,19 @@ def test_tangent_field_does_not_call_dense_jacobian(vector_module, base_solver, 
 
     assert torch.isfinite(tx).all()
     assert torch.isfinite(ty).all()
+    assert hessian_calls["count"] >= 1
 
 
-def test_tangent_field_cg_fallback_uses_dense_solve(vector_module, base_solver, circle_mask, monkeypatch):
-    """If CG fails, the solver should fall back to the dense Hessian path."""
-    def _raise_convergence_failure(*args, **kwargs):  # noqa: WPS430
-        raise vector_module.ConjugateGradientError("forced failure")
+def test_tangent_field_jones_direct_uses_vmap_jvp(vector_module, base_solver, circle_mask, monkeypatch):
+    """Verify that JONES_DIRECT uses the vmap(jvp(grad())) complex path."""
+    vmap_calls = {"count": 0}
+    original_vmap = vector_module.torch.func.vmap
 
-    monkeypatch.setattr(vector_module, "_solve_sym_pos_linear_system", _raise_convergence_failure)
+    def _counting_vmap(*args, **kwargs):
+        vmap_calls["count"] += 1
+        return original_vmap(*args, **kwargs)
 
-    solve_calls = {"count": 0}
-
-    original_solve = vector_module.torch.linalg.solve
-
-    def _tracking_solve(*args, **kwargs):
-        solve_calls["count"] += 1
-        return original_solve(*args, **kwargs)
-
-    monkeypatch.setattr(vector_module.torch.linalg, "solve", _tracking_solve)
+    monkeypatch.setattr(vector_module.torch.func, "vmap", _counting_vmap)
 
     tx, ty = vector_module.compute_tangent_field(
         mask=circle_mask,
@@ -325,13 +320,15 @@ def test_tangent_field_cg_fallback_uses_dense_solve(vector_module, base_solver, 
         lattice_t1=base_solver.lattice_t1,
         lattice_t2=base_solver.lattice_t2,
         harmonics=tuple(base_solver.harmonics),
-        scheme="POL",
+        scheme="JONES_DIRECT",
+        fourier_loss_weight=0.0,
+        smoothness_loss_weight=0.5,
         steps=1,
     )
 
-    assert solve_calls["count"] >= 1
     assert torch.isfinite(tx).all()
     assert torch.isfinite(ty).all()
+    assert vmap_calls["count"] >= 1
 
 
 def test_invalid_grid_shapes(vector_module, base_solver, circle_mask):
