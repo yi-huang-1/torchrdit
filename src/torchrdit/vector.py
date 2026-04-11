@@ -187,6 +187,23 @@ class FourierExpansionManager:
             self._expansion,
         )
 
+    def real_ifft_matrices(
+        self, shape: Tuple[int, int], *, device: torch.device, dtype: torch.dtype,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Build cos/sin matrices for real-arithmetic IFFT reconstruction.
+
+        Returns ``(cos_matrix, sin_matrix)`` each of shape ``(H*W, num_terms)``
+        such that the real part of the IFFT can be computed as::
+
+            field_real = cos_matrix @ re_coeffs - sin_matrix @ im_coeffs
+
+        These matrices are **not** cached because the spatial ``shape`` may
+        vary across calls (e.g. different ``filter_and_adjust`` resolutions).
+        """
+        return _build_real_ifft_matrices(
+            self._expansion.basis_coefficients, shape, device=device, dtype=dtype,
+        )
+
 
 def _solve_quadratic_for_orders(ratio: float, approximate_num_terms: int) -> int:
     """Solve the quadratic that balances Fourier orders along u and v."""
@@ -253,6 +270,48 @@ def min_array_shape_for_expansion(expansion: Expansion) -> Tuple[int, int]:
     max_u = int(coeffs[:, 0].abs().max().item())
     max_v = int(coeffs[:, 1].abs().max().item())
     return 2 * max_u + 1, 2 * max_v + 1
+
+
+def _build_real_ifft_matrices(
+    basis_coefficients: torch.Tensor,
+    shape: Tuple[int, int],
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Precompute cos/sin matrices for real IFFT via matrix multiply.
+
+    For a set of Fourier coefficients ``c_k = re_k + i*im_k`` the spatial
+    field is reconstructed as::
+
+        field[i,j] = Σ_k c_k · exp(2πi (k_u·i/H + k_v·j/W))
+
+    The real part equals ``Σ_k (re_k·cos(φ) − im_k·sin(φ))`` where
+    ``φ = 2π(k_u·i/H + k_v·j/W)``.  This function returns the cos and
+    sin matrices so the reconstruction is a simple ``matmul``, avoiding
+    complex tensors entirely — which is required for ``torch.compile``
+    compatibility with ``torch.func.hessian``.
+
+    Returns:
+        ``(cos_matrix, sin_matrix)`` each of shape ``(H*W, num_terms)``.
+    """
+    H, W = shape
+    ku = basis_coefficients[:, 0].to(dtype=dtype, device=device)
+    kv = basis_coefficients[:, 1].to(dtype=dtype, device=device)
+
+    i_idx = torch.arange(H, dtype=dtype, device=device)
+    j_idx = torch.arange(W, dtype=dtype, device=device)
+    grid_i, grid_j = torch.meshgrid(i_idx, j_idx, indexing="ij")  # (H, W)
+
+    # phase[k, i, j] = 2π (k_u·i/H + k_v·j/W)
+    phase = 2.0 * math.pi * (
+        ku[:, None, None] * grid_i[None, :, :] / H
+        + kv[:, None, None] * grid_j[None, :, :] / W
+    )  # (num_terms, H, W)
+
+    cos_mat = torch.cos(phase).permute(1, 2, 0).reshape(H * W, -1)  # (H*W, num_terms)
+    sin_mat = torch.sin(phase).permute(1, 2, 0).reshape(H * W, -1)
+    return cos_mat, sin_mat
 
 
 def _absolute_axes(axes: Iterable[int], ndim: int) -> Tuple[int, ...]:
@@ -536,73 +595,6 @@ class ConjugateGradientError(RuntimeError):
     """Raised when the conjugate-gradient solver fails to converge."""
 
 
-def _solve_sym_pos_linear_system(
-    matvec: Callable[[torch.Tensor], torch.Tensor],
-    rhs: torch.Tensor,
-    *,
-    tol: float | None = None,
-    max_iter: int | None = None,
-    damping: float = 0.0,
-) -> torch.Tensor:
-    """Solve ``A x = rhs`` using conjugate gradients with matvec callback."""
-    if tol is None:
-        tol = float(rhs.norm()) * 1e-6
-    if max_iter is None:
-        max_iter = max(int(rhs.shape[0]), 10)
-    damping = float(damping)
-
-    x = torch.zeros_like(rhs)
-    r = rhs.clone()
-    p = r.clone()
-    rs_old = torch.dot(r, r)
-    if rs_old.sqrt() <= tol:
-        return x
-
-    eps = torch.finfo(rhs.dtype).eps
-    converged = False
-    restarts = 0
-    max_restarts = 5
-    for _ in range(max_iter):
-        Ap = matvec(p)
-        if not torch.isfinite(Ap).all():
-            raise ConjugateGradientError("Conjugate gradient produced non-finite matvec result.")
-        if damping:
-            Ap = Ap + damping * p
-        denom = torch.dot(p, Ap)
-        if not torch.isfinite(denom):
-            raise ConjugateGradientError("Conjugate gradient produced non-finite curvature estimate.")
-        if torch.abs(denom) < eps:
-            if restarts < max_restarts:
-                p = r.clone()
-                restarts += 1
-                continue
-            if rs_old <= tol * tol:
-                converged = True
-                break
-            raise ConjugateGradientError("Conjugate gradient encountered near-zero curvature.")
-        alpha = rs_old / denom
-        x = x + alpha * p
-        r = r - alpha * Ap
-        rs_new = torch.dot(r, r)
-        if rs_new.sqrt() <= tol:
-            converged = True
-            break
-        beta = rs_new / rs_old
-        p = r + beta * p
-        rs_old = rs_new
-        if not torch.isfinite(x).all() or not torch.isfinite(r).all() or not torch.isfinite(p).all():
-            raise ConjugateGradientError("Conjugate gradient iterate became non-finite.")
-    if not converged:
-        residual = matvec(x) - rhs
-        if damping:
-            residual = residual + damping * x
-        if residual.norm() > tol:
-            raise ConjugateGradientError(
-                f"Conjugate gradient failed to converge within {max_iter} iterations."
-            )
-    return x
-
-
 def _compute_gradient(
     arr: torch.Tensor,
     primitive_lattice_vectors: LatticeVectors,
@@ -711,18 +703,160 @@ def _field_loss(
     return loss.real
 
 
+def _field_loss_real(
+    flat_real: torch.Tensor,
+    num_terms: int,
+    cos_matrix: torch.Tensor,
+    sin_matrix: torch.Tensor,
+    spatial_shape: Tuple[int, int],
+    target_field: torch.Tensor,
+    elementwise_alignment_loss_weight: torch.Tensor,
+    fourier_penalty_weights: torch.Tensor,
+    fourier_loss_weight: float,
+    smoothness_loss_weight: float,
+    primitive_lattice_vectors: LatticeVectors,
+) -> torch.Tensor:
+    """Pure-real field loss using precomputed cos/sin matrices.
+
+    Replaces ``_field_loss`` for the real path (POL/NORMAL/JONES) by
+    avoiding ``ifft2`` and all complex tensors, enabling
+    ``torch.compile`` + ``torch.func.hessian`` compatibility.
+    """
+    # flat_real: (num_terms * 2 * 2,)  →  (num_terms, 2, 2)
+    #   layout: [re, im] × [component_x, component_y] per Fourier term
+    coeffs = flat_real.reshape(num_terms, 2, 2)
+    re = coeffs[..., 0]  # (num_terms, 2)
+    im = coeffs[..., 1]  # (num_terms, 2)
+
+    # Reconstruct both real and imaginary parts of the spatial field via
+    # matmul.  For a real target, the imaginary part contributes an implicit
+    # |field_imag|² penalty that makes the Hessian full-rank (the old
+    # ifft-based loss included this automatically via complex arithmetic).
+    field_real = cos_matrix @ re - sin_matrix @ im  # (H*W, 2)
+    field_imag = sin_matrix @ re + cos_matrix @ im  # (H*W, 2)
+
+    field_real = field_real.reshape(spatial_shape + (2,))
+    field_imag = field_imag.reshape(spatial_shape + (2,))
+
+    # Alignment loss: |field_complex - target|² with real target
+    # = |field_real - target|² + |field_imag|²
+    diff_real = field_real - target_field
+    elementwise_loss = (
+        (diff_real ** 2).sum(dim=-1, keepdim=True)
+        + (field_imag ** 2).sum(dim=-1, keepdim=True)
+    )
+    loss = (elementwise_alignment_loss_weight * elementwise_loss).mean()
+
+    # Fourier loss: |c_k|^2 = re^2 + im^2
+    if fourier_loss_weight > 0:
+        fourier_mag_sq = re ** 2 + im ** 2  # (num_terms, 2)
+        weights = fourier_penalty_weights.to(dtype=re.dtype, device=re.device)
+        loss = loss + fourier_loss_weight * (fourier_mag_sq * weights).sum()
+
+    # Smoothness loss (forward differences on the real field)
+    if smoothness_loss_weight > 0:
+        loss = loss + smoothness_loss_weight * _smoothness_loss(
+            field_real, primitive_lattice_vectors,
+        )
+
+    return loss
+
+
 def _complex_to_real(z: torch.Tensor) -> torch.Tensor:
     """Flatten a complex tensor into a real vector."""
     return torch.view_as_real(z).reshape(-1)
 
 
-def _real_to_complex(vec: torch.Tensor, shape: Tuple[int, ...]) -> torch.Tensor:
-    """Convert a flattened real vector back to complex form."""
-    return torch.view_as_complex(vec.reshape(shape + (2,)))
+def _flat_real_to_complex_fourier(
+    flat_real: torch.Tensor, num_terms: int,
+) -> torch.Tensor:
+    """Reshape a flat real vector into complex Fourier coefficients.
+
+    Uses ``torch.complex`` rather than ``torch.view_as_complex`` so that
+    the operation is compatible with ``torch.func.hessian`` and
+    ``torch.compile``.
+    """
+    # flat_real: (num_terms * 2 * 2,)  →  (num_terms, 2, 2)
+    #   last dim: [re, im]  ;  second-last dim: [component_x, component_y]
+    coeffs = flat_real.reshape(num_terms, 2, 2)
+    return torch.complex(coeffs[..., 0], coeffs[..., 1])  # (num_terms, 2)
 
 
-def _field_loss_value_jac_and_hessian(
+def _field_loss_value_jac_and_dense_hessian(
     flat_real: torch.Tensor,
+    num_terms: int,
+    cos_matrix: torch.Tensor,
+    sin_matrix: torch.Tensor,
+    spatial_shape: Tuple[int, int],
+    primitive_lattice_vectors: LatticeVectors,
+    fourier_penalty_weights: torch.Tensor,
+    target_field: torch.Tensor,
+    elementwise_alignment_loss_weight: torch.Tensor,
+    fourier_loss_weight: float,
+    smoothness_loss_weight: float,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Evaluate loss, gradient, and dense Hessian via ``torch.func``.
+
+    Uses the pure-real loss (``_field_loss_real``) which reconstructs the
+    spatial field via cos/sin matrix multiply instead of ``ifft2``, making
+    the entire computation compatible with ``torch.compile``.
+    """
+
+    def loss_fn(real_vec: torch.Tensor) -> torch.Tensor:
+        return _field_loss_real(
+            real_vec,
+            num_terms=num_terms,
+            cos_matrix=cos_matrix,
+            sin_matrix=sin_matrix,
+            spatial_shape=spatial_shape,
+            target_field=target_field,
+            elementwise_alignment_loss_weight=elementwise_alignment_loss_weight,
+            fourier_penalty_weights=fourier_penalty_weights,
+            fourier_loss_weight=fourier_loss_weight,
+            smoothness_loss_weight=smoothness_loss_weight,
+            primitive_lattice_vectors=primitive_lattice_vectors,
+        )
+
+    jac = torch.func.jacrev(loss_fn)(flat_real)
+    hessian = torch.func.hessian(loss_fn)(flat_real)
+    return jac, hessian
+
+
+def _newton_step_real(
+    flat_real: torch.Tensor,
+    num_terms: int,
+    cos_matrix: torch.Tensor,
+    sin_matrix: torch.Tensor,
+    spatial_shape: Tuple[int, int],
+    primitive_lattice_vectors: LatticeVectors,
+    fourier_penalty_weights: torch.Tensor,
+    target_field: torch.Tensor,
+    elementwise_alignment_loss_weight: torch.Tensor,
+    fourier_loss_weight: float,
+    smoothness_loss_weight: float,
+) -> torch.Tensor:
+    """Execute one Newton step and return the updated parameters.
+
+    This function is the compilation unit for ``torch.compile``.
+    """
+    jac, H = _field_loss_value_jac_and_dense_hessian(
+        flat_real,
+        num_terms=num_terms,
+        cos_matrix=cos_matrix,
+        sin_matrix=sin_matrix,
+        spatial_shape=spatial_shape,
+        primitive_lattice_vectors=primitive_lattice_vectors,
+        fourier_penalty_weights=fourier_penalty_weights,
+        target_field=target_field,
+        elementwise_alignment_loss_weight=elementwise_alignment_loss_weight,
+        fourier_loss_weight=fourier_loss_weight,
+        smoothness_loss_weight=smoothness_loss_weight,
+    )
+    return flat_real - torch.linalg.solve(H, jac)
+
+
+def _newton_step_complex(
+    flat_complex: torch.Tensor,
     expansion: Expansion,
     primitive_lattice_vectors: LatticeVectors,
     fourier_penalty_weights: torch.Tensor,
@@ -730,17 +864,18 @@ def _field_loss_value_jac_and_hessian(
     elementwise_alignment_loss_weight: torch.Tensor,
     fourier_loss_weight: float,
     smoothness_loss_weight: float,
-) -> Tuple[
-    torch.Tensor,
-    torch.Tensor,
-    Callable[[torch.Tensor], torch.Tensor],
-]:
-    """Evaluate loss, gradient, and Hessian-vector product callback."""
-    field_shape = (expansion.num_terms, 2)
+) -> torch.Tensor:
+    """Execute one Newton step on complex Fourier coefficients (JONES_DIRECT).
 
-    def loss_from_real(real_vec: torch.Tensor) -> torch.Tensor:
-        fourier_field = _real_to_complex(real_vec, field_shape)
-        fourier_field = fourier_field.reshape(expansion.num_terms, 2)
+    Uses ``torch.func.grad`` for the gradient and
+    ``vmap(jvp(grad(...)))`` to build the dense complex Hessian.
+    ``torch.func.jacrev``/``hessian`` do not support complex inputs,
+    but ``grad`` and ``jvp`` do.
+    """
+    num_terms = expansion.num_terms
+
+    def loss_fn(z: torch.Tensor) -> torch.Tensor:
+        fourier_field = z.reshape(num_terms, 2)
         return _field_loss(
             fourier_field,
             expansion=expansion,
@@ -752,17 +887,19 @@ def _field_loss_value_jac_and_hessian(
             smoothness_loss_weight=smoothness_loss_weight,
         )
 
-    loss_value = loss_from_real(flat_real)
-    jac = torch.autograd.grad(loss_value, flat_real, create_graph=True)[0]
+    jac = torch.func.grad(loss_fn)(flat_complex)
 
-    def hessian_matvec(vec: torch.Tensor) -> torch.Tensor:
-        product = torch.dot(jac, vec)
-        hvp = torch.autograd.grad(product, flat_real, retain_graph=True)[0]
-        if not torch.isfinite(hvp).all():
-            raise ConjugateGradientError("Hessian matvec produced non-finite result.")
-        return hvp
+    def _hvp(v: torch.Tensor) -> torch.Tensor:
+        return torch.func.jvp(
+            torch.func.grad(loss_fn), (flat_complex,), (v,),
+        )[1]
 
-    return loss_value, jac, hessian_matvec
+    basis_eye = torch.eye(
+        flat_complex.numel(), dtype=flat_complex.dtype, device=flat_complex.device,
+    )
+    hessian = torch.func.vmap(_hvp)(basis_eye)
+
+    return flat_complex - torch.linalg.solve(hessian, jac)
 
 
 class TangentFieldGenerator:
@@ -991,6 +1128,14 @@ class TangentFieldGenerator:
         gx = self._filter_and_adjust_resolution(grad[..., 0])
         gy = self._filter_and_adjust_resolution(grad[..., 1])
 
+        if not use_jones_direct:
+            # For POL/NORMAL/JONES the spatial field is physically real.
+            # filter_and_adjust produces spurious imaginary parts (~1e-16)
+            # because selecting a Fourier subset breaks conjugate symmetry.
+            # Taking .real here keeps the entire pipeline real-valued.
+            gx = gx.real
+            gy = gy.real
+
         grad = torch.stack([gx, gy], dim=-1)
         grad = _normalize(grad)
         elementwise_alignment_weight = _field_magnitude(grad)
@@ -1013,73 +1158,58 @@ class TangentFieldGenerator:
             axes=(-3, -2),
             centered_coordinates=False,
         )
-        flat_real = _complex_to_real(fourier_field.reshape(-1))
-        flat_real_current = flat_real.clone().detach().requires_grad_(True)
 
-        # Rather than forming the dense Hessian (which scales quadratically in the
-        # number of harmonics), we solve each Newton step with a conjugate-gradient
-        # loop that only queries Hessian–vector products. Those products are obtained
-        # via autograd's `hvp`, keeping both memory usage and runtime manageable for
-        # the large grids used when `is_use_fff=True`.
-        for iteration in range(max(steps, 1)):
-            (
-                _,
-                jac,
-                hessian_matvec,
-            ) = _field_loss_value_jac_and_hessian(
-                flat_real_current,
-                expansion=expansion,
-                primitive_lattice_vectors=primitive_lattice_vectors,
-                fourier_penalty_weights=fourier_penalty_weights,
-                target_field=target_field,
-                elementwise_alignment_loss_weight=elementwise_alignment_weight,
-                fourier_loss_weight=fourier_loss_weight,
-                smoothness_loss_weight=smoothness_loss_weight,
+        # When the field is 1D (uniform mask or single-direction gradient),
+        # the Newton solve is degenerate (singular Hessian).  Skip it —
+        # the result will be overridden by field_1d below anyway.
+        if is_1d:
+            pass
+        elif not use_jones_direct:
+            # Pure-real dense Hessian path.  The spatial field is
+            # reconstructed via precomputed cos/sin matrices (no ifft2,
+            # no complex tensors), making the loss compatible with
+            # torch.func.hessian and torch.compile.
+            spatial_shape = target_field.shape[:-1]
+            cos_mat, sin_mat = self._expansion_manager.real_ifft_matrices(
+                spatial_shape, device=arr.device, dtype=arr.dtype,
             )
-            try:
-                delta = _solve_sym_pos_linear_system(
-                    hessian_matvec,
-                    jac,
-                    tol=max(
-                        float(jac.norm()) * 1e-8,
-                        torch.finfo(jac.dtype).eps,
-                    ),
-                    max_iter=max(jac.numel() * 2, 10),
-                    damping=1e-6,
+            def _step(x: torch.Tensor) -> torch.Tensor:
+                return _newton_step_real(
+                    x,
+                    num_terms=expansion.num_terms,
+                    cos_matrix=cos_mat,
+                    sin_matrix=sin_mat,
+                    spatial_shape=spatial_shape,
+                    primitive_lattice_vectors=primitive_lattice_vectors,
+                    fourier_penalty_weights=fourier_penalty_weights,
+                    target_field=target_field,
+                    elementwise_alignment_loss_weight=elementwise_alignment_weight,
+                    fourier_loss_weight=fourier_loss_weight,
+                    smoothness_loss_weight=smoothness_loss_weight,
                 )
-                if not torch.isfinite(delta).all():
-                    raise ConjugateGradientError("Conjugate gradient produced non-finite update.")
-            except ConjugateGradientError:
-                basis = torch.eye(jac.numel(), dtype=jac.dtype, device=jac.device)
-                hessian_cols = []
-                for column in basis.split(1, dim=1):
-                    hessian_cols.append(hessian_matvec(column.squeeze(1)))
-                hessian = torch.stack(hessian_cols, dim=1)
-                identity = torch.eye(hessian.shape[0], dtype=hessian.dtype, device=hessian.device)
-                try:
-                    delta = torch.linalg.solve(hessian, jac)
-                except (RuntimeError, torch.linalg.LinAlgError):
-                    regularized = (hessian + 1e-8 * identity).clone().contiguous()
-                    try:
-                        delta = torch.linalg.solve(regularized, jac)
-                    except (RuntimeError, torch.linalg.LinAlgError):
-                        pseudo_inverse = torch.linalg.pinv(regularized, rcond=1e-12)
-                        delta = pseudo_inverse @ jac
 
-                if not torch.isfinite(delta).all():
-                    regularized = (hessian + 1e-6 * identity).clone().contiguous()
-                    pseudo_inverse = torch.linalg.pinv(regularized, rcond=1e-12)
-                    delta = pseudo_inverse @ jac
-
-                if not torch.isfinite(delta).all():
-                    raise ConjugateGradientError("Dense fallback produced non-finite update.")
-            next_real = flat_real_current - delta
-            if iteration < max(steps, 1) - 1:
-                flat_real_current = next_real.detach().requires_grad_(True)
-            else:
-                flat_real_current = next_real
-
-        fourier_field = _real_to_complex(flat_real_current, (expansion.num_terms, 2))
+            compiled_step = torch.compile(_step, fullgraph=True)
+            flat_real = _complex_to_real(fourier_field.reshape(-1))
+            for _ in range(max(steps, 1)):
+                flat_real = compiled_step(flat_real)
+            fourier_field = _flat_real_to_complex_fourier(flat_real, expansion.num_terms)
+        else:
+            # Complex dense Hessian path for JONES_DIRECT.
+            # Optimises directly on complex Fourier coefficients using
+            # vmap(jvp(grad())) to build the dense complex Hessian.
+            flat_complex = fourier_field.reshape(-1)
+            for _ in range(max(steps, 1)):
+                flat_complex = _newton_step_complex(
+                    flat_complex,
+                    expansion=expansion,
+                    primitive_lattice_vectors=primitive_lattice_vectors,
+                    fourier_penalty_weights=fourier_penalty_weights,
+                    target_field=target_field,
+                    elementwise_alignment_loss_weight=elementwise_alignment_weight,
+                    fourier_loss_weight=fourier_loss_weight,
+                    smoothness_loss_weight=smoothness_loss_weight,
+                )
+            fourier_field = flat_complex.reshape(expansion.num_terms, 2)
         field = ifft(
             fourier_field,
             expansion=expansion,
@@ -1087,6 +1217,12 @@ class TangentFieldGenerator:
             axis=-2,
             centered_coordinates=False,
         )
+        if not use_jones_direct:
+            # The real-loss Newton solve only constrains the real part of the
+            # spatial field; the imaginary direction is unconstrained.  Take
+            # .real so downstream normalization sees a clean real field, then
+            # cast back to complex to preserve the public API dtype contract.
+            field = field.real.to(dtype=fourier_field.dtype)
 
         field_1d = torch.stack(
             [
