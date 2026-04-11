@@ -301,12 +301,12 @@ def _build_real_ifft_matrices(
 
     i_idx = torch.arange(H, dtype=dtype, device=device)
     j_idx = torch.arange(W, dtype=dtype, device=device)
-    I, J = torch.meshgrid(i_idx, j_idx, indexing="ij")  # (H, W)
+    grid_i, grid_j = torch.meshgrid(i_idx, j_idx, indexing="ij")  # (H, W)
 
     # phase[k, i, j] = 2π (k_u·i/H + k_v·j/W)
     phase = 2.0 * math.pi * (
-        ku[:, None, None] * I[None, :, :] / H
-        + kv[:, None, None] * J[None, :, :] / W
+        ku[:, None, None] * grid_i[None, :, :] / H
+        + kv[:, None, None] * grid_j[None, :, :] / W
     )  # (num_terms, H, W)
 
     cos_mat = torch.cos(phase).permute(1, 2, 0).reshape(H * W, -1)  # (H*W, num_terms)
