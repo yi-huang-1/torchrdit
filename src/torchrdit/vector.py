@@ -933,10 +933,42 @@ def _field_loss_value_jac_and_dense_hessian(
             primitive_lattice_vectors=primitive_lattice_vectors,
         )
 
-    loss_value = loss_fn(flat_real)
     jac = torch.func.jacrev(loss_fn)(flat_real)
     hessian = torch.func.hessian(loss_fn)(flat_real)
-    return loss_value, jac, hessian
+    return jac, hessian
+
+
+def _newton_step_real(
+    flat_real: torch.Tensor,
+    num_terms: int,
+    cos_matrix: torch.Tensor,
+    sin_matrix: torch.Tensor,
+    spatial_shape: Tuple[int, int],
+    primitive_lattice_vectors: LatticeVectors,
+    fourier_penalty_weights: torch.Tensor,
+    target_field: torch.Tensor,
+    elementwise_alignment_loss_weight: torch.Tensor,
+    fourier_loss_weight: float,
+    smoothness_loss_weight: float,
+) -> torch.Tensor:
+    """Execute one Newton step and return the updated parameters.
+
+    This function is the compilation unit for ``torch.compile``.
+    """
+    jac, H = _field_loss_value_jac_and_dense_hessian(
+        flat_real,
+        num_terms=num_terms,
+        cos_matrix=cos_matrix,
+        sin_matrix=sin_matrix,
+        spatial_shape=spatial_shape,
+        primitive_lattice_vectors=primitive_lattice_vectors,
+        fourier_penalty_weights=fourier_penalty_weights,
+        target_field=target_field,
+        elementwise_alignment_loss_weight=elementwise_alignment_loss_weight,
+        fourier_loss_weight=fourier_loss_weight,
+        smoothness_loss_weight=smoothness_loss_weight,
+    )
+    return flat_real - torch.linalg.solve(H, jac)
 
 
 class TangentFieldGenerator:
@@ -1210,10 +1242,9 @@ class TangentFieldGenerator:
             cos_mat, sin_mat = self._expansion_manager.real_ifft_matrices(
                 spatial_shape, device=arr.device, dtype=arr.dtype,
             )
-            flat_real = _complex_to_real(fourier_field.reshape(-1))
-            for _ in range(max(steps, 1)):
-                _, jac, H = _field_loss_value_jac_and_dense_hessian(
-                    flat_real,
+            def _step(x: torch.Tensor) -> torch.Tensor:
+                return _newton_step_real(
+                    x,
                     num_terms=expansion.num_terms,
                     cos_matrix=cos_mat,
                     sin_matrix=sin_mat,
@@ -1225,7 +1256,11 @@ class TangentFieldGenerator:
                     fourier_loss_weight=fourier_loss_weight,
                     smoothness_loss_weight=smoothness_loss_weight,
                 )
-                flat_real = flat_real - torch.linalg.solve(H, jac)
+
+            compiled_step = torch.compile(_step, fullgraph=True)
+            flat_real = _complex_to_real(fourier_field.reshape(-1))
+            for _ in range(max(steps, 1)):
+                flat_real = compiled_step(flat_real)
             fourier_field = _flat_real_to_complex_fourier(flat_real, expansion.num_terms)
         else:
             # Legacy CG path for JONES_DIRECT (complex optimisation variables).
