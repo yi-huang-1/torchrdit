@@ -165,7 +165,7 @@ def example_angle_sweep():
     plt.xlim(-60, 60)
     plt.ylim(0, 1.05)
     plt.savefig('angle_sweep_basic.png', dpi=150)
-    plt.show()
+    plt.close()
     
     # Find optimal angle
     best_idx = results.find_optimal_source(metric="max_transmission")
@@ -256,7 +256,7 @@ def example_polarization_analysis():
     
     plt.tight_layout()
     plt.savefig('polarization_analysis_basic.png', dpi=150)
-    plt.show()
+    plt.close()
     
     print("\nPolarization analysis results:")
     for i, pol in enumerate(polarizations):
