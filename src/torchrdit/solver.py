@@ -1550,14 +1550,19 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                     p_yy = p_yy.unsqueeze(0).expand(n_sources, -1, -1, -1)
                     p_xx = p_xx.unsqueeze(0).expand(n_sources, -1, -1, -1)
 
+                # Liu 2012 eq.51 defines E2 in the [-Ey, Ex] field ordering,
+                # but torchrdit's Q matrix uses the [Ex, Ey] ordering.  The
+                # coordinate transformation swaps the diagonal P blocks:
+                #   Q[0:n, n:] uses p_xx (not p_yy)
+                #   Q[n:, 0:n] uses p_yy (not p_xx)
                 q_mat_i = blockmat2x2(
                     [
                         [
                             mat_kx_diag @ solve_tur_mky - delta_toeplitz_er @ p_xy,
-                            toeplitz_er - mat_kx_diag @ solve_tur_mkx - delta_toeplitz_er @ p_yy,
+                            toeplitz_er - mat_kx_diag @ solve_tur_mkx - delta_toeplitz_er @ p_xx,
                         ],
                         [
-                            mat_ky_diag @ solve_tur_mky - toeplitz_er + delta_toeplitz_er @ p_xx,
+                            mat_ky_diag @ solve_tur_mky - toeplitz_er + delta_toeplitz_er @ p_yy,
                             delta_toeplitz_er @ p_yx - mat_ky_diag @ solve_tur_mkx,
                         ],
                     ]
