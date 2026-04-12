@@ -441,18 +441,8 @@ def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64
     # - 3D: (n_freqs, harmonics_0_tims_1, harmonics_0_tims_1) for single source, multiple frequencies
     # - 4D: (n_sources, n_freqs, harmonics_0_tims_1, harmonics_0_tims_1) for batched sources
 
-    # Construct identity matrix
-    ndim = smat_a["S11"].ndim
-    if ndim == 4:
-        # Batched sources
-        _, _, harmonic_m, harmonic_n = smat_a["S11"].shape
-    elif ndim == 3:
-        # Single source, multiple frequencies
-        _, harmonic_m, harmonic_n = smat_a["S11"].shape
-    else:
-        # Single source, single frequency
-        harmonic_m, harmonic_n = smat_a["S11"].shape
-
+    # Construct identity matrix — works for any leading batch dimensions
+    harmonic_m, harmonic_n = smat_a["S11"].shape[-2:]
     device = smat_a["S11"].device
     identity_mat = torch.eye(harmonic_m, harmonic_n, dtype=tcomplex, device=device)
 
