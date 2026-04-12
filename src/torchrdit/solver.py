@@ -3058,8 +3058,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_trn_protected, self.harmonics), trn_field_y)
 
         # Calculate diffraction efficiencies
-        # Handle both 2D and 3D kinc
-        kinc_z = kinc[:, 2] if kinc.dim() == 2 else kinc[0, :, 2]
+        # kinc is per-source: (n_freqs, 3)
+        kinc_z = kinc[:, 2]
 
         # Apply kinc_z protection to prevent numerical underflow at extreme grazing angles
         min_kinc_z = getattr(self, "min_kinc_z", 1e-3)  # Default threshold of 1e-3
