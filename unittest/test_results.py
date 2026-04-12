@@ -490,6 +490,15 @@ class TestUnifiedSolverResults(unittest.TestCase):
             kztrn=torch.randn(self.n_freqs, self.n_harmonics, dtype=torch.complex64)
         )
 
+        # Batched wave vectors (n_sources leading dim)
+        self.batched_wave_vectors = WaveVectors(
+            kx=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            ky=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            kinc=torch.randn(self.n_sources, self.n_freqs, 3, dtype=torch.complex64),
+            kzref=torch.randn(self.n_sources, self.n_freqs, self.n_harmonics, dtype=torch.complex64),
+            kztrn=torch.randn(self.n_sources, self.n_freqs, self.n_harmonics, dtype=torch.complex64),
+        )
+
         # Lattice vectors for field reconstruction
         self.lattice_t1 = torch.tensor([1.0, 0.0], dtype=torch.float32)
         self.lattice_t2 = torch.tensor([0.0, 1.0], dtype=torch.float32)
@@ -544,7 +553,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
             reflection_field=self.batched_reflection_field,
             transmission_field=self.batched_transmission_field,
             structure_matrix=self.structure_matrix,
-            wave_vectors=self.wave_vectors,
+            wave_vectors=self.batched_wave_vectors,
             lattice_t1=self.lattice_t1,
             lattice_t2=self.lattice_t2,
             default_grids=self.default_grids,
@@ -587,7 +596,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
             reflection_field=self.batched_reflection_field,
             transmission_field=self.batched_transmission_field,
             structure_matrix=self.structure_matrix,
-            wave_vectors=self.wave_vectors,
+            wave_vectors=self.batched_wave_vectors,
             n_sources=self.n_sources,
             source_parameters=self.source_parameters,
             loss=self.batched_loss,
@@ -620,7 +629,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
             reflection_field=self.batched_reflection_field,
             transmission_field=self.batched_transmission_field,
             structure_matrix=self.structure_matrix,
-            wave_vectors=self.wave_vectors,
+            wave_vectors=self.batched_wave_vectors,
             n_sources=self.n_sources,
             source_parameters=self.source_parameters,
             loss=self.batched_loss,
@@ -650,7 +659,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
             reflection_field=self.batched_reflection_field,
             transmission_field=self.batched_transmission_field,
             structure_matrix=self.structure_matrix,
-            wave_vectors=self.wave_vectors,
+            wave_vectors=self.batched_wave_vectors,
             n_sources=self.n_sources,
             source_parameters=self.source_parameters,
             loss=self.batched_loss,
@@ -683,7 +692,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
             reflection_field=self.batched_reflection_field,
             transmission_field=self.batched_transmission_field,
             structure_matrix=self.structure_matrix,
-            wave_vectors=self.wave_vectors,
+            wave_vectors=self.batched_wave_vectors,
             n_sources=self.n_sources,
             source_parameters=self.source_parameters,
             loss=self.batched_loss,
@@ -865,27 +874,23 @@ class TestBatchedDiffractionMethods(unittest.TestCase):
             wave_vectors=wave_vectors,
         )
 
-    def _make_wave_vector_list(self):
-        wave_vectors = []
-        for source_idx in range(self.n_sources):
-            kzref = torch.full((self.n_freqs, self.n_harmonics), 1j, dtype=torch.complex64)
-            kztrn = torch.full((self.n_freqs, self.n_harmonics), 1j, dtype=torch.complex64)
-            if source_idx == 0:
-                kzref[0, 4] = torch.tensor(1.0 + 0j, dtype=torch.complex64)
-                kzref[0, 7] = torch.tensor(0.5 + 0j, dtype=torch.complex64)
-            else:
-                kzref[0, 4] = torch.tensor(1.0 + 0j, dtype=torch.complex64)
-
-            wave_vectors.append(
-                WaveVectors(
-                    kx=torch.randn(self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
-                    ky=torch.randn(self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
-                    kinc=torch.randn(self.n_freqs, 3, dtype=torch.complex64),
-                    kzref=kzref,
-                    kztrn=kztrn,
-                )
-            )
-        return wave_vectors
+    def _make_batched_wave_vectors(self):
+        """Create a single batched WaveVectors with per-source kzref values."""
+        kzref = torch.full((self.n_sources, self.n_freqs, self.n_harmonics), 1j, dtype=torch.complex64)
+        kztrn = torch.full((self.n_sources, self.n_freqs, self.n_harmonics), 1j, dtype=torch.complex64)
+        # Source 0: two propagating orders
+        kzref[0, 0, 4] = torch.tensor(1.0 + 0j, dtype=torch.complex64)
+        kzref[0, 0, 7] = torch.tensor(0.5 + 0j, dtype=torch.complex64)
+        # Source 1+: one propagating order
+        for i in range(1, self.n_sources):
+            kzref[i, 0, 4] = torch.tensor(1.0 + 0j, dtype=torch.complex64)
+        return WaveVectors(
+            kx=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            ky=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            kinc=torch.randn(self.n_sources, self.n_freqs, 3, dtype=torch.complex64),
+            kzref=kzref,
+            kztrn=kztrn,
+        )
 
     def test_harmonics_property_unbatched(self):
         results = self._make_results(batched=False, wave_vectors=self.single_wave_vectors)
@@ -949,14 +954,14 @@ class TestBatchedDiffractionMethods(unittest.TestCase):
         self.assertEqual(orders, expected_orders)
 
     def test_get_propagating_orders_batched_with_source_idx(self):
-        wave_vectors = self._make_wave_vector_list()
+        wave_vectors = self._make_batched_wave_vectors()
         results = self._make_results(batched=True, wave_vectors=wave_vectors)
         propagating = results.get_propagating_orders(wavelength_idx=0, source_idx=0)
         self.assertIn((0, 0), propagating)
         self.assertEqual(set(propagating), {(0, 0), (1, 0)})
 
     def test_get_propagating_orders_batched_no_source_idx_raises(self):
-        wave_vectors = self._make_wave_vector_list()
+        wave_vectors = self._make_batched_wave_vectors()
         results = self._make_results(batched=True, wave_vectors=wave_vectors)
         with self.assertRaisesRegex(ValueError, "source_idx"):
             results.get_propagating_orders(0)
@@ -964,12 +969,16 @@ class TestBatchedDiffractionMethods(unittest.TestCase):
     def test_resolve_wave_vectors_single(self):
         results = self._make_results(batched=False, wave_vectors=self.single_wave_vectors)
         self.assertIs(results._resolve_wave_vectors(), self.single_wave_vectors)
+        # For unbatched results, source_idx is ignored — returns wave_vectors directly
         self.assertIs(results._resolve_wave_vectors(source_idx=0), self.single_wave_vectors)
+        self.assertIs(results._resolve_wave_vectors(source_idx=1), self.single_wave_vectors)
 
-    def test_resolve_wave_vectors_list(self):
-        wave_vectors = self._make_wave_vector_list()
+    def test_resolve_wave_vectors_batched(self):
+        wave_vectors = self._make_batched_wave_vectors()
         results = self._make_results(batched=True, wave_vectors=wave_vectors)
-        self.assertIs(results._resolve_wave_vectors(source_idx=0), wave_vectors[0])
+        resolved = results._resolve_wave_vectors(source_idx=0)
+        self.assertTrue(torch.equal(resolved.kzref, wave_vectors.kzref[0]))
+        self.assertTrue(torch.equal(resolved.kinc, wave_vectors.kinc[0]))
         with self.assertRaisesRegex(ValueError, "source_idx"):
             results._resolve_wave_vectors()
 

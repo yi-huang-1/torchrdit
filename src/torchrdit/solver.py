@@ -1790,18 +1790,14 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 S11=smat_global.S11[0], S12=smat_global.S12[0],
                 S21=smat_global.S21[0], S22=smat_global.S22[0],
             ),
-            wave_vectors=[
-                WaveVectors(
-                    kx=torch.squeeze(kx_0[i]), ky=torch.squeeze(ky_0[i]),
-                    kinc=self.kinc[i], kzref=matrices["mat_kz_ref"][i], kztrn=matrices["mat_kz_trn"][i],
-                )
-                for i in range(n_sources)
-            ],
+            wave_vectors=WaveVectors(
+                kx=kx_0, ky=ky_0,
+                kinc=self.kinc, kzref=matrices["mat_kz_ref"], kztrn=matrices["mat_kz_trn"],
+            ),
             raw_data={"_per_source": per_source_raw},
             n_sources=n_sources,
             source_parameters=sources,
             loss=1.0 - reflection - transmission,
-            _is_batched=True,
             lattice_t1=self.lattice_t1,
             lattice_t2=self.lattice_t2,
             default_grids=self.grids,
