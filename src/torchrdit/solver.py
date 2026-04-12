@@ -128,7 +128,7 @@ from .cell import Cell3D, CellType
 from .constants import Algorithm, Precision
 from .materials import MaterialClass
 from .numerics import safe_kz_reciprocal, softplus_floor, softplus_magnitude_floor
-from .results import SolverResults, FieldComponents
+from .results import SolverResults, FieldComponents, ScatteringMatrix, WaveVectors
 
 # BatchedSolverResults functionality is now integrated into SolverResults
 from .utils import blockmat2x2, init_smatrix, redhstar, to_diag_util
@@ -1704,72 +1704,68 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         self.notify_observers("connecting_external_regions")
         smat_global, mat_v_ref, mat_v_trn = self._connect_external_regions(smat_global, matrices)
 
-        # Calculate fields per source (polarization depends on per-source theta/pte/ptm)
+        # Calculate fields — fully vectorized over all sources (no Python loop)
         self.notify_observers("calculating_fields")
-        all_results = []
-        field_shape = (self.n_freqs, self.harmonics[0], self.harmonics[1])
+        fields = self._calculate_fields_and_efficiencies(
+            smat_global, matrices, kx_0, ky_0, mat_v_ref, mat_v_trn,
+            kinc=self.kinc, sources=sources,
+        )
 
+        # Reshape field Fourier coeffs: (B, F, H², 1) → (B, F, H0, H1)
+        H0, H1 = self.harmonics
+        field_shape = (n_sources, self.n_freqs, H0, H1)
+
+        def _fmt(key):
+            v = fields[key]
+            if v is None:
+                return None
+            return torch.reshape(v, shape=field_shape).transpose(dim0=-2, dim1=-1)
+
+        # Efficiencies are already (B, F, ...) from the vectorized method
+        reflection = fields["total_ref_efficiency"]   # (B, F)
+        transmission = fields["total_trn_efficiency"]  # (B, F)
+
+        # Per-source raw_data for backward compat
+        per_source_raw = []
         for i in range(n_sources):
-            self.src = sources[i]
-            smat_i = {k: v[i] for k, v in smat_global.items()}
-            matrices_i = {k: v[i] for k, v in matrices.items()}
-
-            fields = self._calculate_fields_and_efficiencies(
-                smat_i, matrices_i, kx_0[i], ky_0[i], mat_v_ref[i], mat_v_trn[i], kinc=self.kinc[i]
-            )
-
-            # Reshape field components: (F, H², 1) → (F, H0, H1)
-            def _fmt(key):
-                return torch.reshape(fields[key], shape=field_shape).transpose(dim0=-2, dim1=-1)
-
-            data = {
-                "smat_structure": {k: v.detach().clone() for k, v in smat_i.items()},
-                "ref_s_x": _fmt("ref_s_x"), "ref_s_y": _fmt("ref_s_y"), "ref_s_z": _fmt("ref_s_z"),
-                "trn_s_x": _fmt("trn_s_x"), "trn_s_y": _fmt("trn_s_y"), "trn_s_z": _fmt("trn_s_z"),
-                "ref_u_x": _fmt("ref_u_x"), "ref_u_y": _fmt("ref_u_y"), "ref_u_z": _fmt("ref_u_z"),
-                "trn_u_x": _fmt("trn_u_x"), "trn_u_y": _fmt("trn_u_y"), "trn_u_z": _fmt("trn_u_z"),
-                # Backward compat keys
-                "rx": _fmt("ref_s_x"), "ry": _fmt("ref_s_y"), "rz": _fmt("ref_s_z"),
-                "tx": _fmt("trn_s_x"), "ty": _fmt("trn_s_y"), "tz": _fmt("trn_s_z"),
-                "RDE": fields["ref_diff_efficiency"], "TDE": fields["trn_diff_efficiency"],
-                "REF": fields["total_ref_efficiency"], "TRN": fields["total_trn_efficiency"],
-                "kzref": matrices_i["mat_kz_ref"], "kztrn": matrices_i["mat_kz_trn"],
+            smat_i = {k: v[i].detach().clone() for k, v in smat_global.items()}
+            per_source_raw.append({
+                "smat_structure": smat_i,
+                "REF": reflection[i], "TRN": transmission[i],
+                "RDE": fields["ref_diff_efficiency"][i], "TDE": fields["trn_diff_efficiency"][i],
+                "kzref": matrices["mat_kz_ref"][i], "kztrn": matrices["mat_kz_trn"][i],
                 "kinc": self.kinc[i], "kx": torch.squeeze(kx_0[i]), "ky": torch.squeeze(ky_0[i]),
                 "lattice_t1": self.lattice_t1, "lattice_t2": self.lattice_t2,
                 "default_grids": self.grids,
-            }
-            all_results.append(SolverResults.from_dict(data))
+            })
 
         self.notify_observers("calculation_completed", {"n_sources": n_sources, "n_freqs": self.n_freqs})
-
-        # Stack per-source results into batched SolverResults
-        reflection = torch.stack([r.reflection for r in all_results])
-        transmission = torch.stack([r.transmission for r in all_results])
 
         return SolverResults(
             reflection=reflection,
             transmission=transmission,
-            reflection_diffraction=torch.stack([r.reflection_diffraction for r in all_results]),
-            transmission_diffraction=torch.stack([r.transmission_diffraction for r in all_results]),
+            reflection_diffraction=fields["ref_diff_efficiency"],
+            transmission_diffraction=fields["trn_diff_efficiency"],
             reflection_field=FieldComponents(
-                x=torch.stack([r.reflection_field.x for r in all_results]),
-                y=torch.stack([r.reflection_field.y for r in all_results]),
-                z=torch.stack([r.reflection_field.z for r in all_results]),
-                mag_x=torch.stack([r.reflection_field.mag_x for r in all_results]) if all_results[0].reflection_field.mag_x is not None else None,
-                mag_y=torch.stack([r.reflection_field.mag_y for r in all_results]) if all_results[0].reflection_field.mag_y is not None else None,
-                mag_z=torch.stack([r.reflection_field.mag_z for r in all_results]) if all_results[0].reflection_field.mag_z is not None else None,
+                x=_fmt("ref_s_x"), y=_fmt("ref_s_y"), z=_fmt("ref_s_z"),
+                mag_x=_fmt("ref_u_x"), mag_y=_fmt("ref_u_y"), mag_z=_fmt("ref_u_z"),
             ),
             transmission_field=FieldComponents(
-                x=torch.stack([r.transmission_field.x for r in all_results]),
-                y=torch.stack([r.transmission_field.y for r in all_results]),
-                z=torch.stack([r.transmission_field.z for r in all_results]),
-                mag_x=torch.stack([r.transmission_field.mag_x for r in all_results]) if all_results[0].transmission_field.mag_x is not None else None,
-                mag_y=torch.stack([r.transmission_field.mag_y for r in all_results]) if all_results[0].transmission_field.mag_y is not None else None,
-                mag_z=torch.stack([r.transmission_field.mag_z for r in all_results]) if all_results[0].transmission_field.mag_z is not None else None,
+                x=_fmt("trn_s_x"), y=_fmt("trn_s_y"), z=_fmt("trn_s_z"),
+                mag_x=_fmt("trn_u_x"), mag_y=_fmt("trn_u_y"), mag_z=_fmt("trn_u_z"),
             ),
-            structure_matrix=all_results[0].structure_matrix,
-            wave_vectors=[r.wave_vectors for r in all_results],
-            raw_data={"_per_source": [r.raw_data for r in all_results]},
+            structure_matrix=ScatteringMatrix(
+                S11=smat_global["S11"][0], S12=smat_global["S12"][0],
+                S21=smat_global["S21"][0], S22=smat_global["S22"][0],
+            ),
+            wave_vectors=[
+                WaveVectors(
+                    kx=torch.squeeze(kx_0[i]), ky=torch.squeeze(ky_0[i]),
+                    kinc=self.kinc[i], kzref=matrices["mat_kz_ref"][i], kztrn=matrices["mat_kz_trn"][i],
+                )
+                for i in range(n_sources)
+            ],
+            raw_data={"_per_source": per_source_raw},
             n_sources=n_sources,
             source_parameters=sources,
             loss=1.0 - reflection - transmission,
@@ -2859,163 +2855,133 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         return {"ate": ate_batch, "atm": atm_batch, "pol_vec": pol_vec, "esrc": esrc}
 
     def _calculate_fields_and_efficiencies(
-        self, smat_global, matrices, kx_0, ky_0, mat_v_ref=None, mat_v_trn=None, kinc=None
+        self, smat_global, matrices, kx_0, ky_0, mat_v_ref=None, mat_v_trn=None, kinc=None, sources=None
     ):
-        """Calculate fields and diffraction efficiencies based on the scattering matrix.
+        """Calculate fields and diffraction efficiencies — vectorized over sources.
+
+        All inputs are 4D ``(n_sources, n_freqs, ...)``. All outputs in the
+        returned dict carry the same leading ``(n_sources, ...)`` dimension.
 
         Args:
-            smat_global: The global scattering matrix
-            matrices: Dictionary of matrices from setup_common_matrices
-            kx_0, ky_0: Wave vectors
-            mat_v_ref: V matrix for reflection region (for magnetic field calculations)
-            mat_v_trn: V matrix for transmission region (for magnetic field calculations)
-            kinc: Optional kinc tensor to use instead of self.kinc. If None, uses self.kinc.
+            smat_global: Global scattering matrix dict, values ``(B, F, 2M, 2M)``
+            matrices: Common-matrix dict, values ``(B, F, ...)``
+            kx_0, ky_0: Wave vectors ``(B, F, H0, H1)``
+            mat_v_ref: V matrix for reflection region ``(B, F, 2M, 2M)``
+            mat_v_trn: V matrix for transmission region ``(B, F, 2M, 2M)``
+            kinc: Incident wave vectors ``(B, F, 3)``. Falls back to ``self.kinc``.
+            sources: List of source dicts (for batched polarization). Falls back to ``self.src``.
 
         Returns:
-            dict: Dictionary containing calculated fields and efficiencies
+            dict: Fields and efficiencies with leading ``(B, ...)`` dimension.
         """
-        # Use passed kinc parameter or fall back to self.kinc
         if kinc is None:
             kinc = self.kinc
+        n_sources = kinc.shape[0]
 
         n_harmonics_squared = self.harmonics[0] * self.harmonics[1]
 
-        # Calculate polarization vectors using the unified method
-        polarization_data = self._calculate_polarization(kinc=kinc)
+        # Batched polarization: esrc shape (B, F, 2*H²)
+        polarization_data = self._calculate_polarization(sources=sources, kinc=kinc)
         esrc = polarization_data["esrc"]
 
-        # Calculate source vectors
-        mat_w_ref = self.ident_mat_k2.unsqueeze(0).expand(self.n_freqs, -1, -1)
+        # W_ref = identity, shape (B, F, 2M, 2M)
+        M2 = 2 * n_harmonics_squared
+        mat_w_ref = self.ident_mat_k2.reshape(1, 1, M2, M2).expand(n_sources, self.n_freqs, -1, -1)
         mat_w_trn = mat_w_ref
 
-        csrc = tsolve(mat_w_ref, esrc.unsqueeze(-1))
+        csrc = tsolve(mat_w_ref, esrc.unsqueeze(-1))  # (B, F, 2M, 1)
 
-        # Calculate reflected fields
-        cref = smat_global["S11"] @ csrc
+        # Reflected fields
+        cref = smat_global["S11"] @ csrc  # (B, F, 2M, 1)
         eref = mat_w_ref @ cref
 
-        ref_field_x = eref[:, 0:n_harmonics_squared, :]
-        ref_field_y = eref[:, n_harmonics_squared : 2 * n_harmonics_squared, :]
+        ref_field_x = eref[:, :, 0:n_harmonics_squared, :]
+        ref_field_y = eref[:, :, n_harmonics_squared:M2, :]
 
-        # Use matrices from the common setup
-        # Apply epsilon protection to prevent singular matrices in field calculations
-        # For extreme grazing incidence, we need stronger protection
-        min_kz = getattr(self, "min_kinc_z", 1e-3)  # Use same threshold as kinc_z protection
+        min_kz = getattr(self, "min_kinc_z", 1e-3)
 
-        # Differentiable softplus protection for mat_kz_ref (see numerics.py)
         mat_kz_ref_protected = softplus_magnitude_floor(matrices["mat_kz_ref"], min_kz, beta=100)
-        ref_field_z = -matrices["mat_kx_diag"] @ tsolve(
-            to_diag_util(mat_kz_ref_protected, self.harmonics), ref_field_x
-        ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_ref_protected, self.harmonics), ref_field_y)
-
-        # Calculate transmitted fields
-        ctrn = smat_global["S21"] @ csrc
-        etrn = mat_w_trn @ ctrn
-        trn_field_x = etrn[:, 0:n_harmonics_squared, :]
-        trn_field_y = etrn[:, n_harmonics_squared : 2 * n_harmonics_squared, :]
-
-        # Differentiable softplus protection for mat_kz_trn (see numerics.py)
-        mat_kz_trn_protected = softplus_magnitude_floor(matrices["mat_kz_trn"], min_kz, beta=100)
-        trn_field_z = -matrices["mat_kx_diag"] @ tsolve(
-            to_diag_util(mat_kz_trn_protected, self.harmonics), trn_field_x
-        ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_trn_protected, self.harmonics), trn_field_y)
-
-        # Calculate diffraction efficiencies
-        # kinc is per-source: (n_freqs, 3)
-        kinc_z = kinc[:, 2]
-
-        # Apply kinc_z protection to prevent numerical underflow at extreme grazing angles
-        min_kinc_z = getattr(self, "min_kinc_z", 1e-3)  # Default threshold of 1e-3
-        # kinc_z is complex but should have zero imaginary part, so we work with the real part
-        kinc_z_real = torch.real(kinc_z)
-
-        # Differentiable softplus protection for kinc_z (see numerics.py)
-        kinc_z_protected = softplus_floor(kinc_z_real, min_kinc_z, beta=100)
-
-        # Calculate field intensity
-        field_intensity = (
-            torch.real(ref_field_x) ** 2
-            + torch.imag(ref_field_x) ** 2
-            + torch.real(ref_field_y) ** 2
-            + torch.imag(ref_field_y) ** 2
-            + torch.real(ref_field_z) ** 2
-            + torch.imag(ref_field_z) ** 2
+        kz_ref_diag = to_diag_util(mat_kz_ref_protected, self.harmonics)
+        ref_field_z = (
+            -matrices["mat_kx_diag"] @ tsolve(kz_ref_diag, ref_field_x)
+            - matrices["mat_ky_diag"] @ tsolve(kz_ref_diag, ref_field_y)
         )
 
+        # Transmitted fields
+        ctrn = smat_global["S21"] @ csrc
+        etrn = mat_w_trn @ ctrn
+        trn_field_x = etrn[:, :, 0:n_harmonics_squared, :]
+        trn_field_y = etrn[:, :, n_harmonics_squared:M2, :]
+
+        mat_kz_trn_protected = softplus_magnitude_floor(matrices["mat_kz_trn"], min_kz, beta=100)
+        kz_trn_diag = to_diag_util(mat_kz_trn_protected, self.harmonics)
+        trn_field_z = (
+            -matrices["mat_kx_diag"] @ tsolve(kz_trn_diag, trn_field_x)
+            - matrices["mat_ky_diag"] @ tsolve(kz_trn_diag, trn_field_y)
+        )
+
+        # Diffraction efficiencies — kinc shape (B, F, 3)
+        kinc_z = kinc[:, :, 2]  # (B, F)
+        min_kinc_z = getattr(self, "min_kinc_z", 1e-3)
+        kinc_z_protected = softplus_floor(torch.real(kinc_z), min_kinc_z, beta=100)  # (B, F)
+
+        def _field_intensity(fx, fy, fz):
+            return (
+                torch.real(fx) ** 2 + torch.imag(fx) ** 2
+                + torch.real(fy) ** 2 + torch.imag(fy) ** 2
+                + torch.real(fz) ** 2 + torch.imag(fz) ** 2
+            )
+
+        H0, H1 = self.harmonics
+        # kinc_z_protected[:, :, None, None] broadcasts to (B, F, H², 1)
         ref_diff_efficiency = torch.reshape(
             torch.real(
-                self.ur2 / self.ur1 * to_diag_util(mat_kz_ref_protected, self.harmonics) / kinc_z_protected[:, None, None]
-            )
-            @ field_intensity,
-            shape=(self.n_freqs, self.harmonics[0], self.harmonics[1]),
+                self.ur2 / self.ur1 * kz_ref_diag / kinc_z_protected[:, :, None, None]
+            ) @ _field_intensity(ref_field_x, ref_field_y, ref_field_z),
+            shape=(n_sources, self.n_freqs, H0, H1),
         ).transpose(dim0=-2, dim1=-1)
 
         trn_diff_efficiency = torch.reshape(
             torch.real(
-                self.ur1 / self.ur2 * to_diag_util(mat_kz_trn_protected, self.harmonics) / kinc_z_protected[:, None, None]
-            )
-            @ (
-                torch.real(trn_field_x) ** 2
-                + torch.imag(trn_field_x) ** 2
-                + torch.real(trn_field_y) ** 2
-                + torch.imag(trn_field_y) ** 2
-                + torch.real(trn_field_z) ** 2
-                + torch.imag(trn_field_z) ** 2
-            ),
-            shape=(self.n_freqs, self.harmonics[0], self.harmonics[1]),
+                self.ur1 / self.ur2 * kz_trn_diag / kinc_z_protected[:, :, None, None]
+            ) @ _field_intensity(trn_field_x, trn_field_y, trn_field_z),
+            shape=(n_sources, self.n_freqs, H0, H1),
         ).transpose(dim0=-2, dim1=-1)
 
-        # Calculate overall reflectance & transmittance
-        total_ref_efficiency = torch.sum(ref_diff_efficiency, dim=(-1, -2))
+        total_ref_efficiency = torch.sum(ref_diff_efficiency, dim=(-1, -2))  # (B, F)
         total_trn_efficiency = torch.sum(trn_diff_efficiency, dim=(-1, -2))
 
-        # Calculate magnetic field coefficients if V matrices are provided
+        # Magnetic field coefficients
         if mat_v_ref is not None and mat_v_trn is not None:
-            # Reflection region: u = -V @ c^- (since cref represents backward propagating waves)
             uref = -mat_v_ref @ cref
-            ref_mag_x = uref[:, 0:n_harmonics_squared, :]
-            ref_mag_y = uref[:, n_harmonics_squared : 2 * n_harmonics_squared, :]
+            ref_mag_x = uref[:, :, 0:n_harmonics_squared, :]
+            ref_mag_y = uref[:, :, n_harmonics_squared:M2, :]
+            ref_mag_z = (
+                -matrices["mat_kx_diag"] @ tsolve(kz_ref_diag, ref_mag_x)
+                - matrices["mat_ky_diag"] @ tsolve(kz_ref_diag, ref_mag_y)
+            )
 
-            # Calculate Hz for reflection using Maxwell's equations: Hz = -(kx*Hx + ky*Hy)/kz
-            ref_mag_z = -matrices["mat_kx_diag"] @ tsolve(
-                to_diag_util(mat_kz_ref_protected, self.harmonics), ref_mag_x
-            ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_ref_protected, self.harmonics), ref_mag_y)
-
-            # Transmission region: u = V @ c^+ (since ctrn represents forward propagating waves)
             utrn = mat_v_trn @ ctrn
-            trn_mag_x = utrn[:, 0:n_harmonics_squared, :]
-            trn_mag_y = utrn[:, n_harmonics_squared : 2 * n_harmonics_squared, :]
-
-            # Calculate Hz for transmission using Maxwell's equations
-            trn_mag_z = -matrices["mat_kx_diag"] @ tsolve(
-                to_diag_util(mat_kz_trn_protected, self.harmonics), trn_mag_x
-            ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_trn_protected, self.harmonics), trn_mag_y)
+            trn_mag_x = utrn[:, :, 0:n_harmonics_squared, :]
+            trn_mag_y = utrn[:, :, n_harmonics_squared:M2, :]
+            trn_mag_z = (
+                -matrices["mat_kx_diag"] @ tsolve(kz_trn_diag, trn_mag_x)
+                - matrices["mat_ky_diag"] @ tsolve(kz_trn_diag, trn_mag_y)
+            )
         else:
-            # If V matrices not provided, set magnetic fields to None
             ref_mag_x = ref_mag_y = ref_mag_z = None
             trn_mag_x = trn_mag_y = trn_mag_z = None
 
-        # Create fields dictionary (using Fourier coefficient notation)
-        fields = {
-            "ref_s_x": ref_field_x,  # Reflection E-field Fourier coeff, x-component
-            "ref_s_y": ref_field_y,  # Reflection E-field Fourier coeff, y-component
-            "ref_s_z": ref_field_z,  # Reflection E-field Fourier coeff, z-component
-            "trn_s_x": trn_field_x,  # Transmission E-field Fourier coeff, x-component
-            "trn_s_y": trn_field_y,  # Transmission E-field Fourier coeff, y-component
-            "trn_s_z": trn_field_z,  # Transmission E-field Fourier coeff, z-component
-            "ref_u_x": ref_mag_x,  # Reflection H-field Fourier coeff, x-component
-            "ref_u_y": ref_mag_y,  # Reflection H-field Fourier coeff, y-component
-            "ref_u_z": ref_mag_z,  # Reflection H-field Fourier coeff, z-component
-            "trn_u_x": trn_mag_x,  # Transmission H-field Fourier coeff, x-component
-            "trn_u_y": trn_mag_y,  # Transmission H-field Fourier coeff, y-component
-            "trn_u_z": trn_mag_z,  # Transmission H-field Fourier coeff, z-component
+        return {
+            "ref_s_x": ref_field_x, "ref_s_y": ref_field_y, "ref_s_z": ref_field_z,
+            "trn_s_x": trn_field_x, "trn_s_y": trn_field_y, "trn_s_z": trn_field_z,
+            "ref_u_x": ref_mag_x, "ref_u_y": ref_mag_y, "ref_u_z": ref_mag_z,
+            "trn_u_x": trn_mag_x, "trn_u_y": trn_mag_y, "trn_u_z": trn_mag_z,
             "ref_diff_efficiency": ref_diff_efficiency,
             "trn_diff_efficiency": trn_diff_efficiency,
             "total_ref_efficiency": total_ref_efficiency,
             "total_trn_efficiency": total_trn_efficiency,
         }
-
-        return fields
 
 
 class RCWASolver(FourierBaseSolver):
