@@ -131,7 +131,7 @@ from .numerics import safe_kz_reciprocal, softplus_floor, softplus_magnitude_flo
 from .results import SolverResults, FieldComponents, ScatteringMatrix, WaveVectors
 
 # BatchedSolverResults functionality is now integrated into SolverResults
-from .utils import blockmat2x2, init_smatrix, redhstar, to_diag_util
+from .utils import SMatrix, blockmat2x2, init_smatrix, redhstar, to_diag_util
 
 if TYPE_CHECKING:
     from .builder import SolverBuilder
@@ -1387,7 +1387,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             )
         layer_thickness_complex = layer_thickness_tensor.to(self.tcomplex)
         slice_thickness = layer_thickness_complex / slice_count  # Evenly split thickness across slices
-        smat_layer = {}
+        smat_layer = None
 
         # Handle non-homogeneous layers
         if not layer.is_homogeneous:
@@ -1501,8 +1501,12 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             )
 
             # Reshape back to (n_sources, n_freqs, M, M)
-            for key in smat_layer:
-                smat_layer[key] = smat_layer[key].reshape(original_shape[:2] + smat_layer[key].shape[1:])
+            smat_layer = SMatrix(
+                S11=smat_layer.S11.reshape(original_shape[:2] + smat_layer.S11.shape[1:]),
+                S12=smat_layer.S12.reshape(original_shape[:2] + smat_layer.S12.shape[1:]),
+                S21=smat_layer.S21.reshape(original_shape[:2] + smat_layer.S21.shape[1:]),
+                S22=smat_layer.S22.reshape(original_shape[:2] + smat_layer.S22.shape[1:]),
+            )
 
         # Handle homogeneous layers
         else:
@@ -1630,16 +1634,14 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
             mat_d_i = mat_a_i - mat_xi_bi @ solve_ai_xi @ mat_b_i
 
-            smat_layer["S11"] = tsolve(mat_d_i, mat_xi_bi @ solve_ai_xi @ mat_a_i - mat_b_i)
-            smat_layer["S12"] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tsolve(mat_a_i, mat_b_i))
-            smat_layer["S21"] = smat_layer["S12"]
-            smat_layer["S22"] = smat_layer["S11"]
+            s11 = tsolve(mat_d_i, mat_xi_bi @ solve_ai_xi @ mat_a_i - mat_b_i)
+            s12 = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tsolve(mat_a_i, mat_b_i))
+            smat_layer = SMatrix(S11=s11, S12=s12, S21=s12, S22=s11)
 
         if slice_count > 1:
-            smat_slice = {key: value for key, value in smat_layer.items()}
-            smat_combined = smat_slice
+            smat_combined = smat_layer
             for _ in range(slice_count - 1):
-                smat_combined = redhstar(smat_combined, smat_slice, tcomplex=self.tcomplex)
+                smat_combined = redhstar(smat_combined, smat_layer, tcomplex=self.tcomplex)
             smat_layer = smat_combined
 
         return smat_layer
@@ -1728,7 +1730,12 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         # Per-source raw_data for backward compat
         per_source_raw = []
         for i in range(n_sources):
-            smat_i = {k: v[i].detach().clone() for k, v in smat_global.items()}
+            smat_i = SMatrix(
+                S11=smat_global.S11[i].detach().clone(),
+                S12=smat_global.S12[i].detach().clone(),
+                S21=smat_global.S21[i].detach().clone(),
+                S22=smat_global.S22[i].detach().clone(),
+            )
             per_source_raw.append({
                 "smat_structure": smat_i,
                 "REF": reflection[i], "TRN": transmission[i],
@@ -1755,8 +1762,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 mag_x=_fmt("trn_u_x"), mag_y=_fmt("trn_u_y"), mag_z=_fmt("trn_u_z"),
             ),
             structure_matrix=ScatteringMatrix(
-                S11=smat_global["S11"][0], S12=smat_global["S12"][0],
-                S21=smat_global["S21"][0], S22=smat_global["S22"][0],
+                S11=smat_global.S11[0], S12=smat_global.S12[0],
+                S21=smat_global.S21[0], S22=smat_global.S22[0],
             ),
             wave_vectors=[
                 WaveVectors(
@@ -2654,19 +2661,19 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         mat_w_ref = self.ident_mat_k2.unsqueeze(0).expand(self.n_freqs, -1, -1)
 
         # Calculate reflection region scattering matrix
-        smat_ref = {}
         atw1 = mat_w_ref
         atv1 = tsolve(matrices["mat_v0"], mat_v_ref)
 
-        # Common code for both cases
         mat_a_1 = atw1 + atv1
         mat_b_1 = atw1 - atv1
         inv_mat_a_1 = tinv(mat_a_1)
         inv_mat_a_1_mat_b_1 = inv_mat_a_1 @ mat_b_1
-        smat_ref["S11"] = -inv_mat_a_1_mat_b_1
-        smat_ref["S12"] = 2 * inv_mat_a_1
-        smat_ref["S21"] = 0.5 * (mat_a_1 - mat_b_1 @ inv_mat_a_1_mat_b_1)
-        smat_ref["S22"] = mat_b_1 @ inv_mat_a_1
+        smat_ref = SMatrix(
+            S11=-inv_mat_a_1_mat_b_1,
+            S12=2 * inv_mat_a_1,
+            S21=0.5 * (mat_a_1 - mat_b_1 @ inv_mat_a_1_mat_b_1),
+            S22=mat_b_1 @ inv_mat_a_1,
+        )
 
         smat_global = redhstar(smat_ref, smat_global)
 
@@ -2707,19 +2714,19 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         mat_w_trn = mat_w_ref
 
         # Calculate transmission region scattering matrix
-        smat_trn = {}
         atw2 = mat_w_trn
         atv2 = tsolve(matrices["mat_v0"], mat_v_trn)
 
-        # Common code for both cases
         mat_a_2 = atw2 + atv2
         mat_b_2 = atw2 - atv2
         inv_mat_a_2 = tinv(mat_a_2)
         inv_mat_a_2_mat_b_2 = inv_mat_a_2 @ mat_b_2
-        smat_trn["S11"] = mat_b_2 @ inv_mat_a_2
-        smat_trn["S12"] = 0.5 * (mat_a_2 - mat_b_2 @ inv_mat_a_2_mat_b_2)
-        smat_trn["S21"] = 2 * inv_mat_a_2
-        smat_trn["S22"] = -inv_mat_a_2_mat_b_2
+        smat_trn = SMatrix(
+            S11=mat_b_2 @ inv_mat_a_2,
+            S12=0.5 * (mat_a_2 - mat_b_2 @ inv_mat_a_2_mat_b_2),
+            S21=2 * inv_mat_a_2,
+            S22=-inv_mat_a_2_mat_b_2,
+        )
 
         smat_global = redhstar(smat_global, smat_trn)
 
@@ -2892,7 +2899,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         csrc = tsolve(mat_w_ref, esrc.unsqueeze(-1))  # (B, F, 2M, 1)
 
         # Reflected fields
-        cref = smat_global["S11"] @ csrc  # (B, F, 2M, 1)
+        cref = smat_global.S11 @ csrc  # (B, F, 2M, 1)
         eref = mat_w_ref @ cref
 
         ref_field_x = eref[:, :, 0:n_harmonics_squared, :]
@@ -2908,7 +2915,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         )
 
         # Transmitted fields
-        ctrn = smat_global["S21"] @ csrc
+        ctrn = smat_global.S21 @ csrc
         etrn = mat_w_trn @ ctrn
         trn_field_x = etrn[:, :, 0:n_harmonics_squared, :]
         trn_field_y = etrn[:, :, n_harmonics_squared:M2, :]

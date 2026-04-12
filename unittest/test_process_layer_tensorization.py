@@ -84,23 +84,23 @@ class TestProcessLayerTensorization:
             smat_batched = solver._process_layer(n_layer, matrices_batched)
             
             # Compare S-matrices
-            for key in ["S11", "S12", "S21", "S22"]:
-                single_val = smat_single[key]
-                batched_val = smat_batched[key]
-                
+            for key in ("S11", "S12", "S21", "S22"):
+                single_val = getattr(smat_single, key)
+                batched_val = getattr(smat_batched, key)
+
                 # For batched with n_sources=1, extract the single source
                 if batched_val.dim() > single_val.dim():
                     batched_val = batched_val[0]
-                
+
                 assert single_val.shape == batched_val.shape, (
                     f"Shape mismatch for {key}: single {single_val.shape} vs batched {batched_val.shape}"
                 )
-                
+
                 max_diff = torch.abs(single_val - batched_val).max().item()
                 assert torch.allclose(single_val, batched_val, atol=1e-10, rtol=1e-6), (
                     f"{key} mismatch: max diff = {max_diff}"
                 )
-                
+
                 print(f"  ✓ {key} matches (max diff: {max_diff:.2e})")
 
     def test_multiple_sources_sequential_match(self, setup_solver):
@@ -119,8 +119,8 @@ class TestProcessLayerTensorization:
             print(f"\nTesting layer {n_layer} with {len(sources)} sources")
             
             # Process sequentially
-            sequential_smats = {"S11": [], "S12": [], "S21": [], "S22": []}
-            
+            sequential_smats = {k: [] for k in ("S11", "S12", "S21", "S22")}
+
             for source in sources:
                 solver.src = source
                 solver._pre_solve()
@@ -130,7 +130,7 @@ class TestProcessLayerTensorization:
                 smat = solver._process_layer(n_layer, matrices)
                 for key in sequential_smats:
                     # Single-source now produces (1, ...) — squeeze the leading dim
-                    sequential_smats[key].append(smat[key].squeeze(0).clone())
+                    sequential_smats[key].append(getattr(smat, key).squeeze(0).clone())
 
             # Stack sequential results
             for key in sequential_smats:
@@ -143,9 +143,9 @@ class TestProcessLayerTensorization:
             smat_batched = solver._process_layer(n_layer, matrices_batched)
             
             # Compare each S-matrix component
-            for key in ["S11", "S12", "S21", "S22"]:
+            for key in ("S11", "S12", "S21", "S22"):
                 seq_val = sequential_smats[key]
-                batch_val = smat_batched[key]
+                batch_val = getattr(smat_batched, key)
                 
                 assert seq_val.shape == batch_val.shape, (
                     f"Shape mismatch for {key}: sequential {seq_val.shape} vs batched {batch_val.shape}"
@@ -192,7 +192,8 @@ class TestProcessLayerTensorization:
         smat_grazing = solver._process_layer(n_layer, matrices)
         
         # Verify no NaN or Inf values
-        for key, val in smat_grazing.items():
+        for key in ("S11", "S12", "S21", "S22"):
+            val = getattr(smat_grazing, key)
             assert torch.isfinite(val).all(), f"Non-finite values in {key} at grazing incidence"
         
         print("  ✓ Grazing incidence handled correctly")
@@ -267,7 +268,8 @@ class TestProcessLayerTensorization:
         n_layer = len(solver.layer_manager.layers) - 1  # Thin layer
         smat_thin = solver._process_layer(n_layer, matrices)
 
-        for key, val in smat_thin.items():
+        for key in ("S11", "S12", "S21", "S22"):
+            val = getattr(smat_thin, key)
             assert torch.isfinite(val).all(), f"Non-finite values in {key} for thin layer"
 
 

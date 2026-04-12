@@ -66,6 +66,16 @@ from typing import Dict, List, Tuple, Optional, Union
 import torch
 
 
+def _to_scattering_matrix(obj):
+    """Convert an SMatrix or dict to ScatteringMatrix."""
+    if isinstance(obj, ScatteringMatrix):
+        return obj
+    if isinstance(obj, dict):
+        return ScatteringMatrix(S11=obj["S11"], S12=obj["S12"], S21=obj["S21"], S22=obj["S22"])
+    # SMatrix (or any object with .S11 etc.) → ScatteringMatrix
+    return ScatteringMatrix(S11=obj.S11, S12=obj.S12, S21=obj.S21, S22=obj.S22)
+
+
 @dataclass
 class ScatteringMatrix:
     """Scattering matrix components for electromagnetic simulation.
@@ -543,12 +553,7 @@ class SolverResults:
                 mag_y=data.get("trn_u_y", data.get("tmag_y")),  # Transmission H-field Fourier coeff, y
                 mag_z=data.get("trn_u_z", data.get("tmag_z")),  # Transmission H-field Fourier coeff, z
             ),
-            structure_matrix=ScatteringMatrix(
-                S11=data["smat_structure"]["S11"],
-                S12=data["smat_structure"]["S12"],
-                S21=data["smat_structure"]["S21"],
-                S22=data["smat_structure"]["S22"],
-            ),
+            structure_matrix=_to_scattering_matrix(data["smat_structure"]),
             wave_vectors=WaveVectors(
                 kx=data["kx"], ky=data["ky"], kinc=data["kinc"], kzref=data["kzref"], kztrn=data["kztrn"]
             ),

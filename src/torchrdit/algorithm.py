@@ -5,7 +5,7 @@ import torch
 from torch.linalg import solve as tsolve
 
 from .numerics import clamp_exp_arg, safe_sqrt_reciprocal, solve_with_retry
-from .utils import EigComplex, to_diag_util
+from .utils import EigComplex, SMatrix, to_diag_util
 
 
 class SolverAlgorithm(ABC):
@@ -163,14 +163,12 @@ class RCWAAlgorithm(SolverAlgorithm):
             **kwargs: Additional parameters.
 
         Returns:
-            dict: Dictionary containing the scattering matrix for the layer
-                 with keys 'S11', 'S12', 'S21', 'S22'.
+            SMatrix: Scattering matrix for the layer.
 
         Keywords:
             RCWA, scattering matrix, eigenmode, layer calculation, non-homogeneous
         """
         # Compute Eigen Modes
-        smat_layer = {}
         mat_lam_i, mat_w_i = EigComplex.apply(p_mat_i @ q_mat_i)
 
         # Protected reciprocal: prevents NaN when eigenvalues ≈ 0 (degenerate modes)
@@ -188,16 +186,10 @@ class RCWAAlgorithm(SolverAlgorithm):
         mat_xb_i = mat_x_i @ mat_b_i
         mat_d_i = mat_a_i - mat_xb_i @ tsolve(mat_a_i, mat_x_i) @ mat_b_i
 
-        smat_layer["S11"] = tsolve(mat_d_i, mat_xb_i @ tsolve(mat_a_i, mat_x_i) @ mat_a_i - mat_b_i)
-        smat_layer["S12"] = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tsolve(mat_a_i, mat_b_i))
-        smat_layer["S21"] = smat_layer["S12"]
-        smat_layer["S22"] = smat_layer["S11"]
+        s11 = tsolve(mat_d_i, mat_xb_i @ tsolve(mat_a_i, mat_x_i) @ mat_a_i - mat_b_i)
+        s12 = tsolve(mat_d_i, mat_x_i) @ (mat_a_i - mat_b_i @ tsolve(mat_a_i, mat_b_i))
 
-        # Note: W and V matrices are not stored as they are not used by the calling solver.
-        # If needed for future features (e.g., internal field monitors), storage should be
-        # conditional based on solver options to avoid unnecessary memory allocation.
-
-        return smat_layer
+        return SMatrix(S11=s11, S12=s12, S21=s12, S22=s11)
 
     def set_rdit_order(self, rdit_order):
         """Set R-DIT order for compatibility with RDITAlgorithm.
@@ -316,8 +308,7 @@ class RDITAlgorithm(SolverAlgorithm):
             **kwargs: Additional parameters.
 
         Returns:
-            dict: Dictionary containing the scattering matrix for the layer
-                 with keys 'S11', 'S12', 'S21', 'S22'.
+            SMatrix: Scattering matrix for the layer.
 
         Keywords:
             R-DIT, scattering matrix, eigendecomposition-free, layer calculation, non-homogeneous
@@ -381,16 +372,9 @@ class RDITAlgorithm(SolverAlgorithm):
         mat_yyi = mat_xx1 - mat_xx2
         mat_zzi = mat_xx1 + mat_xx2
 
-        smat_layer = {
-            "S11": mat_yyi * 0.5,
-            "S12": mat_zzi * 0.5,
-            "S21": mat_zzi * 0.5,  # Symmetric, reuse mat_zzi
-            "S22": mat_yyi * 0.5,  # Symmetric, reuse mat_yyi
-        }
-
-        # Note: R-DIT doesn't compute W and V matrices since it's eigendecomposition-free
-        # Field reconstruction for R-DIT should use different methods that don't rely on eigenvectors
-        return smat_layer
+        s11 = mat_yyi * 0.5
+        s12 = mat_zzi * 0.5
+        return SMatrix(S11=s11, S12=s12, S21=s12, S22=s11)
 
     def set_rdit_order(self, rdit_order):
         """Set the order of the R-DIT algorithm.
