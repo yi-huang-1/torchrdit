@@ -1715,193 +1715,84 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             smat_global = redhstar(smat_global, smat_layer)
             self.notify_observers("layer_completed", {"layer_index": n_layer})
 
-        # Process each source separately for external regions and fields
-        if True:  # always batched now
-            # Create list to hold individual S-matrices for processing
-            smat_global_list = []
-            for i in range(n_sources):
-                smat_source = {
-                    "S11": smat_global["S11"][i],
-                    "S12": smat_global["S12"][i],
-                    "S21": smat_global["S21"][i],
-                    "S22": smat_global["S22"][i],
-                }
-                smat_global_list.append(smat_source)
+        # Connect to external regions — vectorized over all sources (4D)
+        self.notify_observers("connecting_external_regions")
+        smat_global, mat_v_ref, mat_v_trn = self._connect_external_regions(smat_global, matrices)
 
-            # Connect to external regions for all sources
-            self.notify_observers("connecting_external_regions")
-            for i in range(n_sources):
-                # Extract matrices for this source — always 4D, index removes source dim
-                matrices_i = {key: value[i] for key, value in matrices.items()}
-                smat_global_list[i], mat_v_ref_i, mat_v_trn_i = self._connect_external_regions(
-                    smat_global_list[i], matrices_i
-                )
+        # Calculate fields per source (polarization depends on per-source theta/pte/ptm)
+        self.notify_observers("calculating_fields")
+        all_results = []
+        field_shape = (self.n_freqs, self.harmonics[0], self.harmonics[1])
 
-            # Calculate fields and efficiencies for each source
-            self.notify_observers("calculating_fields")
-            all_results = []
+        for i in range(n_sources):
+            self.src = sources[i]
+            smat_i = {k: v[i] for k, v in smat_global.items()}
+            matrices_i = {k: v[i] for k, v in matrices.items()}
 
-            for i in range(n_sources):
-                # Set source-specific data for field calculations
-                self.src = sources[i]
-
-                # Extract k-vectors for this source
-                kx_0_i = kx_0[i]
-                ky_0_i = ky_0[i]
-
-                # Extract kinc for this source (no longer need to mutate self.kinc)
-                kinc_i = self.kinc[i]  # Extract kinc for source i
-
-                # Extract matrices for this source
-                matrices_i = {key: value[i] for key, value in matrices.items()}
-
-                # Calculate fields - pass kinc_i directly as parameter
-                fields = self._calculate_fields_and_efficiencies(
-                    smat_global_list[i], matrices_i, kx_0_i, ky_0_i, mat_v_ref_i, mat_v_trn_i, kinc=kinc_i
-                )
-
-                # Format the electric field Fourier coefficients for output
-                rx = torch.reshape(fields["ref_s_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                    dim0=-2, dim1=-1
-                )
-                ry = torch.reshape(fields["ref_s_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                    dim0=-2, dim1=-1
-                )
-                rz = torch.reshape(fields["ref_s_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                    dim0=-2, dim1=-1
-                )
-                tx = torch.reshape(fields["trn_s_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                    dim0=-2, dim1=-1
-                )
-                ty = torch.reshape(fields["trn_s_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                    dim0=-2, dim1=-1
-                )
-                tz = torch.reshape(fields["trn_s_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                    dim0=-2, dim1=-1
-                )
-
-                # Format the magnetic field Fourier coefficients for output
-                rmag_x = torch.reshape(fields["ref_u_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                    dim0=-2, dim1=-1
-                )
-                rmag_y = torch.reshape(fields["ref_u_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                    dim0=-2, dim1=-1
-                )
-                rmag_z = torch.reshape(fields["ref_u_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                    dim0=-2, dim1=-1
-                )
-                tmag_x = torch.reshape(fields["trn_u_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                    dim0=-2, dim1=-1
-                )
-                tmag_y = torch.reshape(fields["trn_u_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                    dim0=-2, dim1=-1
-                )
-                tmag_z = torch.reshape(fields["trn_u_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                    dim0=-2, dim1=-1
-                )
-
-                # Store the structure scattering matrix
-                smat_structure = {key: value.detach().clone() for key, value in smat_global_list[i].items()}
-
-                # Assemble the data for this source (using Fourier coefficient naming)
-                data = {
-                    "smat_structure": smat_structure,
-                    # New Fourier coefficient naming (preferred)
-                    "ref_s_x": rx,  # Reflection E-field Fourier coefficient, x-component
-                    "ref_s_y": ry,  # Reflection E-field Fourier coefficient, y-component
-                    "ref_s_z": rz,  # Reflection E-field Fourier coefficient, z-component
-                    "trn_s_x": tx,  # Transmission E-field Fourier coefficient, x-component
-                    "trn_s_y": ty,  # Transmission E-field Fourier coefficient, y-component
-                    "trn_s_z": tz,  # Transmission E-field Fourier coefficient, z-component
-                    "ref_u_x": rmag_x,  # Reflection H-field Fourier coefficient, x-component
-                    "ref_u_y": rmag_y,  # Reflection H-field Fourier coefficient, y-component
-                    "ref_u_z": rmag_z,  # Reflection H-field Fourier coefficient, z-component
-                    "trn_u_x": tmag_x,  # Transmission H-field Fourier coefficient, x-component
-                    "trn_u_y": tmag_y,  # Transmission H-field Fourier coefficient, y-component
-                    "trn_u_z": tmag_z,  # Transmission H-field Fourier coefficient, z-component
-                    # Backward compatibility keys (deprecated)
-                    "rx": rx,
-                    "ry": ry,
-                    "rz": rz,
-                    "tx": tx,
-                    "ty": ty,
-                    "tz": tz,
-                    "RDE": fields["ref_diff_efficiency"],
-                    "TDE": fields["trn_diff_efficiency"],
-                    "REF": fields["total_ref_efficiency"],
-                    "TRN": fields["total_trn_efficiency"],
-                    "kzref": matrices_i["mat_kz_ref"],
-                    "kztrn": matrices_i["mat_kz_trn"],
-                    "kinc": kinc_i,
-                    "kx": torch.squeeze(kx_0_i),
-                    "ky": torch.squeeze(ky_0_i),
-                    # Lattice vectors for field reconstruction
-                    "lattice_t1": self.lattice_t1,
-                    "lattice_t2": self.lattice_t2,
-                    "default_grids": self.grids,
-                }
-
-                all_results.append(SolverResults.from_dict(data))
-
-            self.notify_observers("calculation_completed", {"n_sources": n_sources, "n_freqs": self.n_freqs})
-
-            # Return unified SolverResults with batching support
-
-            # Stack results for batched format
-            reflection = torch.stack([r.reflection for r in all_results])
-            transmission = torch.stack([r.transmission for r in all_results])
-            loss = 1.0 - reflection - transmission
-
-            reflection_diffraction = torch.stack([r.reflection_diffraction for r in all_results])
-            transmission_diffraction = torch.stack([r.transmission_diffraction for r in all_results])
-
-            # Stack electric field components
-            Erx = torch.stack([r.reflection_field.x for r in all_results])
-            Ery = torch.stack([r.reflection_field.y for r in all_results])
-            Erz = torch.stack([r.reflection_field.z for r in all_results])
-            Etx = torch.stack([r.transmission_field.x for r in all_results])
-            Ety = torch.stack([r.transmission_field.y for r in all_results])
-            Etz = torch.stack([r.transmission_field.z for r in all_results])
-
-            # Stack magnetic field components (if available)
-            if all_results[0].reflection_field.mag_x is not None:
-                Urx = torch.stack([r.reflection_field.mag_x for r in all_results])
-                Ury = torch.stack([r.reflection_field.mag_y for r in all_results])
-                Urz = torch.stack([r.reflection_field.mag_z for r in all_results])
-            else:
-                Urx = Ury = Urz = None
-
-            if all_results[0].transmission_field.mag_x is not None:
-                Utx = torch.stack([r.transmission_field.mag_x for r in all_results])
-                Uty = torch.stack([r.transmission_field.mag_y for r in all_results])
-                Utz = torch.stack([r.transmission_field.mag_z for r in all_results])
-            else:
-                Utx = Uty = Utz = None
-
-            # Use the structure matrix from the first result (it's source-independent)
-            structure_matrix = all_results[0].structure_matrix if all_results else None
-
-            # Create unified SolverResults with batching support
-            return SolverResults(
-                reflection=reflection,
-                transmission=transmission,
-                reflection_diffraction=reflection_diffraction,
-                transmission_diffraction=transmission_diffraction,
-                reflection_field=FieldComponents(x=Erx, y=Ery, z=Erz, mag_x=Urx, mag_y=Ury, mag_z=Urz),
-                transmission_field=FieldComponents(x=Etx, y=Ety, z=Etz, mag_x=Utx, mag_y=Uty, mag_z=Utz),
-                structure_matrix=structure_matrix,
-                wave_vectors=[r.wave_vectors for r in all_results] if all_results else None,
-                raw_data={},  # Empty for batched results
-                # Unified batching fields
-                n_sources=n_sources,
-                source_parameters=sources,
-                loss=loss,
-                _is_batched=True,  # Always batched when sources is a list
-                # Add lattice vectors for field reconstruction
-                lattice_t1=self.lattice_t1,
-                lattice_t2=self.lattice_t2,
-                default_grids=self.grids,
+            fields = self._calculate_fields_and_efficiencies(
+                smat_i, matrices_i, kx_0[i], ky_0[i], mat_v_ref[i], mat_v_trn[i], kinc=self.kinc[i]
             )
+
+            # Reshape field components: (F, H², 1) → (F, H0, H1)
+            def _fmt(key):
+                return torch.reshape(fields[key], shape=field_shape).transpose(dim0=-2, dim1=-1)
+
+            data = {
+                "smat_structure": {k: v.detach().clone() for k, v in smat_i.items()},
+                "ref_s_x": _fmt("ref_s_x"), "ref_s_y": _fmt("ref_s_y"), "ref_s_z": _fmt("ref_s_z"),
+                "trn_s_x": _fmt("trn_s_x"), "trn_s_y": _fmt("trn_s_y"), "trn_s_z": _fmt("trn_s_z"),
+                "ref_u_x": _fmt("ref_u_x"), "ref_u_y": _fmt("ref_u_y"), "ref_u_z": _fmt("ref_u_z"),
+                "trn_u_x": _fmt("trn_u_x"), "trn_u_y": _fmt("trn_u_y"), "trn_u_z": _fmt("trn_u_z"),
+                # Backward compat keys
+                "rx": _fmt("ref_s_x"), "ry": _fmt("ref_s_y"), "rz": _fmt("ref_s_z"),
+                "tx": _fmt("trn_s_x"), "ty": _fmt("trn_s_y"), "tz": _fmt("trn_s_z"),
+                "RDE": fields["ref_diff_efficiency"], "TDE": fields["trn_diff_efficiency"],
+                "REF": fields["total_ref_efficiency"], "TRN": fields["total_trn_efficiency"],
+                "kzref": matrices_i["mat_kz_ref"], "kztrn": matrices_i["mat_kz_trn"],
+                "kinc": self.kinc[i], "kx": torch.squeeze(kx_0[i]), "ky": torch.squeeze(ky_0[i]),
+                "lattice_t1": self.lattice_t1, "lattice_t2": self.lattice_t2,
+                "default_grids": self.grids,
+            }
+            all_results.append(SolverResults.from_dict(data))
+
+        self.notify_observers("calculation_completed", {"n_sources": n_sources, "n_freqs": self.n_freqs})
+
+        # Stack per-source results into batched SolverResults
+        reflection = torch.stack([r.reflection for r in all_results])
+        transmission = torch.stack([r.transmission for r in all_results])
+
+        return SolverResults(
+            reflection=reflection,
+            transmission=transmission,
+            reflection_diffraction=torch.stack([r.reflection_diffraction for r in all_results]),
+            transmission_diffraction=torch.stack([r.transmission_diffraction for r in all_results]),
+            reflection_field=FieldComponents(
+                x=torch.stack([r.reflection_field.x for r in all_results]),
+                y=torch.stack([r.reflection_field.y for r in all_results]),
+                z=torch.stack([r.reflection_field.z for r in all_results]),
+                mag_x=torch.stack([r.reflection_field.mag_x for r in all_results]) if all_results[0].reflection_field.mag_x is not None else None,
+                mag_y=torch.stack([r.reflection_field.mag_y for r in all_results]) if all_results[0].reflection_field.mag_y is not None else None,
+                mag_z=torch.stack([r.reflection_field.mag_z for r in all_results]) if all_results[0].reflection_field.mag_z is not None else None,
+            ),
+            transmission_field=FieldComponents(
+                x=torch.stack([r.transmission_field.x for r in all_results]),
+                y=torch.stack([r.transmission_field.y for r in all_results]),
+                z=torch.stack([r.transmission_field.z for r in all_results]),
+                mag_x=torch.stack([r.transmission_field.mag_x for r in all_results]) if all_results[0].transmission_field.mag_x is not None else None,
+                mag_y=torch.stack([r.transmission_field.mag_y for r in all_results]) if all_results[0].transmission_field.mag_y is not None else None,
+                mag_z=torch.stack([r.transmission_field.mag_z for r in all_results]) if all_results[0].transmission_field.mag_z is not None else None,
+            ),
+            structure_matrix=all_results[0].structure_matrix,
+            wave_vectors=[r.wave_vectors for r in all_results],
+            raw_data={},
+            n_sources=n_sources,
+            source_parameters=sources,
+            loss=1.0 - reflection - transmission,
+            _is_batched=True,
+            lattice_t1=self.lattice_t1,
+            lattice_t2=self.lattice_t2,
+            default_grids=self.grids,
+        )
 
     def solve(self, source: Union[dict, List[dict]], **kwargs) -> SolverResults:
         """Solve the electromagnetic problem for the configured structure.
@@ -2779,7 +2670,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 ]
             )
 
-        mat_w_ref = self.ident_mat_k2[None, :, :].expand(self.n_freqs, -1, -1)
+        mat_w_ref = self.ident_mat_k2.unsqueeze(0).expand(self.n_freqs, -1, -1)
 
         # Calculate reflection region scattering matrix
         smat_ref = {}
@@ -3022,7 +2913,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         esrc = polarization_data["esrc"]
 
         # Calculate source vectors
-        mat_w_ref = self.ident_mat_k2[None, :, :].expand(self.n_freqs, -1, -1)
+        mat_w_ref = self.ident_mat_k2.unsqueeze(0).expand(self.n_freqs, -1, -1)
         mat_w_trn = mat_w_ref
 
         csrc = tsolve(mat_w_ref, esrc.unsqueeze(-1))
