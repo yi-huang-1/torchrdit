@@ -1,8 +1,11 @@
+import math
 from abc import ABC, abstractmethod
+
 import torch
 from torch.linalg import solve as tsolve
+
+from .numerics import clamp_exp_arg, safe_sqrt_reciprocal, solve_with_retry
 from .utils import EigComplex, to_diag_util
-import math
 
 
 class SolverAlgorithm(ABC):
@@ -170,10 +173,13 @@ class RCWAAlgorithm(SolverAlgorithm):
         smat_layer = {}
         mat_lam_i, mat_w_i = EigComplex.apply(p_mat_i @ q_mat_i)
 
-        inv_dmat_lam_i = to_diag_util(1 / torch.sqrt(mat_lam_i), harmonics)
+        # Protected reciprocal: prevents NaN when eigenvalues ≈ 0 (degenerate modes)
+        inv_dmat_lam_i = to_diag_util(safe_sqrt_reciprocal(mat_lam_i, dtype=mat_lam_i.dtype), harmonics)
 
         mat_v_i = q_mat_i @ mat_w_i @ inv_dmat_lam_i
-        mat_x_i = torch.linalg.matrix_exp(to_diag_util(-torch.sqrt(mat_lam_i) * k_0[:, None] * layer_thickness, harmonics))
+        # Clamp exponent to prevent overflow in matrix_exp for large eigenvalues
+        exp_arg = -torch.sqrt(mat_lam_i) * k_0[:, None] * layer_thickness
+        mat_x_i = torch.linalg.matrix_exp(to_diag_util(clamp_exp_arg(exp_arg), harmonics))
 
         # Calculate Layer Scattering Matrix
         mat_a_i = tsolve(mat_w_i, mat_w0) + tsolve(mat_v_i, mat_v0)
@@ -368,18 +374,9 @@ class RDITAlgorithm(SolverAlgorithm):
         mat_g1 = a_i_w0 + b_i_v0
         mat_g2 = -c_i_w0 - d_i_v0
 
-        # Use a more stable solver with regularization if needed
-        try:
-            mat_xx1 = tsolve(mat_g2, c_i_w0 - d_i_v0)
-            mat_xx2 = tsolve(mat_g1, a_i_w0 - b_i_v0)
-        except Exception as e:
-            print(f"Error in solve: {e}")
-            # Fallback with regularization for numerical stability
-            eps = 1e-8
-            mat_g2_reg = mat_g2 + eps * eye.unsqueeze(0)
-            mat_g1_reg = mat_g1 + eps * eye.unsqueeze(0)
-            mat_xx1 = tsolve(mat_g2_reg, c_i_w0 - d_i_v0)
-            mat_xx2 = tsolve(mat_g1_reg, a_i_w0 - b_i_v0)
+        # Dtype-aware solve with Tikhonov regularization fallback (see numerics.py)
+        mat_xx1 = solve_with_retry(mat_g2, c_i_w0 - d_i_v0, dtype=dtype)
+        mat_xx2 = solve_with_retry(mat_g1, a_i_w0 - b_i_v0, dtype=dtype)
 
         mat_yyi = mat_xx1 - mat_xx2
         mat_zzi = mat_xx1 + mat_xx2

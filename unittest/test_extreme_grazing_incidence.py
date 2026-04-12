@@ -47,8 +47,8 @@ class TestExtremeGrazingIncidence:
         assert 0.0 <= R <= 1.0 and 0.0 <= T <= 1.0
         # Near grazing TE reflection should dominate
         assert R > T, f"{algo.name}: Expected R > T at grazing incidence"
-        # Energy conservation should hold within tolerance (grazing is numerically tough)
-        assert np.isclose(R + T, 1.0, atol=2e-2), f"{algo.name}: R+T not ~1, got {R+T}"
+        # Energy conservation — tightened from 2e-2 to 1.5e-2 (θ=89.99° is extreme)
+        assert np.isclose(R + T, 1.0, atol=1.5e-2), f"{algo.name}: R+T not ~1, got {R+T}"
     
     @pytest.mark.parametrize("pte,ptm,pol_name", [(1.0, 0.0, "TE"), (0.0, 1.0, "TM")])
     def test_both_polarizations_physical(self, pte, ptm, pol_name):
@@ -81,7 +81,7 @@ class TestExtremeGrazingIncidence:
         assert 0.0 <= R <= 1.0 and 0.0 <= T <= 1.0
         if pol_name == "TE":
             # TE: near-grazing reflection dominates and energy ~ conserved
-            assert np.isclose(R + T, 1.0, atol=2e-2), f"{pol_name}: R+T not ~1, got {R+T}"
+            assert np.isclose(R + T, 1.0, atol=1.5e-2), f"{pol_name}: R+T not ~1, got {R+T}"
         else:
             # TM: keep to physical bounds; numerical edge-case may deviate in energy sum
             pass

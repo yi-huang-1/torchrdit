@@ -127,6 +127,7 @@ from .algorithm import RCWAAlgorithm, RDITAlgorithm, SolverAlgorithm
 from .cell import Cell3D, CellType
 from .constants import Algorithm, Precision
 from .materials import MaterialClass
+from .numerics import safe_kz_reciprocal, softplus_floor, softplus_magnitude_floor
 from .results import SolverResults, FieldComponents
 
 # BatchedSolverResults functionality is now integrated into SolverResults
@@ -732,48 +733,17 @@ def create_solver(
     return solver
 
 
+# Backward-compatible wrappers — implementations live in numerics.py
+
+
 def softplus_protect_kz(kz, min_kz=1e-3, beta=100):
-    """Apply differentiable protection to small kz values using softplus.
-
-    This function provides a smooth, differentiable alternative to torch.where
-    for protecting against numerical instabilities when kz values are very small.
-
-    Args:
-        kz: Complex tensor of kz values to protect
-        min_kz: Minimum threshold for kz magnitude (default: 1e-3)
-        beta: Sharpness parameter for softplus transition (default: 100)
-
-    Returns:
-        Protected kz values with smooth transition around threshold
-
-    Note:
-        Higher beta values create sharper transitions but may affect gradient smoothness.
-        The default beta=100 provides a good balance between accuracy and differentiability.
-    """
-    import torch.nn.functional as F
-
-    kz_abs = torch.abs(kz)
-    protection = F.softplus(min_kz - kz_abs, beta=beta)
-    return kz + protection * torch.sign(torch.real(kz) + 1e-16)
+    """Backward-compatible wrapper. See :func:`numerics.softplus_magnitude_floor`."""
+    return softplus_magnitude_floor(kz, min_kz, beta=beta)
 
 
-def softplus_clamp_min(x, min_val, beta=100):
-    """Apply differentiable minimum clamping using softplus.
-
-    This function provides a smooth, differentiable alternative to torch.maximum
-    for ensuring values stay above a minimum threshold.
-
-    Args:
-        x: Real tensor of values to clamp
-        min_val: Minimum value threshold
-        beta: Sharpness parameter for softplus transition (default: 100)
-
-    Returns:
-        Clamped values with smooth transition at threshold
-    """
-    import torch.nn.functional as F
-
-    return x + F.softplus(min_val - x, beta=beta)
+def softplus_clamp_min(x, min_val=0.0, beta=100):
+    """Backward-compatible wrapper. See :func:`numerics.softplus_floor`."""
+    return softplus_floor(x, min_val, beta=beta)
 
 
 class FourierBaseSolver(Cell3D, SolverSubjectMixin):
@@ -1227,7 +1197,10 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
     def _apply_numerical_relaxation(self, kx_0, ky_0, epsilon):
         """Unified numerical relaxation for both single and batched inputs.
 
-        Apply small offset to zero values for numerical stability.
+        Replace near-zero k-vector components with a small positive epsilon
+        to prevent downstream division-by-zero.  Uses ``torch.where`` so
+        that the operation is fully differentiable (no in-place mutation).
+
         Handles both tensor shapes:
         - Single source: (n_freqs, harmonics[0], harmonics[1])
         - Batched sources: (n_sources, n_freqs, harmonics[0], harmonics[1])
@@ -1237,18 +1210,10 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             epsilon: Small offset value for zero replacement
 
         Returns:
-            Modified kx_0, ky_0 with epsilon added to zero values
+            Modified kx_0, ky_0 with epsilon replacing near-zero values
         """
-        # Original non-differentiable version
-        # This function works for any tensor shape due to tensor broadcasting
-        zero_indices = torch.nonzero(kx_0 == 0.0, as_tuple=True)
-        if len(zero_indices[0]) > 0:
-            kx_0[zero_indices] = kx_0[zero_indices] + epsilon
-
-        zero_indices = torch.nonzero(ky_0 == 0.0, as_tuple=True)
-        if len(zero_indices[0]) > 0:
-            ky_0[zero_indices] = ky_0[zero_indices] + epsilon
-
+        kx_0 = torch.where(torch.abs(kx_0) < epsilon, epsilon, kx_0)
+        ky_0 = torch.where(torch.abs(ky_0) < epsilon, epsilon, ky_0)
         return kx_0, ky_0
 
     def _calculate_kz_region(self, ur, er, kx_0, ky_0, is_dispersive):
@@ -1360,8 +1325,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         # Create block matrices for each source
         mat_w0 = blockmat2x2([[ident_mat, zero_mat], [zero_mat, ident_mat]])
 
-        # Add small epsilon to prevent division by zero when mat_kz is exactly zero
-        inv_mat_lam = 1 / (1j * mat_kz + 1e-12)
+        # Differentiable kz protection (see numerics.py)
+        inv_mat_lam = safe_kz_reciprocal(mat_kz, dtype=self.tcomplex)
 
         # VECTORIZED: Create block matrix using batched operations
         # blockmat2x2 works with batched tensors through torch.cat broadcasting
@@ -1690,8 +1655,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                             + 0 * 1j
                         ).to(self.tcomplex)
 
-                # Calculate v matrix - use correct formula!
-                inv_dmat_lam_i = 1 / (1j * mat_kz_i + 1e-12)
+                # Differentiable kz protection (see numerics.py)
+                inv_dmat_lam_i = safe_kz_reciprocal(mat_kz_i, dtype=self.tcomplex)
 
                 if n_sources > 1:
                     mat_v_i = (
@@ -1778,8 +1743,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                     + 0 * 1j
                 ).to(self.tcomplex)
 
-                # Add small epsilon to prevent division by zero when mat_kz_i is exactly zero
-                inv_dmat_lam_i = 1 / (1j * mat_kz_i + 1e-12)
+                # Differentiable kz protection (see numerics.py)
+                inv_dmat_lam_i = safe_kz_reciprocal(mat_kz_i, dtype=self.tcomplex)
                 mat_v_i = (
                     1
                     / toeplitz_ur
@@ -3160,9 +3125,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             tuple: (Updated global scattering matrix, V matrix for reflection, V matrix for transmission)
         """
 
-        # Connect to reflection region
-        # Add small epsilon to prevent division by zero when mat_kz_ref is exactly zero
-        inv_mat_lam_ref = 1 / (1j * matrices["mat_kz_ref"] + 1e-12)
+        # Connect to reflection region — differentiable kz protection (see numerics.py)
+        inv_mat_lam_ref = safe_kz_reciprocal(matrices["mat_kz_ref"], dtype=self.tcomplex)
 
         if self.layer_manager.is_ref_dispersive is False:
             mat_v_ref = (1 / self.ur1) * blockmat2x2(
@@ -3214,9 +3178,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         smat_global = redhstar(smat_ref, smat_global)
 
-        # Connect to transmission region
-        # Add small epsilon to prevent division by zero when mat_kz_trn is exactly zero
-        inv_mat_lam_trn = 1 / (1j * matrices["mat_kz_trn"] + 1e-12)
+        # Connect to transmission region — differentiable kz protection (see numerics.py)
+        inv_mat_lam_trn = safe_kz_reciprocal(matrices["mat_kz_trn"], dtype=self.tcomplex)
 
         if self.layer_manager.is_trn_dispersive is False:
             mat_v_trn = (1 / self.ur2) * blockmat2x2(
@@ -3456,8 +3419,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         # For extreme grazing incidence, we need stronger protection
         min_kz = getattr(self, "min_kinc_z", 1e-3)  # Use same threshold as kinc_z protection
 
-        # Differentiable softplus protection for mat_kz_ref
-        mat_kz_ref_protected = softplus_protect_kz(matrices["mat_kz_ref"], min_kz=min_kz, beta=100)
+        # Differentiable softplus protection for mat_kz_ref (see numerics.py)
+        mat_kz_ref_protected = softplus_magnitude_floor(matrices["mat_kz_ref"], min_kz, beta=100)
         ref_field_z = -matrices["mat_kx_diag"] @ tsolve(
             to_diag_util(mat_kz_ref_protected, self.harmonics), ref_field_x
         ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_ref_protected, self.harmonics), ref_field_y)
@@ -3468,8 +3431,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         trn_field_x = etrn[:, 0:n_harmonics_squared, :]
         trn_field_y = etrn[:, n_harmonics_squared : 2 * n_harmonics_squared, :]
 
-        # Differentiable softplus protection for mat_kz_trn
-        mat_kz_trn_protected = softplus_protect_kz(matrices["mat_kz_trn"], min_kz=min_kz, beta=100)
+        # Differentiable softplus protection for mat_kz_trn (see numerics.py)
+        mat_kz_trn_protected = softplus_magnitude_floor(matrices["mat_kz_trn"], min_kz, beta=100)
         trn_field_z = -matrices["mat_kx_diag"] @ tsolve(
             to_diag_util(mat_kz_trn_protected, self.harmonics), trn_field_x
         ) - matrices["mat_ky_diag"] @ tsolve(to_diag_util(mat_kz_trn_protected, self.harmonics), trn_field_y)
@@ -3483,8 +3446,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         # kinc_z is complex but should have zero imaginary part, so we work with the real part
         kinc_z_real = torch.real(kinc_z)
 
-        # Differentiable softplus protection for kinc_z
-        kinc_z_protected = softplus_clamp_min(kinc_z_real, min_kinc_z, beta=100)
+        # Differentiable softplus protection for kinc_z (see numerics.py)
+        kinc_z_protected = softplus_floor(kinc_z_real, min_kinc_z, beta=100)
 
         # Calculate field intensity
         field_intensity = (
