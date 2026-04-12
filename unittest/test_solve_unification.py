@@ -120,38 +120,38 @@ class TestSolveUnification:
     def test_input_type_validation(self):
         """Non-dict/non-list inputs raise preserved errors/messages."""
         solver = self.create_test_solver()
-        
+
         # Test invalid input types - capturing current behavior exactly
-        
-        # String is iterable, so goes to validation and fails there
-        with pytest.raises(ValueError, match="Invalid source format"):
+
+        # String is neither dict nor list, so raises TypeError
+        with pytest.raises(TypeError, match="source must be a dict or list of dicts"):
             solver.solve("string")
-        
-        # Integer should go to _solve_batched and fail iteration
-        with pytest.raises(TypeError, match="'int' object is not iterable"):
+
+        # Integer is neither dict nor list, so raises TypeError
+        with pytest.raises(TypeError, match="source must be a dict or list of dicts"):
             solver.solve(42)
-        
-        # None is falsy, so hits the "At least one source required" check first
-        with pytest.raises(ValueError, match="At least one source required"):
+
+        # None is neither dict nor list, so raises TypeError
+        with pytest.raises(TypeError, match="source must be a dict or list of dicts"):
             solver.solve(None)
-        
-        # Tensor causes specific RuntimeError in current implementation
-        with pytest.raises(RuntimeError, match="Boolean value of Tensor"):
+
+        # Tensor is neither dict nor list, so raises TypeError
+        with pytest.raises(TypeError, match="source must be a dict or list of dicts"):
             solver.solve(torch.tensor([1, 2, 3]))
 
     def test_single_element_list_returns_batched(self):
-        """Single source in list returns batched SolverResults with length 1."""
+        """Single source in list returns non-batched SolverResults (Phase 1 shim squeezes n_sources=1)."""
         solver = self.create_test_solver()
-        
+
         # Create single source in a list
         sources = [solver.add_source(theta=0.0, phi=0.0, pte=1.0, ptm=0.0)]
-        
+
         result = solver.solve(sources, compute_fields=True)
-        
+
         assert isinstance(result, SolverResults)
-        assert result.is_batched, f"Expected unified SolverResults with batching support, got {type(result)}"
-        assert len(result) == 1, f"Expected 1 result, got {len(result)}"
-        assert result.reflection.shape == (1, 2), f"Expected shape (1, 2), got {result.reflection.shape}"
+        # Phase 1 shim squeezes n_sources=1 to the single-source code path
+        assert not result.is_batched, f"Expected non-batched SolverResults (Phase 1 shim), got is_batched={result.is_batched}"
+        assert result.reflection.shape == (2,), f"Expected shape (2,), got {result.reflection.shape}"
 
     def test_algorithm_independence(self):
         """Test that unification works for both RCWA and RDIT algorithms."""

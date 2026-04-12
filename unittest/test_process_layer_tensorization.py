@@ -126,11 +126,12 @@ class TestProcessLayerTensorization:
                 solver._pre_solve()
                 kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
                 matrices = solver._setup_common_matrices(kx_0, ky_0, kz_ref_0, kz_trn_0)
-                
+
                 smat = solver._process_layer(n_layer, matrices)
                 for key in sequential_smats:
-                    sequential_smats[key].append(smat[key].clone())
-            
+                    # Single-source now produces (1, ...) — squeeze the leading dim
+                    sequential_smats[key].append(smat[key].squeeze(0).clone())
+
             # Stack sequential results
             for key in sequential_smats:
                 sequential_smats[key] = torch.stack(sequential_smats[key], dim=0)

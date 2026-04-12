@@ -53,28 +53,33 @@ class TestBatchedKVectors:
         for src in sources:
             solver._pre_solve(src)
             kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
+            # Single-source now returns (1, ...) — squeeze the leading dim
             k_vectors_list.append({
-                "kx_0": kx_0.clone(),
-                "ky_0": ky_0.clone(),
-                "kz_ref_0": kz_ref_0.clone(),
-                "kz_trn_0": kz_trn_0.clone(),
+                "kx_0": kx_0.squeeze(0).clone(),
+                "ky_0": ky_0.squeeze(0).clone(),
+                "kz_ref_0": kz_ref_0.squeeze(0).clone(),
+                "kz_trn_0": kz_trn_0.squeeze(0).clone(),
             })
         return k_vectors_list
 
     def test_single_source_matches_original(self):
         """Test that batched computation with single source matches original."""
         solver = self.setup_solver(n_freqs=3, harmonics=(5, 5))
-        
+
         source = {"theta": 0.1, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
-        
-        # Sequential (original)
+
+        # Sequential (original) — now returns (1, n_freqs, ...), squeeze to compare
         solver._pre_solve(source)
         kx_0_orig, ky_0_orig, kz_ref_0_orig, kz_trn_0_orig = solver._initialize_k_vectors()
-        
+        kx_0_orig = kx_0_orig.squeeze(0)
+        ky_0_orig = ky_0_orig.squeeze(0)
+        kz_ref_0_orig = kz_ref_0_orig.squeeze(0)
+        kz_trn_0_orig = kz_trn_0_orig.squeeze(0)
+
         # Batched with single source using solver's batched path
         solver._pre_solve([source])
         kx_b, ky_b, kz_ref_b, kz_trn_b = solver._initialize_k_vectors()
-        
+
         # Compare
         torch.testing.assert_close(kx_b[0], kx_0_orig, rtol=1e-5, atol=1e-6)
         torch.testing.assert_close(ky_b[0], ky_0_orig, rtol=1e-5, atol=1e-6)

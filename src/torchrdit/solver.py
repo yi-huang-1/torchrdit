@@ -1836,29 +1836,24 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         Returns:
             SolverResults: Results for single or batched sources (unified interface)
         """
-        # Detect batch mode from kinc shape or sources parameter
-        if sources is not None:
-            # Batched mode explicitly requested
-            is_batched = True
-            n_sources = len(sources)
+        # sources is always a list now (from solve())
+        n_sources = len(sources) if sources is not None else 1
+
+        # Phase 1 compat: downstream code still branches on kinc.dim().
+        # For n_sources == 1, squeeze kinc to 2D so the single-source
+        # code path runs.  This shim is removed in Phase 4.
+        kinc_original = None
+        if n_sources == 1:
+            is_batched = False
+            kinc_original = self.kinc          # (1, F, 3)
+            self.kinc = self.kinc.squeeze(0)   # (F, 3)
         else:
-            # Check kinc dimensions
-            is_batched = self.kinc.dim() == 3  # (n_sources, n_freqs, 3)
-            n_sources = self.kinc.shape[0] if is_batched else 1
+            is_batched = True
 
         # Debug output
         if getattr(self, "debug_unification", False):
-            print(f"[DEBUG] _solve_structure unified: is_batched={is_batched}, n_sources={n_sources}")
+            print(f"[DEBUG] _solve_structure: is_batched={is_batched}, n_sources={n_sources}")
             print(f"[DEBUG] kinc shape: {self.kinc.shape}")
-
-        # Save original state and expand dimensions for single source
-        kinc_original = None
-        if not is_batched:
-            kinc_original = self.kinc
-            self.kinc = self.kinc.unsqueeze(0)  # Add batch dimension
-            # Create sources list for unified processing
-            if sources is None:
-                sources = [self.src] if hasattr(self, "src") else [None]
 
         # Notify that calculation is starting
         mode = "solving_structure_batched" if is_batched else "solving_structure"
@@ -1890,17 +1885,9 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             device=self.device,
         )
 
-        # For single source path, prepare matrices_single once
-        matrices_single = None
-        if not is_batched:
-            # Since _setup_common_matrices returns batched format when we expanded kinc
-            matrices_single = {}
-            for key, value in matrices.items():
-                if isinstance(value, torch.Tensor) and value.dim() > 2 and value.shape[0] == 1:
-                    # Remove the batch dimension for single source
-                    matrices_single[key] = value.squeeze(0)
-                else:
-                    matrices_single[key] = value
+        # For single source path, matrices already have the right shape
+        # (no batch dim) since kinc is squeezed to 2D in the Phase 1 shim.
+        matrices_single = matrices if not is_batched else None
 
         # Process each layer and update global scattering matrix
         self.notify_observers("processing_layers", {"total": self.layer_manager.nlayer})
@@ -2448,150 +2435,90 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             transmission, efficiency, automatic differentiation, gradient,
             inverse design, field computation, optimization, differentiable simulation
         """
-        # Unified input handling for both single and batched sources
-        if isinstance(source, dict):
-            # Single source path
-            self.src = source
-            self._pre_solve()
-            return self._solve_structure(**kwargs)
+        # Normalize input: single dict → [dict], then always process as list.
+        is_single = isinstance(source, dict)
+        if is_single:
+            sources = [source]
         elif isinstance(source, list):
-            # Batched sources path - move validation logic from _solve_batched
             if not source:
                 raise ValueError("At least one source required")
-
-            # Validate source format
             for src in source:
                 if not isinstance(src, dict) or "theta" not in src:
                     raise ValueError(
                         "Invalid source format: each source must be a dict with 'theta', 'phi', 'pte', 'ptm'"
                     )
-
-            # Process with unified methods
-            self._pre_solve(source)
-            return self._solve_structure(source, **kwargs)
+            sources = source
         else:
-            # Handle invalid input types to preserve exact current error behavior
-            # This replicates the behavior from the original _solve_batched method
+            raise TypeError(f"source must be a dict or list of dicts, got {type(source).__name__}")
 
-            # For torch.Tensor with multiple elements, this will raise RuntimeError
-            if hasattr(source, "__len__") and hasattr(source, "dim"):  # Check if it's a tensor-like
-                # This will trigger: "Boolean value of Tensor with more than one value is ambiguous"
-                if not source:
-                    raise ValueError("At least one source required")
+        self.src = sources[0]  # keep for backward compat
+        self._pre_solve(sources)
+        result = self._solve_structure(sources, **kwargs)
 
-            # For None, empty collections
-            if not source:
-                raise ValueError("At least one source required")
+        # For single source, _solve_structure (Phase 1 shim) returns a plain
+        # SolverResults — return it directly.  For batched, return as-is.
+        return result
 
-            # For non-iterable types (int, etc.), this will raise TypeError
-            try:
-                # Try to iterate - will fail for int, float, etc.
-                for src in source:
-                    if not isinstance(src, dict) or "theta" not in src:
-                        raise ValueError(
-                            "Invalid source format: each source must be a dict with 'theta', 'phi', 'pte', 'ptm'"
-                        )
-            except TypeError as e:
-                # Re-raise with original error message to preserve behavior
-                raise e
+    def _pre_solve(self, sources=None) -> None:
+        """Set up incident wave vectors for a list of sources.
 
-            # If we got here, it's an iterable with invalid contents
-            raise ValueError("Invalid source format: each source must be a dict with 'theta', 'phi', 'pte', 'ptm'")
-
-    def _pre_solve(self, source=None) -> None:
-        """Unified pre-solve handling both single and batched sources.
-
-        This method sets up the incident wave vector (kinc) and reciprocal lattice
-        for either a single source or a batch of sources using tensorized operations.
+        Always produces ``self.kinc`` with shape ``(n_sources, n_freqs, 3)``,
+        even for a single source (``n_sources = 1``).
 
         Args:
-            source: Optional source configuration. Can be:
-                - None: Use self.src (single source)
-                - dict: Single source configuration
-                - List[dict]: List of source configurations for batched processing
-
-        Returns:
-            None: Updates self.kinc with the computed incident wave vectors
+            sources: List of source dicts, a single dict, or None (uses self.src).
         """
+        # Normalize input to list
+        if sources is None:
+            sources = [self.src]
+        elif isinstance(sources, dict):
+            sources = [sources]
         # Set up reciprocal space (idempotent)
         self._setup_reciprocal_space()
 
-        # Handle source input
-        if source is None:
-            source = self.src
-
-        # Detect input type and normalize to list
-        is_single = isinstance(source, dict)
-        sources = [source] if is_single else source
         n_sources = len(sources)
+        self.n_sources = n_sources
 
         # Debug output
         if self.debug_batching:
-            print(f"[DEBUG] _pre_solve: is_single={is_single}, n_sources={n_sources}")
+            print(f"[DEBUG] _pre_solve: n_sources={n_sources}")
 
         # Calculate refractive index of external medium
         refractive_1 = torch.sqrt(self.ur1 * self.er1)
         if refractive_1.dim() == 0:  # non-dispersive
             refractive_1 = refractive_1.unsqueeze(0).expand(self.n_freqs)
 
-        # Tensorize source parameters efficiently
-        if is_single:
-            # Handle scalar or array theta/phi for single source
-            theta = torch.as_tensor(sources[0]["theta"], device=self.device, dtype=self.tfloat)
-            phi = torch.as_tensor(sources[0]["phi"], device=self.device, dtype=self.tfloat)
+        # Tensorize theta/phi — always produce shape (n_sources, n_freqs)
+        def _to_tensor_preserve(x):
+            if isinstance(x, torch.Tensor):
+                return x.to(device=self.device, dtype=self.tfloat)
+            return torch.tensor(x, device=self.device, dtype=self.tfloat)
 
-            # Ensure proper shape for broadcasting with frequencies
-            if theta.dim() == 0:  # scalar
-                theta = theta.unsqueeze(0).expand(self.n_freqs)
-                phi = phi.unsqueeze(0).expand(self.n_freqs)
-            # else: already shape (n_freqs,) for array input
+        theta_list = [_to_tensor_preserve(s["theta"]) for s in sources]
+        phi_list = [_to_tensor_preserve(s["phi"]) for s in sources]
 
-        else:
-            # Batch processing - preserve autograd when theta/phi are tensors
-            theta_vals = [s["theta"] for s in sources]
-            phi_vals = [s["phi"] for s in sources]
+        # Ensure each is at least 1-D before stacking
+        theta_list = [t.unsqueeze(0).expand(self.n_freqs) if t.dim() == 0 else t for t in theta_list]
+        phi_list = [p.unsqueeze(0).expand(self.n_freqs) if p.dim() == 0 else p for p in phi_list]
 
-            def _to_tensor_preserve(x):
-                if isinstance(x, torch.Tensor):
-                    return x.to(device=self.device, dtype=self.tfloat)
-                else:
-                    return torch.tensor(x, device=self.device, dtype=self.tfloat)
+        theta = torch.stack(theta_list)  # (n_sources, n_freqs)
+        phi = torch.stack(phi_list)      # (n_sources, n_freqs)
 
-            theta = torch.stack([_to_tensor_preserve(v) for v in theta_vals])
-            phi = torch.stack([_to_tensor_preserve(v) for v in phi_vals])
-
-            # Add frequency dimension for broadcasting
-            # Shape: (n_sources,) -> (n_sources, n_freqs)
-            theta = theta.unsqueeze(1).expand(-1, self.n_freqs)
-            phi = phi.unsqueeze(1).expand(-1, self.n_freqs)
-
-        # Unified kinc calculation using broadcasting
-        # For single: theta/phi shape (n_freqs,), refractive_1 shape (n_freqs,)
-        # For batched: theta/phi shape (n_sources, n_freqs), refractive_1 shape (n_freqs,)
+        # kinc components — shape (n_sources, n_freqs) via broadcasting with refractive_1 (n_freqs,)
         kinc_x = refractive_1 * torch.sin(theta) * torch.cos(phi)
         kinc_y = refractive_1 * torch.sin(theta) * torch.sin(phi)
         kinc_z = refractive_1 * torch.cos(theta)
 
-        # Stack components
-        if is_single:
-            self.kinc = torch.stack([kinc_x, kinc_y, kinc_z], dim=1)  # (n_freqs, 3)
-        else:
-            self.kinc = torch.stack([kinc_x, kinc_y, kinc_z], dim=2)  # (n_sources, n_freqs, 3)
+        # Always (n_sources, n_freqs, 3)
+        self.kinc = torch.stack([kinc_x, kinc_y, kinc_z], dim=2)
 
         # Debug output
         if self.debug_batching:
             print(f"[DEBUG] kinc shape: {self.kinc.shape}")
-            print(f"[DEBUG] kinc dtype: {self.kinc.dtype}, device: {self.kinc.device}")
 
-        # Validate shape
-        if is_single:
-            assert self.kinc.shape == (self.n_freqs, 3), (
-                f"Expected kinc shape ({self.n_freqs}, 3), got {self.kinc.shape}"
-            )
-        else:
-            assert self.kinc.shape == (n_sources, self.n_freqs, 3), (
-                f"Expected kinc shape ({n_sources}, {self.n_freqs}, 3), got {self.kinc.shape}"
-            )
+        assert self.kinc.shape == (n_sources, self.n_freqs, 3), (
+            f"Expected kinc shape ({n_sources}, {self.n_freqs}, 3), got {self.kinc.shape}"
+        )
 
         # Check if options are set correctly (only needed once, not per source)
         for n_layer in range(self.layer_manager.nlayer):

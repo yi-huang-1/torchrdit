@@ -145,14 +145,13 @@ class TestSourceBatchingValidation:
         # Solve as single
         single_result = solver.solve(sources[0])
         
-        # Should get unified SolverResults with batching support for list input
+        # Phase 1 shim squeezes n_sources=1 to non-batched
         assert isinstance(batched_result, SolverResults)
-        assert batched_result.is_batched
-        assert len(batched_result) == 1
-        
+        assert not batched_result.is_batched
+
         # Results should match
         torch.testing.assert_close(
-            batched_result[0].reflection, 
+            batched_result.reflection,
             single_result.reflection,
             rtol=1e-6, atol=1e-8
         )

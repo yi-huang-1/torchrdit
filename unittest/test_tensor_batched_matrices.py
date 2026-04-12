@@ -53,6 +53,11 @@ class TestBatchedMatrices:
         for src in sources:
             solver._pre_solve(src)
             kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
+            # Single-source now returns (1, ...) — squeeze to get per-source tensors
+            kx_0 = kx_0.squeeze(0)
+            ky_0 = ky_0.squeeze(0)
+            kz_ref_0 = kz_ref_0.squeeze(0)
+            kz_trn_0 = kz_trn_0.squeeze(0)
             matrices = solver._setup_common_matrices(kx_0, ky_0, kz_ref_0, kz_trn_0)
             mats.append(matrices)
         return mats
@@ -62,9 +67,13 @@ class TestBatchedMatrices:
         solver = self.setup_solver(n_freqs=3, harmonics=(5, 5))
         source = {"theta": 0.1, "phi": 0.2, "pte": 1.0, "ptm": 0.0}
 
-        # Sequential
+        # Sequential — single-source now returns (1, ...), squeeze to compare
         solver._pre_solve(source)
         kx_s, ky_s, kz_ref_s, kz_trn_s = solver._initialize_k_vectors()
+        kx_s = kx_s.squeeze(0)
+        ky_s = ky_s.squeeze(0)
+        kz_ref_s = kz_ref_s.squeeze(0)
+        kz_trn_s = kz_trn_s.squeeze(0)
         mats_single = solver._setup_common_matrices(kx_s, ky_s, kz_ref_s, kz_trn_s)
 
         # Batched with single source

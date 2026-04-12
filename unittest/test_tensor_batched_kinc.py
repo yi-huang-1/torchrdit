@@ -51,7 +51,8 @@ class TestBatchedKincCalculation:
         kinc_list = []
         for src in sources:
             solver._pre_solve(src)
-            kinc_list.append(solver.kinc.clone())
+            # Single-source kinc is now (1, n_freqs, 3) — squeeze the leading dim
+            kinc_list.append(solver.kinc.squeeze(0).clone())
         return kinc_list
 
     def test_single_source_matches_original(self):
@@ -59,7 +60,7 @@ class TestBatchedKincCalculation:
         solver = self.setup_solver(n_freqs=3)
         source = {"theta": 0.1, "phi": 0.0, "pte": 1.0, "ptm": 0.0}
 
-        # Sequential (original)
+        # Sequential (original) — now always (1, n_freqs, 3)
         solver._pre_solve(source)
         kinc_original = solver.kinc.clone()
 
@@ -67,8 +68,10 @@ class TestBatchedKincCalculation:
         solver._pre_solve([source])
         kinc_batched = solver.kinc.clone()
 
+        # Both are (1, 3, 3) — compare directly
+        assert kinc_original.shape == (1, 3, 3), f"Expected shape (1, 3, 3), got {kinc_original.shape}"
         assert kinc_batched.shape == (1, 3, 3), f"Expected shape (1, 3, 3), got {kinc_batched.shape}"
-        torch.testing.assert_close(kinc_batched[0], kinc_original, rtol=1e-6, atol=1e-8)
+        torch.testing.assert_close(kinc_batched, kinc_original, rtol=1e-6, atol=1e-8)
 
     def test_multiple_sources_dimension(self):
         """Test dimensions with multiple sources."""

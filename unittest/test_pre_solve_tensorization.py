@@ -96,17 +96,18 @@ class TestPreSolveTensorization:
             refractive = refractive.unsqueeze(0).expand(solver.n_freqs)
 
         expected_z = refractive
-        actual_z = kinc_normal[:, 2]
+        # kinc is now always (n_sources, n_freqs, 3); squeeze the leading dim
+        actual_z = kinc_normal[0, :, 2]
         assert torch.allclose(actual_z, expected_z, atol=1e-6), (
             f"Normal incidence z-component mismatch: {actual_z} vs {expected_z}"
         )
 
         # Verify x and y components are near zero
         assert torch.allclose(
-            kinc_normal[:, 0], torch.zeros_like(kinc_normal[:, 0]), atol=1e-6
+            kinc_normal[0, :, 0], torch.zeros_like(kinc_normal[0, :, 0]), atol=1e-6
         ), "Normal incidence x-component not zero"
         assert torch.allclose(
-            kinc_normal[:, 1], torch.zeros_like(kinc_normal[:, 1]), atol=1e-6
+            kinc_normal[0, :, 1], torch.zeros_like(kinc_normal[0, :, 1]), atol=1e-6
         ), "Normal incidence y-component not zero"
 
         # Test case 2: Grazing incidence (θ=89°)
@@ -118,7 +119,7 @@ class TestPreSolveTensorization:
         kinc_grazing = solver.kinc.clone()
 
         # Verify z-component is near zero (cos(89°) ≈ 0)
-        assert torch.all(torch.abs(kinc_grazing[:, 2]) < 0.1), (
+        assert torch.all(torch.abs(kinc_grazing[0, :, 2]) < 0.1), (
             "Grazing incidence z-component too large"
         )
 
@@ -184,13 +185,13 @@ class TestPreSolveTensorization:
         solver._pre_solve()
         kinc_array = solver.kinc.clone()
 
-        # Verify shape matches number of frequencies
-        assert kinc_array.shape == (solver.n_freqs, 3), (
+        # Verify shape matches (1, n_freqs, 3) — single source always has n_sources=1
+        assert kinc_array.shape == (1, solver.n_freqs, 3), (
             f"Array input shape mismatch: {kinc_array.shape}"
         )
 
         # Verify values are different for each frequency
-        assert not torch.allclose(kinc_array[0], kinc_array[1], atol=1e-6), (
+        assert not torch.allclose(kinc_array[0, 0], kinc_array[0, 1], atol=1e-6), (
             "Array input should produce different kinc per frequency"
         )
 
