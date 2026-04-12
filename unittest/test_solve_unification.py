@@ -140,7 +140,7 @@ class TestSolveUnification:
             solver.solve(torch.tensor([1, 2, 3]))
 
     def test_single_element_list_returns_batched(self):
-        """Single source in list returns non-batched SolverResults (Phase 1 shim squeezes n_sources=1)."""
+        """Single source in list returns batched SolverResults with n_sources=1."""
         solver = self.create_test_solver()
 
         # Create single source in a list
@@ -149,9 +149,8 @@ class TestSolveUnification:
         result = solver.solve(sources, compute_fields=True)
 
         assert isinstance(result, SolverResults)
-        # Phase 1 shim squeezes n_sources=1 to the single-source code path
-        assert not result.is_batched, f"Expected non-batched SolverResults (Phase 1 shim), got is_batched={result.is_batched}"
-        assert result.reflection.shape == (2,), f"Expected shape (2,), got {result.reflection.shape}"
+        assert result.is_batched, f"Expected batched SolverResults for list input, got is_batched={result.is_batched}"
+        assert result.reflection.shape == (1, 2), f"Expected shape (1, 2), got {result.reflection.shape}"
 
     def test_algorithm_independence(self):
         """Test that unification works for both RCWA and RDIT algorithms."""

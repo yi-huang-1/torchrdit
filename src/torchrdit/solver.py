@@ -1822,7 +1822,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         return smat_layer
 
-    def _solve_structure(self, sources=None, **kwargs):
+    def _solve_structure(self, sources=None, _is_single_source=False, **kwargs):
         """Solve the electromagnetic problem for single or batched sources.
 
         This unified method handles both single source (2D kinc) and batched sources
@@ -1840,10 +1840,11 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         n_sources = len(sources) if sources is not None else 1
 
         # Phase 1 compat: downstream code still branches on kinc.dim().
-        # For n_sources == 1, squeeze kinc to 2D so the single-source
-        # code path runs.  This shim is removed in Phase 4.
+        # For dict-input single source, squeeze kinc to 2D so the single-source
+        # code path runs.  List-input (even with 1 element) takes batched path.
+        # This shim is removed in Phase 4.
         kinc_original = None
-        if n_sources == 1:
+        if _is_single_source:
             is_batched = False
             kinc_original = self.kinc          # (1, F, 3)
             self.kinc = self.kinc.squeeze(0)   # (F, 3)
@@ -2453,10 +2454,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         self.src = sources[0]  # keep for backward compat
         self._pre_solve(sources)
-        result = self._solve_structure(sources, **kwargs)
-
-        # For single source, _solve_structure (Phase 1 shim) returns a plain
-        # SolverResults — return it directly.  For batched, return as-is.
+        result = self._solve_structure(sources, _is_single_source=is_single, **kwargs)
         return result
 
     def _pre_solve(self, sources=None) -> None:

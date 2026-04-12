@@ -171,14 +171,14 @@ class TestBatchedSourceDimensions:
             ]
 
             if batch_size == 1:
-                # Phase 1 shim squeezes n_sources=1 to non-batched
+                # List input always returns batched, even with n_sources=1
                 results = solver.solve(sources)
                 assert isinstance(results, SolverResults)
-                assert not results.is_batched
-                assert results.reflection.shape == (4,)
-                assert results.transmission.shape == (4,)
-                assert results.reflection_diffraction.shape == (4, 5, 5)
-                assert results.transmission_diffraction.shape == (4, 5, 5)
+                assert results.is_batched
+                assert results.reflection.shape == (1, 4)
+                assert results.transmission.shape == (1, 4)
+                assert results.reflection_diffraction.shape == (1, 4, 5, 5)
+                assert results.transmission_diffraction.shape == (1, 4, 5, 5)
             else:
                 results = solver.solve(sources)
                 assert isinstance(results, SolverResults)
