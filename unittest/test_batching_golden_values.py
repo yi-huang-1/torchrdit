@@ -164,3 +164,53 @@ class TestGratingGolden:
         R = torch.sum(result.reflection).item()
         T = torch.sum(result.transmission).item()
         assert np.isclose(R + T, 1.0, atol=1e-6), f"{algo.name}: R+T={R+T}"
+
+
+class TestRawDataRoundTrip:
+    """Verify raw_data schema and to_dict/from_dict round-trip survive vectorization."""
+
+    from torchrdit.results import SolverResults
+
+    def test_single_source_raw_data_keys(self):
+        """Single-source raw_data must contain the full legacy schema."""
+        solver = _make_interface_solver(Algorithm.RDIT)
+        result = solver.solve(solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0))
+        raw = result.raw_data
+        for key in ("ref_s_x", "ref_s_y", "ref_s_z", "trn_s_x", "trn_s_y", "trn_s_z",
+                     "rx", "ry", "rz", "tx", "ty", "tz",
+                     "REF", "TRN", "RDE", "TDE", "smat_structure",
+                     "kzref", "kztrn", "kinc", "kx", "ky"):
+            assert key in raw, f"Missing key '{key}' in raw_data"
+
+    def test_single_source_from_dict_roundtrip(self):
+        """from_dict(result.raw_data) must reconstruct fields correctly."""
+        solver = _make_interface_solver(Algorithm.RDIT)
+        result = solver.solve(solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0))
+        rebuilt = self.SolverResults.from_dict(result.raw_data)
+        assert torch.allclose(rebuilt.reflection, result.reflection, atol=ATOL)
+        assert torch.allclose(rebuilt.transmission, result.transmission, atol=ATOL)
+        assert torch.allclose(rebuilt.reflection_field.x, result.reflection_field.x, atol=ATOL)
+        assert torch.allclose(rebuilt.transmission_field.x, result.transmission_field.x, atol=ATOL)
+
+    def test_batched_per_source_raw_data_keys(self):
+        """Each per-source raw_data in a batched solve must have full schema."""
+        solver = _make_interface_solver(Algorithm.RDIT)
+        sources = [
+            {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
+            {"theta": float(np.deg2rad(30.0)), "phi": 0.0, "pte": 1.0, "ptm": 0.0},
+        ]
+        result = solver.solve(sources)
+        for i in range(2):
+            raw_i = result[i].raw_data
+            for key in ("ref_s_x", "trn_s_x", "rx", "tx", "REF", "TRN", "smat_structure"):
+                assert key in raw_i, f"Source {i}: missing key '{key}' in raw_data"
+
+    def test_smatrix_dict_compat(self):
+        """SMatrix must support dict-style access for backward compat."""
+        solver = _make_interface_solver(Algorithm.RDIT)
+        result = solver.solve(solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0))
+        smat = result.raw_data["smat_structure"]
+        # Dict-style access must work
+        assert torch.equal(smat["S11"], smat.S11)
+        assert "S11" in smat
+        assert set(smat.keys()) == {"S11", "S12", "S21", "S22"}

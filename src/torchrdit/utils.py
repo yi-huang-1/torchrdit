@@ -43,6 +43,23 @@ class SMatrix:
     S21: torch.Tensor
     S22: torch.Tensor
 
+    # Dict-like access for backward compatibility
+    _KEYS = ("S11", "S12", "S21", "S22")
+
+    def __getitem__(self, key: str) -> torch.Tensor:
+        if key not in self._KEYS:
+            raise KeyError(key)
+        return getattr(self, key)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._KEYS
+
+    def keys(self):
+        return iter(self._KEYS)
+
+    def items(self):
+        return ((k, getattr(self, k)) for k in self._KEYS)
+
 
 def tensor_params_check(
     func: Optional[FuncType] = None, check_start_index: int = 1, check_stop_index: int = 1

@@ -1727,7 +1727,17 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         reflection = fields["total_ref_efficiency"]   # (B, F)
         transmission = fields["total_trn_efficiency"]  # (B, F)
 
-        # Per-source raw_data for backward compat
+        # Pre-compute reshaped field tensors for raw_data (B, F, H0, H1)
+        fmt_fields = {}
+        for key in ("ref_s_x", "ref_s_y", "ref_s_z", "trn_s_x", "trn_s_y", "trn_s_z",
+                     "ref_u_x", "ref_u_y", "ref_u_z", "trn_u_x", "trn_u_y", "trn_u_z"):
+            v = fields[key]
+            if v is not None:
+                fmt_fields[key] = torch.reshape(v, shape=field_shape).transpose(dim0=-2, dim1=-1)
+            else:
+                fmt_fields[key] = None
+
+        # Per-source raw_data — full legacy schema for backward compat
         per_source_raw = []
         for i in range(n_sources):
             smat_i = SMatrix(
@@ -1736,10 +1746,25 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 S21=smat_global.S21[i].detach().clone(),
                 S22=smat_global.S22[i].detach().clone(),
             )
+
+            def _get(key):
+                v = fmt_fields[key]
+                return v[i] if v is not None else None
+
             per_source_raw.append({
                 "smat_structure": smat_i,
+                # Field Fourier coefficients
+                "ref_s_x": _get("ref_s_x"), "ref_s_y": _get("ref_s_y"), "ref_s_z": _get("ref_s_z"),
+                "trn_s_x": _get("trn_s_x"), "trn_s_y": _get("trn_s_y"), "trn_s_z": _get("trn_s_z"),
+                "ref_u_x": _get("ref_u_x"), "ref_u_y": _get("ref_u_y"), "ref_u_z": _get("ref_u_z"),
+                "trn_u_x": _get("trn_u_x"), "trn_u_y": _get("trn_u_y"), "trn_u_z": _get("trn_u_z"),
+                # Backward compat aliases
+                "rx": _get("ref_s_x"), "ry": _get("ref_s_y"), "rz": _get("ref_s_z"),
+                "tx": _get("trn_s_x"), "ty": _get("trn_s_y"), "tz": _get("trn_s_z"),
+                # Efficiencies
                 "REF": reflection[i], "TRN": transmission[i],
                 "RDE": fields["ref_diff_efficiency"][i], "TDE": fields["trn_diff_efficiency"][i],
+                # K-vectors
                 "kzref": matrices["mat_kz_ref"][i], "kztrn": matrices["mat_kz_trn"][i],
                 "kinc": self.kinc[i], "kx": torch.squeeze(kx_0[i]), "ky": torch.squeeze(ky_0[i]),
                 "lattice_t1": self.lattice_t1, "lattice_t2": self.lattice_t2,
