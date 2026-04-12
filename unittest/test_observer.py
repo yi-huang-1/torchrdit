@@ -95,7 +95,7 @@ class TestObserverPattern(unittest.TestCase):
         # Verify calculation started and completed events with batched metadata
         self.assertEqual(self.observer.get_count("calculation_starting"), 1)
         start_data = self.observer.get_data("calculation_starting")
-        self.assertEqual(start_data["mode"], "solving_structure_batched")
+        self.assertEqual(start_data["mode"], "solving_structure")
         self.assertEqual(start_data["n_sources"], 2)
         self.assertEqual(start_data["n_freqs"], len(self.lam0))
         self.assertEqual(start_data["n_layers"], 1)

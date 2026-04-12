@@ -1140,18 +1140,11 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             - Single source: shapes (n_freqs, harmonics[0], harmonics[1])
             - Batched sources: shapes (n_sources, n_freqs, harmonics[0], harmonics[1])
         """
-        # Detect input type by checking kinc dimensions
-        is_single_source = self.kinc.dim() == 2  # (n_freqs, 3)
+        # kinc is always (n_sources, n_freqs, 3) from _pre_solve
+        kinc = self.kinc
 
-        # Debug output
         if self.debug_batching:
-            print(f"[DEBUG] _initialize_k_vectors: is_single_source={is_single_source}, kinc.shape={self.kinc.shape}")
-
-        # Add dummy batch dimension for single source to unify processing
-        if is_single_source:
-            kinc = self.kinc.unsqueeze(0)  # (1, n_freqs, 3)
-        else:
-            kinc = self.kinc  # (n_sources, n_freqs, 3)
+            print(f"[DEBUG] _initialize_k_vectors: kinc.shape={kinc.shape}")
 
         # Core tensorized k-vector calculation
         # Calculate wave vector expansion using broadcasting
@@ -1185,13 +1178,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         kz_ref_0 = self._calculate_kz_region(self.ur1, self.er1, kx_0, ky_0, self.layer_manager.is_ref_dispersive)
         kz_trn_0 = self._calculate_kz_region(self.ur2, self.er2, kx_0, ky_0, self.layer_manager.is_trn_dispersive)
 
-        # Remove dummy batch dimension for single source
-        if is_single_source:
-            kx_0 = kx_0.squeeze(0)  # (n_freqs, harmonics[0], harmonics[1])
-            ky_0 = ky_0.squeeze(0)
-            kz_ref_0 = kz_ref_0.squeeze(0)
-            kz_trn_0 = kz_trn_0.squeeze(0)
-
+        # Always return 4D: (n_sources, n_freqs, harmonics[0], harmonics[1])
         return kx_0, ky_0, kz_ref_0, kz_trn_0
 
     def _apply_numerical_relaxation(self, kx_0, ky_0, epsilon):
@@ -1232,21 +1219,12 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         Returns:
             kz_0 with same shape as input kx_0, ky_0
         """
-        # Detect if inputs are batched (4D) or single (3D)
-        is_batched = kx_0.dim() == 4
-
+        # kx_0, ky_0 are always 4D: (n_sources, n_freqs, H0, H1)
         if not is_dispersive:
-            # Non-dispersive: ur, er are scalars
             kz_0 = torch.conj(torch.sqrt(torch.conj(ur) * torch.conj(er) - kx_0 * kx_0 - ky_0 * ky_0 + 0 * 1j))
         else:
-            # Dispersive: ur, er have shape (n_freqs,)
-            if is_batched:
-                # Batched case: broadcast to (1, n_freqs, 1, 1)
-                ur_er_product = (torch.conj(ur) * torch.conj(er))[None, :, None, None]
-            else:
-                # Single case: broadcast to (n_freqs, 1, 1)
-                ur_er_product = (torch.conj(ur) * torch.conj(er))[:, None, None]
-
+            # Dispersive: ur, er have shape (n_freqs,) → broadcast to (1, n_freqs, 1, 1)
+            ur_er_product = (torch.conj(ur) * torch.conj(er))[None, :, None, None]
             kz_0 = torch.conj(torch.sqrt(ur_er_product - kx_0 * kx_0 - ky_0 * ky_0 + 0 * 1j))
         return kz_0
 
@@ -1267,20 +1245,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 - Single source: No source dimension
                 - Batched sources: With source dimension
         """
-        # Detect if input is batched (4D) or single (3D)
-        is_batched = kx_0.dim() == 4
-
-        if not is_batched:
-            # Add source dimension for single source to unify processing
-            kx_0 = kx_0.unsqueeze(0)
-            ky_0 = ky_0.unsqueeze(0)
-            kz_ref_0 = kz_ref_0.unsqueeze(0)
-            kz_trn_0 = kz_trn_0.unsqueeze(0)
-            n_sources = 1
-        else:
-            n_sources = kx_0.shape[0]
-
-        # Now all inputs have shape (n_sources, n_freqs, harmonics[0], harmonics[1])
+        # Inputs are always 4D: (n_sources, n_freqs, harmonics[0], harmonics[1])
+        n_sources = kx_0.shape[0]
         n_harmonics_squared = self.harmonics[0] * self.harmonics[1]
 
         # Create identity matrices
@@ -1362,10 +1328,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             "zero_mat": zero_mat,
         }
 
-        # Remove source dimension if input was single source
-        if not is_batched:
-            result = {k: v.squeeze(0) for k, v in result.items()}
-
+        # Always return 4D: (n_sources, n_freqs, ...)
         return result
 
     def _print_tensor_shape(self, name: str, tensor: torch.Tensor) -> None:
@@ -1822,7 +1785,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         return smat_layer
 
-    def _solve_structure(self, sources=None, _is_single_source=False, **kwargs):
+    def _solve_structure(self, sources=None, **kwargs):
         """Solve the electromagnetic problem for single or batched sources.
 
         This unified method handles both single source (2D kinc) and batched sources
@@ -1836,31 +1799,15 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         Returns:
             SolverResults: Results for single or batched sources (unified interface)
         """
-        # sources is always a list now (from solve())
-        n_sources = len(sources) if sources is not None else 1
+        # sources is always a list (from solve()); kinc is always 3D (B, F, 3)
+        n_sources = len(sources) if sources is not None else self.kinc.shape[0]
 
-        # Phase 1 compat: downstream code still branches on kinc.dim().
-        # For dict-input single source, squeeze kinc to 2D so the single-source
-        # code path runs.  List-input (even with 1 element) takes batched path.
-        # This shim is removed in Phase 4.
-        kinc_original = None
-        if _is_single_source:
-            is_batched = False
-            kinc_original = self.kinc          # (1, F, 3)
-            self.kinc = self.kinc.squeeze(0)   # (F, 3)
-        else:
-            is_batched = True
-
-        # Debug output
         if getattr(self, "debug_unification", False):
-            print(f"[DEBUG] _solve_structure: is_batched={is_batched}, n_sources={n_sources}")
-            print(f"[DEBUG] kinc shape: {self.kinc.shape}")
+            print(f"[DEBUG] _solve_structure: n_sources={n_sources}, kinc.shape={self.kinc.shape}")
 
-        # Notify that calculation is starting
-        mode = "solving_structure_batched" if is_batched else "solving_structure"
         self.notify_observers(
             "calculation_starting",
-            {"mode": mode, "n_sources": n_sources, "n_freqs": self.n_freqs, "n_layers": self.layer_manager.nlayer},
+            {"mode": "solving_structure", "n_sources": n_sources, "n_freqs": self.n_freqs, "n_layers": self.layer_manager.nlayer},
         )
 
         # Initialize k-vectors
@@ -1873,22 +1820,9 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         n_harmonics_squared = self.harmonics[0] * self.harmonics[1]
 
-        # Initialize global scattering matrix
-        # Use appropriate shape based on batch mode
-        if is_batched:
-            shape = (n_sources, self.n_freqs, 2 * n_harmonics_squared, 2 * n_harmonics_squared)
-        else:
-            shape = (self.n_freqs, 2 * n_harmonics_squared, 2 * n_harmonics_squared)
-
-        smat_global = init_smatrix(
-            shape=shape,
-            dtype=self.tcomplex,
-            device=self.device,
-        )
-
-        # For single source path, matrices already have the right shape
-        # (no batch dim) since kinc is squeezed to 2D in the Phase 1 shim.
-        matrices_single = matrices if not is_batched else None
+        # Initialize global scattering matrix — always 4D
+        shape = (n_sources, self.n_freqs, 2 * n_harmonics_squared, 2 * n_harmonics_squared)
+        smat_global = init_smatrix(shape=shape, dtype=self.tcomplex, device=self.device)
 
         # Process each layer and update global scattering matrix
         self.notify_observers("processing_layers", {"total": self.layer_manager.nlayer})
@@ -1903,20 +1837,12 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 },
             )
 
-            # Process layer using unified method
-            if is_batched:
-                smat_layer = self._process_layer(n_layer, matrices)
-            else:
-                smat_layer = self._process_layer(n_layer, matrices_single)
-
-            # Note: For batched mode, we don't store individual layers in self.smat_layers
-
+            smat_layer = self._process_layer(n_layer, matrices)
             smat_global = redhstar(smat_global, smat_layer)
-
             self.notify_observers("layer_completed", {"layer_index": n_layer})
 
-        # For batched mode, we need to process each source separately for external regions and fields
-        if is_batched:
+        # Process each source separately for external regions and fields
+        if True:  # always batched now
             # Create list to hold individual S-matrices for processing
             smat_global_list = []
             for i in range(n_sources):
@@ -1931,8 +1857,8 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             # Connect to external regions for all sources
             self.notify_observers("connecting_external_regions")
             for i in range(n_sources):
-                # Extract matrices for this source
-                matrices_i = {key: value[i] if value.dim() > 2 else value for key, value in matrices.items()}
+                # Extract matrices for this source — always 4D, index removes source dim
+                matrices_i = {key: value[i] for key, value in matrices.items()}
                 smat_global_list[i], mat_v_ref_i, mat_v_trn_i = self._connect_external_regions(
                     smat_global_list[i], matrices_i
                 )
@@ -1946,14 +1872,14 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 self.src = sources[i]
 
                 # Extract k-vectors for this source
-                kx_0_i = kx_0[i] if kx_0.dim() > 2 else kx_0
-                ky_0_i = ky_0[i] if ky_0.dim() > 2 else ky_0
+                kx_0_i = kx_0[i]
+                ky_0_i = ky_0[i]
 
                 # Extract kinc for this source (no longer need to mutate self.kinc)
                 kinc_i = self.kinc[i]  # Extract kinc for source i
 
                 # Extract matrices for this source
-                matrices_i = {key: value[i] if value.dim() > 2 else value for key, value in matrices.items()}
+                matrices_i = {key: value[i] for key, value in matrices.items()}
 
                 # Calculate fields - pass kinc_i directly as parameter
                 fields = self._calculate_fields_and_efficiencies(
@@ -2043,10 +1969,6 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
                 all_results.append(SolverResults.from_dict(data))
 
-            # Restore original kinc if we modified it
-            if kinc_original is not None:
-                self.kinc = kinc_original
-
             self.notify_observers("calculation_completed", {"n_sources": n_sources, "n_freqs": self.n_freqs})
 
             # Return unified SolverResults with batching support
@@ -2106,111 +2028,6 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                 lattice_t2=self.lattice_t2,
                 default_grids=self.grids,
             )
-
-        else:
-            # Single source path (original implementation)
-            # Connect to external regions (reflection and transmission)
-            self.notify_observers("connecting_external_regions")
-            smat_global, mat_v_ref, mat_v_trn = self._connect_external_regions(smat_global, matrices_single)
-
-            # Store the structure scattering matrix
-            smat_structure = {key: value.detach().clone() for key, value in smat_global.items()}
-
-            # Calculate fields and efficiencies
-            self.notify_observers("calculating_fields")
-            # Extract single source k-vectors if we expanded dimensions
-            kx_0_single = kx_0.squeeze(0) if kx_0.dim() > 3 else kx_0
-            ky_0_single = ky_0.squeeze(0) if ky_0.dim() > 3 else ky_0
-            fields = self._calculate_fields_and_efficiencies(
-                smat_global, matrices_single, kx_0_single, ky_0_single, mat_v_ref, mat_v_trn
-            )
-
-            # Format the Fourier coefficients for output
-            self.notify_observers("assembling_final_data")
-            rx = torch.reshape(fields["ref_s_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                dim0=-2, dim1=-1
-            )
-            ry = torch.reshape(fields["ref_s_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                dim0=-2, dim1=-1
-            )
-            rz = torch.reshape(fields["ref_s_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                dim0=-2, dim1=-1
-            )
-            tx = torch.reshape(fields["trn_s_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                dim0=-2, dim1=-1
-            )
-            ty = torch.reshape(fields["trn_s_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                dim0=-2, dim1=-1
-            )
-            tz = torch.reshape(fields["trn_s_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                dim0=-2, dim1=-1
-            )
-
-            # Format the magnetic field Fourier coefficients for output
-            rmag_x = torch.reshape(fields["ref_u_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                dim0=-2, dim1=-1
-            )
-            rmag_y = torch.reshape(fields["ref_u_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                dim0=-2, dim1=-1
-            )
-            rmag_z = torch.reshape(fields["ref_u_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                dim0=-2, dim1=-1
-            )
-            tmag_x = torch.reshape(fields["trn_u_x"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                dim0=-2, dim1=-1
-            )
-            tmag_y = torch.reshape(fields["trn_u_y"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                dim0=-2, dim1=-1
-            )
-            tmag_z = torch.reshape(fields["trn_u_z"], shape=(self.n_freqs, self.harmonics[0], self.harmonics[1])).transpose(
-                dim0=-2, dim1=-1
-            )
-
-            # Restore original kinc if we modified it
-            if kinc_original is not None:
-                self.kinc = kinc_original
-
-            # Assemble the final data dictionary (using Fourier coefficient naming)
-            data = {
-                "smat_structure": smat_structure,
-                # New Fourier coefficient naming (preferred)
-                "ref_s_x": rx,  # Reflection E-field Fourier coefficient, x-component
-                "ref_s_y": ry,  # Reflection E-field Fourier coefficient, y-component
-                "ref_s_z": rz,  # Reflection E-field Fourier coefficient, z-component
-                "trn_s_x": tx,  # Transmission E-field Fourier coefficient, x-component
-                "trn_s_y": ty,  # Transmission E-field Fourier coefficient, y-component
-                "trn_s_z": tz,  # Transmission E-field Fourier coefficient, z-component
-                "ref_u_x": rmag_x,  # Reflection H-field Fourier coefficient, x-component
-                "ref_u_y": rmag_y,  # Reflection H-field Fourier coefficient, y-component
-                "ref_u_z": rmag_z,  # Reflection H-field Fourier coefficient, z-component
-                "trn_u_x": tmag_x,  # Transmission H-field Fourier coefficient, x-component
-                "trn_u_y": tmag_y,  # Transmission H-field Fourier coefficient, y-component
-                "trn_u_z": tmag_z,  # Transmission H-field Fourier coefficient, z-component
-                # Backward compatibility keys (deprecated)
-                "rx": rx,
-                "ry": ry,
-                "rz": rz,
-                "tx": tx,
-                "ty": ty,
-                "tz": tz,
-                "RDE": fields["ref_diff_efficiency"],
-                "TDE": fields["trn_diff_efficiency"],
-                "REF": fields["total_ref_efficiency"],
-                "TRN": fields["total_trn_efficiency"],
-                "kzref": matrices_single["mat_kz_ref"],
-                "kztrn": matrices_single["mat_kz_trn"],
-                "kinc": self.kinc,
-                "kx": torch.squeeze(kx_0_single),
-                "ky": torch.squeeze(ky_0_single),
-                # Lattice vectors for field reconstruction
-                "lattice_t1": self.lattice_t1,
-                "lattice_t2": self.lattice_t2,
-                "default_grids": self.grids,
-            }
-
-            self.notify_observers("calculation_completed", {"n_freqs": self.n_freqs})
-
-            return SolverResults.from_dict(data)
 
     def solve(self, source: Union[dict, List[dict]], **kwargs) -> SolverResults:
         """Solve the electromagnetic problem for the configured structure.
@@ -2454,7 +2271,11 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
         self.src = sources[0]  # keep for backward compat
         self._pre_solve(sources)
-        result = self._solve_structure(sources, _is_single_source=is_single, **kwargs)
+        result = self._solve_structure(sources, **kwargs)
+
+        # Squeeze source dimension at the API boundary for dict-input callers
+        if is_single:
+            return result[0]
         return result
 
     def _pre_solve(self, sources=None) -> None:

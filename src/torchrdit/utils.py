@@ -382,17 +382,19 @@ def init_smatrix(shape: Tuple, dtype: torch.dtype, device: Union[str, torch.devi
     """
     device = resolve_device(device).resolved_device
     smatrix = {}
-    if len(shape) == 3:
-        smatrix["S11"] = torch.zeros(size=shape, dtype=dtype, device=device)
-        smatrix["S12"] = torch.eye(shape[-2], shape[-1], dtype=dtype, device=device).unsqueeze(0).repeat(shape[0], 1, 1)
-        smatrix["S21"] = torch.eye(shape[-2], shape[-1], dtype=dtype, device=device).unsqueeze(0).repeat(shape[0], 1, 1)
-        smatrix["S22"] = torch.zeros(size=shape, dtype=dtype, device=device)
-    else:
-        smatrix["S11"] = torch.zeros(size=shape, dtype=dtype, device=device)
-        smatrix["S12"] = torch.eye(shape[-2], shape[-1], dtype=dtype, device=device)
-        smatrix["S21"] = torch.eye(shape[-2], shape[-1], dtype=dtype, device=device)
-        smatrix["S22"] = torch.zeros(size=shape, dtype=dtype, device=device)
+    eye = torch.eye(shape[-2], shape[-1], dtype=dtype, device=device)
 
+    # Expand identity to match leading (batch) dimensions
+    leading = shape[:-2]  # () for 2D, (F,) for 3D, (B, F) for 4D
+    if leading:
+        eye_expanded = eye.reshape((1,) * len(leading) + eye.shape).expand(*leading, -1, -1)
+    else:
+        eye_expanded = eye
+
+    smatrix["S11"] = torch.zeros(size=shape, dtype=dtype, device=device)
+    smatrix["S12"] = eye_expanded.clone()
+    smatrix["S21"] = eye_expanded.clone()
+    smatrix["S22"] = torch.zeros(size=shape, dtype=dtype, device=device)
     return smatrix
 
 
