@@ -2803,18 +2803,13 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         # Handle oblique incidence cases
         oblique_mask = ~normal_mask
         if oblique_mask.any():
-            # Get kinc for oblique sources - ensure consistent 3D shape
+            # Ensure kinc is 3D (n_sources, n_freqs, 3) for masked indexing
             if kinc.dim() == 2:
-                # kinc shape (n_freqs, 3) -> (1, n_freqs, 3) -> extract oblique sources
                 kinc_expanded = kinc[None, :, :].expand(n_sources, -1, -1)
-                kinc_oblique = kinc_expanded[oblique_mask]
-            elif kinc.dim() == 3:
-                # kinc already has batch dimension
-                kinc_oblique = kinc[oblique_mask]
             else:
-                raise ValueError(f"Unexpected kinc dimension: {kinc.dim()}")
+                kinc_expanded = kinc
+            kinc_oblique = kinc_expanded[oblique_mask]
 
-            # Vectorized cross product calculation
             norm_vec = torch.tensor([0.0, 0.0, 1.0], dtype=self.tcomplex, device=self.device)
             norm_vec_expanded = norm_vec[None, None, :].expand(oblique_mask.sum(), self.n_freqs, -1)
 
@@ -2824,19 +2819,11 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
 
             ate_batch[oblique_mask] = ate_oblique
 
-        # Calculate atm for all sources using vectorized operations
-        # Ensure kinc has the right shape for broadcasting with ate_batch (n_sources, n_freqs, 3)
+        # Ensure kinc is 3D (n_sources, n_freqs, 3) for atm cross product
         if kinc.dim() == 2:
-            # kinc shape (n_freqs, 3) -> (1, n_freqs, 3) -> (n_sources, n_freqs, 3)
             kinc_for_atm = kinc[None, :, :].expand(n_sources, -1, -1)
-        elif kinc.dim() == 3 and kinc.shape[0] == 1:
-            # kinc shape (1, n_freqs, 3) -> (n_sources, n_freqs, 3)
-            kinc_for_atm = kinc.expand(n_sources, -1, -1)
-        elif kinc.dim() == 3 and kinc.shape[0] == n_sources:
-            # kinc already has correct shape (n_sources, n_freqs, 3)
-            kinc_for_atm = kinc
         else:
-            raise ValueError(f"Unexpected kinc shape: {kinc.shape} for n_sources={n_sources}, n_freqs={self.n_freqs}")
+            kinc_for_atm = kinc.expand(n_sources, -1, -1)
 
         atm_batch = torch.cross(ate_batch, kinc_for_atm, dim=2)
         atm_norm = torch.norm(atm_batch, dim=2, keepdim=True)
