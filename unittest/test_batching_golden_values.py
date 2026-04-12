@@ -1,0 +1,166 @@
+"""Golden-value regression tests for the always-batched refactor (Task 052).
+
+These tests pin the exact numeric output of the solver BEFORE the refactoring
+so that every subsequent phase can verify it doesn't change the results.
+
+All reference values were captured from the solver at commit 1b812a2
+(Task 051 numerics module, double precision, CPU).
+"""
+
+import numpy as np
+import pytest
+import torch
+
+from torchrdit.constants import Algorithm, Precision
+from torchrdit.solver import create_solver
+from torchrdit.utils import create_material
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _make_interface_solver(algo, *, n2=2.25, precision=Precision.DOUBLE):
+    """Air | Glass(n2) homogeneous slab, harmonics=[1,1]."""
+    solver = create_solver(
+        algorithm=algo, lam0=np.array([1.55]),
+        grids=[64, 64], harmonics=[1, 1],
+        device="cpu", precision=precision,
+    )
+    air = create_material(name="Air", permittivity=1.0)
+    glass = create_material(name="Glass", permittivity=n2)
+    solver.add_materials([air, glass])
+    solver.update_ref_material("Air")
+    solver.update_trn_material("Glass")
+    solver.add_layer(material_name="Glass", thickness=0.5, is_homogeneous=True)
+    return solver
+
+
+def _make_grating_solver(algo):
+    """Air | Si grating | Air, harmonics=[3,3]."""
+    solver = create_solver(
+        algorithm=algo, lam0=np.array([1.0]),
+        grids=[128, 128], harmonics=[3, 3],
+        device="cpu", precision=Precision.DOUBLE,
+    )
+    air = create_material(name="Air", permittivity=1.0)
+    si = create_material(name="Si", permittivity=11.7)
+    solver.add_materials([air, si])
+    solver.update_ref_material("Air")
+    solver.update_trn_material("Air")
+    solver.add_layer(material_name="Si", thickness=torch.tensor(0.5), is_homogeneous=False)
+    return solver
+
+
+# Tolerance: tight enough to catch refactoring bugs, loose enough for
+# platform/PyTorch-version variation.
+ATOL = 1e-8
+RTOL = 1e-6
+
+
+# ---------------------------------------------------------------------------
+# Golden values (pinned)
+# ---------------------------------------------------------------------------
+
+class TestNormalIncidenceGolden:
+    """Normal incidence (θ=0) through Air|Glass slab, both algorithms."""
+
+    GOLDEN_R = 3.999999760837617e-02
+    GOLDEN_T = 9.599999997916238e-01
+
+    @pytest.mark.parametrize("algo", [Algorithm.RCWA, Algorithm.RDIT])
+    def test_reflection(self, algo):
+        solver = _make_interface_solver(algo)
+        result = solver.solve(solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0))
+        R = torch.sum(result.reflection).item()
+        assert abs(R - self.GOLDEN_R) < ATOL, f"{algo.name}: R={R}"
+
+    @pytest.mark.parametrize("algo", [Algorithm.RCWA, Algorithm.RDIT])
+    def test_transmission(self, algo):
+        solver = _make_interface_solver(algo)
+        result = solver.solve(solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0))
+        T = torch.sum(result.transmission).item()
+        assert abs(T - self.GOLDEN_T) < ATOL, f"{algo.name}: T={T}"
+
+
+class TestObliqueIncidenceGolden:
+    """Oblique incidence (θ=30°) through Air|Glass slab, TE and TM."""
+
+    GOLDEN = {
+        "TE": {"R": 5.779610209457898e-02, "T": 9.422038942383214e-01},
+        "TM": {"R": 2.524914510304306e-02, "T": 9.747508531816750e-01},
+    }
+
+    @pytest.mark.parametrize("pol,pte,ptm", [("TE", 1.0, 0.0), ("TM", 0.0, 1.0)])
+    def test_oblique_30deg(self, pol, pte, ptm):
+        solver = _make_interface_solver(Algorithm.RCWA)
+        theta = np.deg2rad(30.0)
+        result = solver.solve(solver.add_source(theta=theta, phi=0, pte=pte, ptm=ptm))
+        R = torch.sum(result.reflection).item()
+        T = torch.sum(result.transmission).item()
+        assert abs(R - self.GOLDEN[pol]["R"]) < ATOL, f"{pol}: R={R}"
+        assert abs(T - self.GOLDEN[pol]["T"]) < ATOL, f"{pol}: T={T}"
+
+
+class TestBatchedSourcesGolden:
+    """Batched solve must match sequential AND pinned golden values."""
+
+    GOLDEN = [
+        {"R": 3.999999760837617e-02, "T": 9.599999997916238e-01},  # θ=0
+        {"R": 5.779610209457898e-02, "T": 9.422038942383214e-01},  # θ=30°
+        {"R": 8.918661098072411e-02, "T": 9.108151154375438e-01},  # θ=60° mixed
+    ]
+
+    SOURCES = [
+        {"theta": 0.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
+        {"theta": float(np.deg2rad(30.0)), "phi": 0.0, "pte": 1.0, "ptm": 0.0},
+        {"theta": float(np.deg2rad(60.0)), "phi": 0.0, "pte": 0.5, "ptm": 0.5},
+    ]
+
+    def test_batched_golden_values(self):
+        solver = _make_interface_solver(Algorithm.RDIT)
+        batched = solver.solve(self.SOURCES)
+        for i, gold in enumerate(self.GOLDEN):
+            R = torch.sum(batched[i].reflection).item()
+            T = torch.sum(batched[i].transmission).item()
+            assert abs(R - gold["R"]) < ATOL, f"src{i}: R={R}, expected={gold['R']}"
+            assert abs(T - gold["T"]) < ATOL, f"src{i}: T={T}, expected={gold['T']}"
+
+    def test_sequential_equals_batched(self):
+        """Sequential and batched must produce identical results."""
+        solver = _make_interface_solver(Algorithm.RDIT)
+        batched = solver.solve(self.SOURCES)
+
+        for i, src in enumerate(self.SOURCES):
+            solver_seq = _make_interface_solver(Algorithm.RDIT)
+            seq_result = solver_seq.solve(src)
+            bR = torch.sum(batched[i].reflection).item()
+            sR = torch.sum(seq_result.reflection).item()
+            bT = torch.sum(batched[i].transmission).item()
+            sT = torch.sum(seq_result.transmission).item()
+            assert abs(bR - sR) < 1e-12, f"src{i}: batched R={bR} != seq R={sR}"
+            assert abs(bT - sT) < 1e-12, f"src{i}: batched T={bT} != seq T={sT}"
+
+
+class TestGratingGolden:
+    """Non-homogeneous (grating) layer, both algorithms."""
+
+    GOLDEN_R = 7.021453871735085e-01
+    GOLDEN_T = 2.978545845411916e-01
+
+    @pytest.mark.parametrize("algo", [Algorithm.RCWA, Algorithm.RDIT])
+    def test_grating_golden(self, algo):
+        solver = _make_grating_solver(algo)
+        result = solver.solve(solver.add_source(theta=np.deg2rad(10), phi=0, pte=1.0, ptm=0.0))
+        R = torch.sum(result.reflection).item()
+        T = torch.sum(result.transmission).item()
+        assert abs(R - self.GOLDEN_R) < ATOL, f"{algo.name}: R={R}"
+        assert abs(T - self.GOLDEN_T) < ATOL, f"{algo.name}: T={T}"
+
+    @pytest.mark.parametrize("algo", [Algorithm.RCWA, Algorithm.RDIT])
+    def test_grating_energy_conservation(self, algo):
+        solver = _make_grating_solver(algo)
+        result = solver.solve(solver.add_source(theta=np.deg2rad(10), phi=0, pte=1.0, ptm=0.0))
+        R = torch.sum(result.reflection).item()
+        T = torch.sum(result.transmission).item()
+        assert np.isclose(R + T, 1.0, atol=1e-6), f"{algo.name}: R+T={R+T}"
