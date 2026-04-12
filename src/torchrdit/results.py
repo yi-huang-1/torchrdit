@@ -409,7 +409,12 @@ class SolverResults:
                 ),
                 structure_matrix=self.structure_matrix,
                 wave_vectors=single_wave_vectors,
-                raw_data={},  # Could populate with source-specific data
+                raw_data=(
+                    self.raw_data["_per_source"][idx]
+                    if isinstance(self.raw_data, dict) and "_per_source" in self.raw_data
+                    and idx < len(self.raw_data["_per_source"])
+                    else self.raw_data if isinstance(self.raw_data, dict) else {}
+                ),
                 lattice_t1=self.lattice_t1,
                 lattice_t2=self.lattice_t2,
                 default_grids=self.default_grids,

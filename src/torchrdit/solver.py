@@ -1127,18 +1127,12 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         return source_dict
 
     def _initialize_k_vectors(self):
-        """Unified k-vector initialization for single and batched sources.
+        """Initialize k-vectors from self.kinc.
 
-        This function automatically handles both single source and batched source
-        inputs by detecting the dimensions of self.kinc and processing accordingly.
-
-        For single sources: kinc.shape = (n_freqs, 3)
-        For batched sources: kinc.shape = (n_sources, n_freqs, 3)
+        self.kinc is always (n_sources, n_freqs, 3) from _pre_solve().
 
         Returns:
-            Tuple of tensors:
-            - Single source: shapes (n_freqs, harmonics[0], harmonics[1])
-            - Batched sources: shapes (n_sources, n_freqs, harmonics[0], harmonics[1])
+            Tuple of 4D tensors (n_sources, n_freqs, harmonics[0], harmonics[1]).
         """
         # kinc is always (n_sources, n_freqs, 3) from _pre_solve
         kinc = self.kinc
@@ -1204,16 +1198,11 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         return kx_0, ky_0
 
     def _calculate_kz_region(self, ur, er, kx_0, ky_0, is_dispersive):
-        """Unified kz calculation for both single and batched inputs.
-
-        Calculate kz for a region (reflection or transmission) automatically
-        handling both single source and batched source inputs.
+        """Calculate kz for a region (reflection or transmission).
 
         Args:
-            ur, er: Material properties (scalars or tensors)
-            kx_0, ky_0: k-vectors with shapes:
-                - Single source: (n_freqs, harmonics[0], harmonics[1])
-                - Batched sources: (n_sources, n_freqs, harmonics[0], harmonics[1])
+            ur, er: Material properties (scalars or (n_freqs,) tensors)
+            kx_0, ky_0: 4D k-vectors (n_sources, n_freqs, harmonics[0], harmonics[1])
             is_dispersive: Whether the material is dispersive
 
         Returns:
@@ -1235,15 +1224,11 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
         and batched sources (4D tensors) by detecting the input dimensions.
 
         Args:
-            kx_0, ky_0: k-vectors with shape:
-                - Single source: (n_freqs, harmonics[0], harmonics[1])
-                - Batched sources: (n_sources, n_freqs, harmonics[0], harmonics[1])
-            kz_ref_0, kz_trn_0: kz vectors with same shape as kx_0, ky_0
+            kx_0, ky_0: k-vectors with shape (n_sources, n_freqs, harmonics[0], harmonics[1]).
+            kz_ref_0, kz_trn_0: kz vectors with same shape as kx_0, ky_0.
 
         Returns:
-            Dictionary of matrices with dimensions matching the input:
-                - Single source: No source dimension
-                - Batched sources: With source dimension
+            Dictionary of 4D matrices (n_sources, n_freqs, ...).
         """
         # Inputs are always 4D: (n_sources, n_freqs, harmonics[0], harmonics[1])
         n_sources = kx_0.shape[0]
@@ -1784,7 +1769,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
             ),
             structure_matrix=all_results[0].structure_matrix,
             wave_vectors=[r.wave_vectors for r in all_results],
-            raw_data={},
+            raw_data={"_per_source": [r.raw_data for r in all_results]},
             n_sources=n_sources,
             source_parameters=sources,
             loss=1.0 - reflection - transmission,
