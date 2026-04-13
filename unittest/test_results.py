@@ -748,6 +748,41 @@ class TestUnifiedSolverResults(unittest.TestCase):
         self.assertEqual(results.n_sources, 1)
         self.assertFalse(results.is_batched)
 
+    def test_unbatched_slice_returns_self(self):
+        """Slicing unbatched results should return self (no source dim to slice)."""
+        results = SolverResults(
+            reflection=self.single_reflection,
+            transmission=self.single_transmission,
+            reflection_diffraction=self.single_reflection_diffraction,
+            transmission_diffraction=self.single_transmission_diffraction,
+            reflection_field=self.single_reflection_field,
+            transmission_field=self.single_transmission_field,
+            structure_matrix=self.structure_matrix,
+            wave_vectors=self.wave_vectors,
+        )
+        sliced = results[0:1]
+        self.assertIs(sliced, results)
+
+    def test_batched_to_structured_dict_wavevectors_list(self):
+        """to_structured_dict for batched results with source-major wave_vectors returns list."""
+        results = SolverResults(
+            reflection=self.batched_reflection,
+            transmission=self.batched_transmission,
+            reflection_diffraction=self.batched_reflection_diffraction,
+            transmission_diffraction=self.batched_transmission_diffraction,
+            reflection_field=self.batched_reflection_field,
+            transmission_field=self.batched_transmission_field,
+            structure_matrix=self.structure_matrix,
+            wave_vectors=self.batched_wave_vectors,
+            n_sources=self.n_sources,
+        )
+        structured = results.to_structured_dict()
+        wv_out = structured["wavevectors"]
+        self.assertIsInstance(wv_out, list)
+        self.assertEqual(len(wv_out), self.n_sources)
+        # Each entry should have per-source (unbatched) tensors
+        self.assertTrue(torch.equal(wv_out[0]["kx"], self.batched_wave_vectors.kx[0]))
+
     def test_single_element_list_batched_helpers(self):
         """solve([single_source]) must support find_optimal_source/get_parameter_sweep_data."""
         # Simulate solve([source]) — n_sources=1 but tensors are 2D (batched)

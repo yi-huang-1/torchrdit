@@ -410,6 +410,8 @@ class SolverResults:
             )
             src_params = [self.source_parameters[idx]] if self.source_parameters else None
         elif isinstance(idx, slice):
+            if not self.is_batched:
+                return self
             indices = range(*idx.indices(self.n_sources))
             if not indices:
                 raise ValueError("Empty slice")
@@ -572,7 +574,10 @@ class SolverResults:
                 "kz": {"reflection": wv.kzref, "transmission": wv.kztrn},
             }
 
-        wavevectors_out = _wavevectors_to_dict(self.wave_vectors)
+        if self._wave_vectors_batched:
+            wavevectors_out = [_wavevectors_to_dict(self.wave_vectors[i]) for i in range(self.n_sources)]
+        else:
+            wavevectors_out = _wavevectors_to_dict(self.wave_vectors)
 
         return {
             "efficiency": {
