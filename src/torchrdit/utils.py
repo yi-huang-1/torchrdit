@@ -480,17 +480,19 @@ def redhstar(smat_a: SMatrix, smat_b: SMatrix, tcomplex: torch.dtype = torch.com
     # - 3D: (n_freqs, harmonics_0_tims_1, harmonics_0_tims_1) for single source, multiple frequencies
     # - 4D: (n_sources, n_freqs, harmonics_0_tims_1, harmonics_0_tims_1) for batched sources
 
-    # Construct identity matrix — works for any leading batch dimensions
+    # Construct identity matrix — works for any leading batch dimensions.
+    # Derive dtype from the tensor itself so callers don't need to pass tcomplex.
+    actual_dtype = smat_a.S11.dtype
     harmonic_m, harmonic_n = smat_a.S11.shape[-2:]
     device = smat_a.S11.device
-    identity_mat = torch.eye(harmonic_m, harmonic_n, dtype=tcomplex, device=device)
+    identity_mat = torch.eye(harmonic_m, harmonic_n, dtype=actual_dtype, device=device)
 
     # Compute (I - B11 @ A22) with adaptive regularization for numerical stability
     temp_mat = identity_mat - torch.matmul(smat_b.S11, smat_a.S22)
 
     # Static diagonal regularization for numerical stability (compile-safe).
     # Matches the original eps_val approach; no data-dependent branching.
-    eps_val = 1e-12 if tcomplex == torch.complex128 else 1e-8
+    eps_val = 1e-12 if actual_dtype == torch.complex128 else 1e-8
     temp_mat = temp_mat + eps_val * identity_mat
 
     # Solve (I - B11 @ A22) X = B for both S11 and S12.

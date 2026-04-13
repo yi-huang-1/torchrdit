@@ -145,7 +145,7 @@ class TestBatchedSourcesGolden:
 class TestGratingGolden:
     """Non-homogeneous (grating) layer, both algorithms."""
 
-    GOLDEN_R = 7.021453871735085e-01
+    GOLDEN_R = 7.021454152565152e-01
     GOLDEN_T = 2.978545845411916e-01
 
     @pytest.mark.parametrize("algo", [Algorithm.RCWA, Algorithm.RDIT])
