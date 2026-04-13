@@ -171,20 +171,22 @@ class TestSolveCompile:
         assert torch.any(mask.grad != 0)
 
     def test_redhstar_compiled_backward(self):
-        """Gradients should flow through compiled redhstar."""
+        """Gradients should flow through compiled redhstar, including the regularized solve."""
         M = 18
         eye = torch.eye(M, dtype=torch.complex64)
-        s11 = (0.5 * eye).requires_grad_(True)
-        smat_a = SMatrix(S11=s11, S12=eye.clone(), S21=eye.clone(), S22=eye.clone())
-        smat_b = SMatrix(S11=eye.clone(), S12=eye.clone(), S21=eye.clone(), S22=0.5 * eye)
+        # Put requires_grad on S22 so backward passes through temp_mat = I - B11 @ A22
+        # and through the regularized linalg.solve path.
+        s22 = (0.3 * eye).requires_grad_(True)
+        smat_a = SMatrix(S11=eye.clone(), S12=eye.clone(), S21=eye.clone(), S22=s22)
+        smat_b = SMatrix(S11=0.5 * eye, S12=eye.clone(), S21=eye.clone(), S22=0.5 * eye)
 
         compiled = torch.compile(redhstar, backend="eager", fullgraph=True)
         result = compiled(smat_a, smat_b)
         loss = result.S11.abs().sum()
         loss.backward()
 
-        assert s11.grad is not None
-        assert torch.any(s11.grad != 0)
+        assert s22.grad is not None
+        assert torch.any(s22.grad != 0)
 
 
 class TestUtilsCompile:
