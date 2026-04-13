@@ -15,6 +15,7 @@ import torch
 
 from torchrdit.solver import create_solver
 from torchrdit.constants import Algorithm
+from torchrdit.shapes import ShapeGenerator
 from torchrdit.utils import SMatrix, redhstar, to_diag_util, blockmat2x2
 
 
@@ -67,6 +68,30 @@ class TestRedhstarCompile:
 
         assert result.S11.shape == shape
 
+    def test_redhstar_fullgraph_eager(self):
+        """redhstar should trace as a single graph with eager backend."""
+        M = 18
+        eye = torch.eye(M, dtype=torch.complex64)
+        smat_a = SMatrix(S11=eye.clone(), S12=eye.clone(), S21=eye.clone(), S22=eye.clone())
+        smat_b = SMatrix(S11=0.5 * eye, S12=eye.clone(), S21=eye.clone(), S22=0.5 * eye)
+
+        compiled = torch.compile(redhstar, backend="eager", fullgraph=True)
+        result = compiled(smat_a, smat_b)
+        assert result.S11.shape == (M, M)
+
+    def test_redhstar_near_singular(self):
+        """redhstar should handle near-singular (I - B11 @ A22) via regularization."""
+        M = 18
+        eye = torch.eye(M, dtype=torch.complex64)
+        # A22 ~ inv(B11) makes (I - B11 @ A22) ~ 0
+        smat_a = SMatrix(S11=eye.clone(), S12=eye.clone(), S21=eye.clone(), S22=eye.clone())
+        smat_b = SMatrix(S11=eye.clone(), S12=eye.clone(), S21=eye.clone(), S22=eye.clone())
+
+        result = redhstar(smat_a, smat_b)
+        # Should not raise; result should be finite
+        assert torch.all(torch.isfinite(result.S11.real))
+        assert torch.all(torch.isfinite(result.S12.real))
+
 
 class TestSolveCompile:
     """Verify solve() forward pass is traceable by torch.compile.
@@ -104,6 +129,33 @@ class TestSolveCompile:
             assert result.reflection.shape[0] == 2
         finally:
             simple_solver._solve_structure = original
+
+    def test_solve_backward_gradient_flow(self):
+        """Gradients should flow through the solve path."""
+        from torchrdit.utils import create_material
+
+        solver = create_solver(
+            algorithm=Algorithm.RCWA,
+            lam0=np.array([1.0]),
+            harmonics=[3, 3],
+            grids=[64, 64],
+        )
+        si = create_material(name="Si", permittivity=11.7)
+        solver.add_materials([si])
+        solver.add_layer(material_name="Si", thickness=torch.tensor(0.3), is_homogeneous=False)
+
+        shape_gen = ShapeGenerator.from_solver(solver)
+        mask = shape_gen.generate_circle_mask(center=(0, 0), radius=0.25).to(torch.float32)
+        mask.requires_grad_(True)
+        solver.update_er_with_mask(mask=mask, layer_index=0)
+
+        source = solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+        result = solver.solve(source)
+        loss = result.transmission[0]
+        loss.backward()
+
+        assert mask.grad is not None
+        assert torch.any(mask.grad != 0)
 
 
 class TestUtilsCompile:

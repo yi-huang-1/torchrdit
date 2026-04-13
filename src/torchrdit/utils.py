@@ -488,7 +488,8 @@ def redhstar(smat_a: SMatrix, smat_b: SMatrix, tcomplex: torch.dtype = torch.com
     # Compute (I - B11 @ A22) with adaptive regularization for numerical stability
     temp_mat = identity_mat - torch.matmul(smat_b.S11, smat_a.S22)
 
-    # Base regularization matches historical implementation to preserve accuracy
+    # Static diagonal regularization for numerical stability (compile-safe).
+    # Matches the original eps_val approach; no data-dependent branching.
     eps_val = 1e-12 if tcomplex == torch.complex128 else 1e-8
     temp_mat = temp_mat + eps_val * identity_mat
 

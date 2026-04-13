@@ -96,8 +96,13 @@ class FieldCalculationMixin:
         ate_normal = torch.zeros_like(ate_oblique)
         ate_normal[:, :, 1] = 1.0
 
-        # Select per-source via torch.where (compile-friendly, no data-dependent branch)
-        normal_mask = (torch.abs(theta_batch) < 1e-3).unsqueeze(-1).unsqueeze(-1)  # (B, 1, 1)
+        # Select per-source via torch.where (compile-friendly, no data-dependent branch).
+        # theta_batch is (B,) for scalar-per-source or (B, F) for per-frequency.
+        # Reduce to per-source mask (B,) then unsqueeze for (B, 1, 1) broadcasting.
+        is_normal = torch.abs(theta_batch) < 1e-3
+        if is_normal.dim() > 1:
+            is_normal = is_normal.all(dim=-1)  # per-frequency -> per-source
+        normal_mask = is_normal.unsqueeze(-1).unsqueeze(-1)  # (B, 1, 1)
         ate_batch = torch.where(normal_mask, ate_normal, ate_oblique)
 
         kinc_for_atm = kinc_3d
