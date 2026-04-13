@@ -79,36 +79,28 @@ class FieldCalculationMixin:
         ate_batch = torch.zeros(n_sources, self.n_freqs, 3, dtype=self.tcomplex, device=self.device)
         atm_batch = torch.zeros(n_sources, self.n_freqs, 3, dtype=self.tcomplex, device=self.device)
 
-        # Vectorized normal incidence detection
-        normal_mask = torch.abs(theta_batch) < 1e-3
-
-        # Handle normal incidence cases
-        ate_batch[normal_mask, :, 1] = 1.0  # Default: [0, 1, 0] for y-direction
-
-        # Handle oblique incidence cases
-        oblique_mask = ~normal_mask
-        if oblique_mask.any():
-            # Ensure kinc is 3D (n_sources, n_freqs, 3) for masked indexing
-            if kinc.dim() == 2:
-                kinc_expanded = kinc[None, :, :].expand(n_sources, -1, -1)
-            else:
-                kinc_expanded = kinc
-            kinc_oblique = kinc_expanded[oblique_mask]
-
-            norm_vec = torch.tensor([0.0, 0.0, 1.0], dtype=self.tcomplex, device=self.device)
-            norm_vec_expanded = norm_vec[None, None, :].expand(oblique_mask.sum(), self.n_freqs, -1)
-
-            ate_oblique = torch.cross(kinc_oblique, norm_vec_expanded, dim=2)
-            ate_oblique_norm = torch.norm(ate_oblique, dim=2, keepdim=True)
-            ate_oblique = ate_oblique / (ate_oblique_norm + 1e-10)
-
-            ate_batch[oblique_mask] = ate_oblique
-
-        # Ensure kinc is 3D (n_sources, n_freqs, 3) for atm cross product
+        # Compute TE polarization for all sources uniformly (no data-dependent branching).
+        # Ensure kinc is always 3D: (n_sources, n_freqs, 3)
         if kinc.dim() == 2:
-            kinc_for_atm = kinc[None, :, :].expand(n_sources, -1, -1)
+            kinc_3d = kinc[None, :, :].expand(n_sources, -1, -1)
         else:
-            kinc_for_atm = kinc.expand(n_sources, -1, -1)
+            kinc_3d = kinc.expand(n_sources, -1, -1)
+
+        # Oblique: ate = cross(kinc, z_hat), normalized
+        norm_vec = torch.tensor([0.0, 0.0, 1.0], dtype=self.tcomplex, device=self.device)
+        norm_vec_expanded = norm_vec.reshape(1, 1, 3).expand_as(kinc_3d)
+        ate_oblique = torch.cross(kinc_3d, norm_vec_expanded, dim=2)
+        ate_oblique = ate_oblique / (torch.norm(ate_oblique, dim=2, keepdim=True) + 1e-10)
+
+        # Normal: ate = [0, 1, 0]
+        ate_normal = torch.zeros_like(ate_oblique)
+        ate_normal[:, :, 1] = 1.0
+
+        # Select per-source via torch.where (compile-friendly, no data-dependent branch)
+        normal_mask = (torch.abs(theta_batch) < 1e-3).unsqueeze(-1).unsqueeze(-1)  # (B, 1, 1)
+        ate_batch = torch.where(normal_mask, ate_normal, ate_oblique)
+
+        kinc_for_atm = kinc_3d
 
         atm_batch = torch.cross(ate_batch, kinc_for_atm, dim=2)
         atm_norm = torch.norm(atm_batch, dim=2, keepdim=True)

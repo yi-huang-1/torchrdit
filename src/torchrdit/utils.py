@@ -489,32 +489,13 @@ def redhstar(smat_a: SMatrix, smat_b: SMatrix, tcomplex: torch.dtype = torch.com
     temp_mat = identity_mat - torch.matmul(smat_b.S11, smat_a.S22)
 
     # Base regularization matches historical implementation to preserve accuracy
-    if tcomplex == torch.complex128:
-        eps_val = 1e-12
-        base_eps = torch.finfo(torch.float64).eps
-    else:
-        eps_val = 1e-8
-        base_eps = torch.finfo(torch.float32).eps
+    eps_val = 1e-12 if tcomplex == torch.complex128 else 1e-8
     temp_mat = temp_mat + eps_val * identity_mat
 
-    # Factorization with fallback for remaining singular batches (preserve autograd)
-    LU, pivots, info = torch.linalg.lu_factor_ex(temp_mat, check_errors=False)
-    if torch.any(info > 0):
-        temp_norm = torch.linalg.norm(temp_mat, dim=(-2, -1))
-        extra_scale = torch.clamp(temp_norm, min=1.0) * (1e3 * base_eps)
-        while extra_scale.dim() < temp_mat.dim():
-            extra_scale = extra_scale.unsqueeze(-1)
-        temp_mat = temp_mat + extra_scale * identity_mat
-        LU, pivots, info = torch.linalg.lu_factor_ex(temp_mat, check_errors=False)
-        if torch.any(info > 0):
-            cycle_1_b11 = torch.linalg.solve(temp_mat, smat_b.S11)
-            cycle_1_b12 = torch.linalg.solve(temp_mat, smat_b.S12)
-        else:
-            cycle_1_b11 = torch.linalg.lu_solve(LU, pivots, smat_b.S11)
-            cycle_1_b12 = torch.linalg.lu_solve(LU, pivots, smat_b.S12)
-    else:
-        cycle_1_b11 = torch.linalg.lu_solve(LU, pivots, smat_b.S11)
-        cycle_1_b12 = torch.linalg.lu_solve(LU, pivots, smat_b.S12)
+    # Solve (I - B11 @ A22) X = B for both S11 and S12.
+    # torch.linalg.solve is torch.compile-friendly (no data-dependent branching).
+    cycle_1_b11 = torch.linalg.solve(temp_mat, smat_b.S11)
+    cycle_1_b12 = torch.linalg.solve(temp_mat, smat_b.S12)
 
     # Continue without in-place operations for autodiff compatibility
     cycle_2 = identity_mat + smat_a.S22 @ cycle_1_b11
