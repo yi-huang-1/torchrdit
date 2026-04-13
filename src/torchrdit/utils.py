@@ -490,10 +490,16 @@ def redhstar(smat_a: SMatrix, smat_b: SMatrix, tcomplex: torch.dtype = torch.com
     # Compute (I - B11 @ A22) with adaptive regularization for numerical stability
     temp_mat = identity_mat - torch.matmul(smat_b.S11, smat_a.S22)
 
-    # Static diagonal regularization for numerical stability (compile-safe).
-    # Matches the original eps_val approach; no data-dependent branching.
+    # Two-stage diagonal regularization (compile-safe, no data-dependent branching):
+    # Stage 1: fixed eps for well-conditioned matrices (preserves golden-value accuracy)
+    # Stage 2: norm-scaled machine-eps for ill-conditioned batches (proportional stabilization)
     eps_val = 1e-12 if actual_dtype == torch.complex128 else 1e-8
     temp_mat = temp_mat + eps_val * identity_mat
+    # Norm-adaptive: use a tiny fraction of the matrix norm to stabilize
+    # near-singular batches proportionally. The scale (1e-14) is small enough
+    # to be negligible for well-conditioned matrices but prevents singular failures.
+    temp_norm = torch.linalg.norm(temp_mat, dim=(-2, -1), keepdim=True)
+    temp_mat = temp_mat + (1e-14 * temp_norm) * identity_mat
 
     # Solve (I - B11 @ A22) X = B for both S11 and S12.
     # torch.linalg.solve is torch.compile-friendly (no data-dependent branching).

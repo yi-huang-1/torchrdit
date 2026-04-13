@@ -130,6 +130,19 @@ class TestSolveCompile:
         finally:
             simple_solver._solve_structure = original
 
+    def test_solve_single_source_fullgraph_eager(self, simple_solver):
+        """_solve_structure should trace as a single graph (eager backend)."""
+        source = simple_solver.add_source(theta=0, phi=0, pte=1.0, ptm=0.0)
+
+        original = simple_solver._solve_structure
+        simple_solver._solve_structure = torch.compile(original, backend="eager", fullgraph=True)
+
+        try:
+            result = simple_solver.solve(source)
+            assert result.reflection is not None
+        finally:
+            simple_solver._solve_structure = original
+
     def test_solve_backward_gradient_flow(self):
         """Gradients should flow through the solve path."""
         from torchrdit.utils import create_material
@@ -156,6 +169,22 @@ class TestSolveCompile:
 
         assert mask.grad is not None
         assert torch.any(mask.grad != 0)
+
+    def test_redhstar_compiled_backward(self):
+        """Gradients should flow through compiled redhstar."""
+        M = 18
+        eye = torch.eye(M, dtype=torch.complex64)
+        s11 = (0.5 * eye).requires_grad_(True)
+        smat_a = SMatrix(S11=s11, S12=eye.clone(), S21=eye.clone(), S22=eye.clone())
+        smat_b = SMatrix(S11=eye.clone(), S12=eye.clone(), S21=eye.clone(), S22=0.5 * eye)
+
+        compiled = torch.compile(redhstar, backend="eager", fullgraph=True)
+        result = compiled(smat_a, smat_b)
+        loss = result.S11.abs().sum()
+        loss.backward()
+
+        assert s11.grad is not None
+        assert torch.any(s11.grad != 0)
 
 
 class TestUtilsCompile:

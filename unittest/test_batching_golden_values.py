@@ -143,7 +143,13 @@ class TestBatchedSourcesGolden:
 
 
 class TestGratingGolden:
-    """Non-homogeneous (grating) layer, both algorithms."""
+    """Non-homogeneous (grating) layer, both algorithms.
+
+    Golden values recaptured at commit 716bdbe (P5) after fixing redhstar()
+    to derive identity_mat dtype from the actual tensor (complex128) instead
+    of defaulting to the tcomplex argument (complex64). The shift is ~2.8e-8,
+    consistent with correcting a mixed-precision identity matrix.
+    """
 
     GOLDEN_R = 7.021454152565152e-01
     GOLDEN_T = 2.978545845411916e-01
