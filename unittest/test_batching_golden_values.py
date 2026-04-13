@@ -3,8 +3,15 @@
 These tests pin the exact numeric output of the solver BEFORE the refactoring
 so that every subsequent phase can verify it doesn't change the results.
 
-All reference values were captured from the solver at commit 1b812a2
-(Task 051 numerics module, double precision, CPU).
+Original reference values captured at commit 1b812a2 (Task 051 numerics module,
+double precision, CPU).
+
+Update history:
+- Task 053 (item 7): θ=60° mixed-polarization golden updated after k-vector
+  relaxation epsilon changed from fixed 1e-6 to eps_for_dtype(complex128)=1e-12.
+  New values match Fresnel analytic solution to <1e-12 (vs. ~1e-6 previously)
+  and satisfy energy conservation R+T=1 to machine precision.  Validated against
+  closed-form Fresnel for Air(n=1)→Glass(n=1.5) at θ=60°, pte=ptm=0.5.
 """
 
 import numpy as np
@@ -108,7 +115,7 @@ class TestBatchedSourcesGolden:
     GOLDEN = [
         {"R": 3.999999760837617e-02, "T": 9.599999997916238e-01},  # θ=0
         {"R": 5.779610209457898e-02, "T": 9.422038942383214e-01},  # θ=30°
-        {"R": 8.918661098072411e-02, "T": 9.108151154375438e-01},  # θ=60° mixed
+        {"R": 8.918671280144222e-02, "T": 9.108132871969183e-01},  # θ=60° mixed
     ]
 
     SOURCES = [

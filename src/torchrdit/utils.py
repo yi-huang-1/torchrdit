@@ -440,6 +440,17 @@ def init_smatrix(shape: Tuple, dtype: torch.dtype, device: Union[str, torch.devi
     )
 
 
+def _redhstar_reg_eps(dtype: torch.dtype) -> float:
+    """Fixed diagonal regularization epsilon for the Redheffer star product.
+
+    Tighter than ``eps_for_dtype`` because it perturbs a near-identity matrix
+    ``(I - B11 @ A22)`` where a larger perturbation would bias the result.
+    """
+    if dtype in (torch.complex128, torch.float64):
+        return 1e-12
+    return 1e-8  # complex64 / float32
+
+
 def redhstar(smat_a: SMatrix, smat_b: SMatrix, tcomplex: torch.dtype = torch.complex64) -> SMatrix:
     """Compute the Redheffer star product of two scattering matrices (optimized version).
 
@@ -493,7 +504,7 @@ def redhstar(smat_a: SMatrix, smat_b: SMatrix, tcomplex: torch.dtype = torch.com
     # Two-stage diagonal regularization (compile-safe, no data-dependent branching):
     # Stage 1: fixed eps for well-conditioned matrices (preserves golden-value accuracy)
     # Stage 2: norm-scaled machine-eps for ill-conditioned batches (proportional stabilization)
-    eps_val = 1e-12 if actual_dtype == torch.complex128 else 1e-8
+    eps_val = _redhstar_reg_eps(actual_dtype)
     temp_mat = temp_mat + eps_val * identity_mat
     # Norm-adaptive: use a tiny fraction of the matrix norm to stabilize
     # near-singular batches proportionally. The scale (1e-14) is small enough

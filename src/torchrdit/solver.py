@@ -126,7 +126,7 @@ from .field_calculation import FieldCalculationMixin
 from .layer_processing import LayerProcessingMixin
 from .constants import Algorithm, Precision
 from .materials import MaterialClass
-from .numerics import safe_kz_reciprocal, softplus_floor, softplus_magnitude_floor
+from .numerics import eps_for_dtype, safe_kz_reciprocal, softplus_floor, softplus_magnitude_floor
 from .results import SolverResults, FieldComponents, ScatteringMatrix, WaveVectors
 
 # BatchedSolverResults functionality is now integrated into SolverResults
@@ -1164,7 +1164,7 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin, LayerProcessingMixin, FieldC
         ky_0 = ky_0.to(dtype=self.tcomplex)
 
         # Apply numerical relaxation for stability
-        epsilon = 1e-6
+        epsilon = eps_for_dtype(self.tcomplex)
         kx_0, ky_0 = self._apply_numerical_relaxation(kx_0, ky_0, epsilon)
 
         # Calculate kz for reflection and transmission regions

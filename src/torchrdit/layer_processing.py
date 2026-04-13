@@ -15,7 +15,7 @@ from torch.linalg import solve as tsolve
 
 from .cell import CellType
 from .materials import MaterialClass
-from .numerics import safe_kz_reciprocal
+from .numerics import eps_for_dtype, safe_kz_reciprocal
 from .utils import SMatrix, blockmat2x2, redhstar, to_diag_util
 
 
@@ -230,8 +230,8 @@ class LayerProcessingMixin:
                 )
             else:
                 # Get non-dispersive material properties
-                toeplitz_er = self._matlib[layer.material_name].er.detach().clone().to(self.device)
-                toeplitz_ur = self._matlib[layer.material_name].ur.detach().clone().to(self.device)
+                toeplitz_er = self._matlib[layer.material_name].er.detach().to(self.device)
+                toeplitz_ur = self._matlib[layer.material_name].ur.detach().to(self.device)
 
                 # Calculate common values
                 toep_ur_er = toeplitz_ur * toeplitz_er
@@ -511,7 +511,7 @@ class LayerProcessingMixin:
 
         tx_mag_sq = (tx_conj * tx).real
         ty_mag_sq = (ty_conj * ty).real
-        denom = torch.clamp(tx_mag_sq + ty_mag_sq, min=1e-12)
+        denom = torch.clamp(tx_mag_sq + ty_mag_sq, min=eps_for_dtype(self.tcomplex) ** 2)
         inv_denom = denom.reciprocal()
         inv_denom_complex = inv_denom.to(dtype=self.tcomplex)
 
@@ -614,17 +614,17 @@ class LayerProcessingMixin:
                     ret_mat = (
                         self._matlib[material_name]
                         .er.detach()
-                        .clone()
-                        .unsqueeze(1)
-                        .unsqueeze(1)
-                        .repeat(1, self.grids[0], self.grids[1])
                         .to(self.device)
                         .to(self.tcomplex)
+                        .reshape(-1, 1, 1)
+                        .expand(-1, self.grids[0], self.grids[1])
                     )
                 elif param == "ur":
-                    param_val = self._matlib[material_name].ur.detach().clone()
-                    ret_mat = param_val * torch.ones(
-                        size=(self.grids[0], self.grids[1]), dtype=self.tcomplex, device=self.device
+                    param_val = self._matlib[material_name].ur.detach()
+                    ret_mat = torch.full(
+                        size=(self.grids[0], self.grids[1]),
+                        fill_value=param_val.to(self.tcomplex).item(),
+                        dtype=self.tcomplex, device=self.device,
                     )
                 else:
                     raise ValueError(f"Input parameter [{param}] is illeagal.")
@@ -632,14 +632,16 @@ class LayerProcessingMixin:
             else:
                 material_name = self.layer_manager.layers[layer_index].material_name
                 if param == "er":
-                    param_val = self._matlib[material_name].er.detach().clone()
+                    param_val = self._matlib[material_name].er.detach()
                 elif param == "ur":
-                    param_val = self._matlib[material_name].ur.detach().clone()
+                    param_val = self._matlib[material_name].ur.detach()
                 else:
                     raise ValueError(f"Input parameter [{param}] is illeagal.")
 
-                ret_mat = param_val * torch.ones(
-                    size=(self.grids[0], self.grids[1]), dtype=self.tcomplex, device=self.device
+                ret_mat = torch.full(
+                    size=(self.grids[0], self.grids[1]),
+                    fill_value=param_val.to(self.tcomplex).item(),
+                    dtype=self.tcomplex, device=self.device,
                 )
         else:
             raise ValueError("The index exceeds the max layer number.")
@@ -661,7 +663,7 @@ class LayerProcessingMixin:
             ret = mat[:, None, None]
         elif mat.ndim == 2:
             # The input matrix with dimension (n_harmonics_squared, n_harmonics_squared)
-            ret = mat.unsqueeze(0).repeat(self.n_freqs, 1, 1)
+            ret = mat.unsqueeze(0).expand(self.n_freqs, -1, -1)
         else:
             raise RuntimeError("Not Listed in the Case")
 
