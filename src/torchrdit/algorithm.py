@@ -176,7 +176,7 @@ class RCWAAlgorithm(SolverAlgorithm):
 
         mat_v_i = q_mat_i @ mat_w_i @ inv_dmat_lam_i
         # Clamp exponent to prevent overflow in matrix_exp for large eigenvalues
-        exp_arg = -torch.sqrt(mat_lam_i) * k_0[:, None] * layer_thickness
+        exp_arg = -torch.sqrt(mat_lam_i) * k_0[..., None] * layer_thickness
         mat_x_i = torch.linalg.matrix_exp(to_diag_util(clamp_exp_arg(exp_arg), harmonics))
 
         # Calculate Layer Scattering Matrix
@@ -318,28 +318,21 @@ class RDITAlgorithm(SolverAlgorithm):
         # Pre-allocate all matrices to avoid repeated allocations
         device = p_mat_i.device
         dtype = p_mat_i.dtype
-        batch_size = k_0.shape[0]
         matrix_size = 2 * harmonics_0_tims_1
+        full_shape = p_mat_i.shape[:-2] + (matrix_size, matrix_size)  # (..., M, M)
 
-        # smat_layer = {}
+        # Construct T matrix — k_0 may be 1D (B*F,) or 2D (B, F)
+        delta_h = k_0[..., None, None] * layer_thickness / 2.0
 
-        # Construct T matrix
-        delta_h = k_0[:, None, None] * layer_thickness / 2.0
-
-        # Use torch.empty for faster allocation (no initialization)
-        tmat_a_i = torch.empty((batch_size, matrix_size, matrix_size), dtype=dtype, device=device)
-        tmat_b_i = torch.zeros((batch_size, matrix_size, matrix_size), dtype=dtype, device=device)
-        tmat_c_i = torch.zeros((batch_size, matrix_size, matrix_size), dtype=dtype, device=device)
-        tmat_d_i = torch.empty((batch_size, matrix_size, matrix_size), dtype=dtype, device=device)
-
-        # Initialize identity matrices efficiently
         eye = torch.eye(matrix_size, dtype=dtype, device=device)
-        tmat_a_i[:] = eye
-        tmat_d_i[:] = eye
+        tmat_a_i = torch.zeros(full_shape, dtype=dtype, device=device) + eye
+        tmat_b_i = torch.zeros(full_shape, dtype=dtype, device=device)
+        tmat_c_i = torch.zeros(full_shape, dtype=dtype, device=device)
+        tmat_d_i = torch.zeros(full_shape, dtype=dtype, device=device) + eye
 
         # Vectorized computation using cumulative products
-        p_fcoef = eye.unsqueeze(0).expand(batch_size, -1, -1).clone()
-        q_fcoef = eye.unsqueeze(0).expand(batch_size, -1, -1).clone()
+        p_fcoef = (torch.zeros(full_shape, dtype=dtype, device=device) + eye).clone()
+        q_fcoef = (torch.zeros(full_shape, dtype=dtype, device=device) + eye).clone()
 
         for order in range(1, self._rdit_order + 1):
             factorial = self._factorial_cache.get(order, math.factorial(order))

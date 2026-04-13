@@ -1476,36 +1476,17 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin):
                     ]
                 )
 
-            # Vectorized non-homogeneous layer processing
-            # Both RCWA and R-DIT algorithms support batch dimensions in the first axis
-
-            # Flatten (n_sources, n_freqs, M, N) → (n_sources*n_freqs, M, N) for algorithm processing
-            original_shape = p_mat_i.shape
-            batch_size = n_sources * p_mat_i.shape[1]
-            matrix_shape = p_mat_i.shape[2:]
-
-            p_mat_i_flat = p_mat_i.reshape(batch_size, *matrix_shape)
-            q_mat_i_flat = q_mat_i.reshape(batch_size, *matrix_shape)
-            mat_w0_flat = matrices_batched["mat_w0"].reshape(batch_size, *matrix_shape)
-            mat_v0_flat = matrices_batched["mat_v0"].reshape(batch_size, *matrix_shape)
-            k_0_flat = self.k_0.unsqueeze(0).expand(n_sources, -1).flatten()
+            # Non-homogeneous layer — algorithms accept arbitrary leading batch dims
+            k_0_batched = self.k_0.unsqueeze(0).expand(n_sources, -1)  # (B, F)
 
             smat_layer = self._solve_nonhomo_layer(
                 layer_thickness=slice_thickness,
-                p_mat_i=p_mat_i_flat,
-                q_mat_i=q_mat_i_flat,
-                mat_w0=mat_w0_flat,
-                mat_v0=mat_v0_flat,
+                p_mat_i=p_mat_i,                       # (B, F, M, N)
+                q_mat_i=q_mat_i,                       # (B, F, M, N)
+                mat_w0=matrices_batched["mat_w0"],     # (B, F, M, N)
+                mat_v0=matrices_batched["mat_v0"],     # (B, F, M, N)
                 harmonics=self.harmonics,
-                k_0=k_0_flat,
-            )
-
-            # Reshape back to (n_sources, n_freqs, M, M)
-            smat_layer = SMatrix(
-                S11=smat_layer.S11.reshape(original_shape[:2] + smat_layer.S11.shape[1:]),
-                S12=smat_layer.S12.reshape(original_shape[:2] + smat_layer.S12.shape[1:]),
-                S21=smat_layer.S21.reshape(original_shape[:2] + smat_layer.S21.shape[1:]),
-                S22=smat_layer.S22.reshape(original_shape[:2] + smat_layer.S22.shape[1:]),
+                k_0=k_0_batched,                       # (B, F)
             )
 
         # Handle homogeneous layers
