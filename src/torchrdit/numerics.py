@@ -119,15 +119,64 @@ def safe_kz_reciprocal(kz: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
     incidence certain kz components approach zero; the softplus floor
     prevents divergence while keeping the operation differentiable.
 
+    Uses a **hybrid relative + absolute floor** per (source, frequency)
+    block so that protection adapts to problem scale:
+
+    - ``floor = max(eps_abs, eps_rel * max|Re(kz)|)`` computed over the
+      harmonics dimension (last axis).
+    - The magnitude protection is applied in normalized coordinates
+      ``x = |kz| / floor`` using a fixed-shape softplus, so the transition
+      band remains ``O(floor)`` without a dtype-dependent ``beta`` cap.
+
+    This avoids the bias of a fixed floor on near-grazing propagating
+    modes while still preventing NaN/Inf at true singularities.
+
     Args:
-        kz: Complex tensor of kz values (any shape).
+        kz: Complex tensor of kz values, shape ``(..., H)`` where the
+            last dimension is harmonics.
         dtype: The complex dtype used by the solver (determines epsilon).
 
     Returns:
-        ``1 / (1j * kz_protected)`` where ``|kz_protected| >= eps``.
+        ``1 / (1j * kz_protected)`` where the protection is near-identity
+        for ``|kz| >> floor`` and bounded near ``kz = 0``.
     """
-    eps = eps_for_dtype(dtype)
-    kz_safe = softplus_magnitude_floor(kz, min_magnitude=eps)
+    eps_abs = eps_for_dtype(dtype)
+    eps_rel = 1e-4
+
+    # Per-block scale: max |Re(kz)| over harmonics.
+    # Using Re(kz) excludes evanescent modes (purely imaginary, |kz| can
+    # be huge) which would inflate the floor and bias near-grazing
+    # propagating modes in the same block.  When all modes are evanescent
+    # (Re(kz) ≈ 0), scale → 0 and we fall back to eps_abs.
+    scale = kz.real.abs().amax(dim=-1, keepdim=True)
+
+    # Hybrid floor: absolute minimum + relative scaling
+    floor = torch.clamp_min(eps_rel * scale, eps_abs)
+
+    # Normalized softplus protection in x = |kz| / floor coordinates.
+    # Keeping alpha fixed makes the transition width proportional to floor
+    # without needing to clamp beta = alpha / floor in fp64.
+    kz_abs = torch.abs(kz)
+    alpha = 5.0
+    x = kz_abs / floor
+    u = alpha * (1.0 - x)
+    # Clamp the dimensionless coordinate for stable log1p(exp(...)).
+    u_safe = torch.clamp(u, min=-20.0, max=20.0)
+    protection = torch.where(
+        u > 20.0,
+        floor * (1.0 - x),  # deep protection zone: softplus ≈ identity
+        floor * (torch.log1p(torch.exp(u_safe)) / alpha),
+    )
+
+    # Phase direction: preserve phase of kz for non-tiny values
+    phase_threshold = floor * 0.01
+    direction = torch.where(
+        kz_abs > phase_threshold,
+        kz / (kz_abs + 1e-30),
+        torch.ones_like(kz),
+    )
+    kz_safe = kz + protection * direction
+
     return 1.0 / (1j * kz_safe)
 
 

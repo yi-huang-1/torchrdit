@@ -481,6 +481,12 @@ class TestUnifiedSolverResults(unittest.TestCase):
             S21=torch.randn(self.n_freqs, 2*self.n_harmonics, 2*self.n_harmonics, dtype=torch.complex64),
             S22=torch.randn(self.n_freqs, 2*self.n_harmonics, 2*self.n_harmonics, dtype=torch.complex64)
         )
+        self.batched_structure_matrix = ScatteringMatrix(
+            S11=torch.randn(self.n_sources, self.n_freqs, 2*self.n_harmonics, 2*self.n_harmonics, dtype=torch.complex64),
+            S12=torch.randn(self.n_sources, self.n_freqs, 2*self.n_harmonics, 2*self.n_harmonics, dtype=torch.complex64),
+            S21=torch.randn(self.n_sources, self.n_freqs, 2*self.n_harmonics, 2*self.n_harmonics, dtype=torch.complex64),
+            S22=torch.randn(self.n_sources, self.n_freqs, 2*self.n_harmonics, 2*self.n_harmonics, dtype=torch.complex64),
+        )
 
         self.wave_vectors = WaveVectors(
             kx=torch.randn(self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
@@ -510,6 +516,36 @@ class TestUnifiedSolverResults(unittest.TestCase):
             {"theta": 0.5, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
             {"theta": 1.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
         ]
+
+    def _make_batched_results_with_structure_matrices(self):
+        per_source_raw = []
+        for i in range(self.n_sources):
+            per_source_raw.append({
+                "REF": self.batched_reflection[i],
+                "TRN": self.batched_transmission[i],
+                "smat_structure": ScatteringMatrix(
+                    S11=self.batched_structure_matrix.S11[i],
+                    S12=self.batched_structure_matrix.S12[i],
+                    S21=self.batched_structure_matrix.S21[i],
+                    S22=self.batched_structure_matrix.S22[i],
+                ),
+            })
+
+        return SolverResults(
+            reflection=self.batched_reflection,
+            transmission=self.batched_transmission,
+            reflection_diffraction=self.batched_reflection_diffraction,
+            transmission_diffraction=self.batched_transmission_diffraction,
+            reflection_field=self.batched_reflection_field,
+            transmission_field=self.batched_transmission_field,
+            structure_matrix=self.structure_matrix,
+            _structure_matrix_batched=self.batched_structure_matrix,
+            wave_vectors=self.batched_wave_vectors,
+            raw_data={"_per_source": per_source_raw},
+            n_sources=self.n_sources,
+            source_parameters=self.source_parameters,
+            loss=self.batched_loss,
+        )
 
     def test_single_source_creation(self):
         """Test creating unified SolverResults for single source (backward compatibility)."""
@@ -824,6 +860,26 @@ class TestUnifiedSolverResults(unittest.TestCase):
         theta_vals, trans_vals = results.get_parameter_sweep_data('theta', 'transmission')
         self.assertEqual(theta_vals.shape, (1,))
         self.assertEqual(trans_vals.shape, (1,))
+
+    def test_batched_root_structure_matrix_keeps_legacy_shape(self):
+        results = self._make_batched_results_with_structure_matrices()
+        self.assertEqual(results.structure_matrix.S11.shape, self.structure_matrix.S11.shape)
+        self.assertTrue(torch.equal(results.structure_matrix.S11, self.structure_matrix.S11))
+
+    def test_batched_indexing_uses_per_source_structure_matrix(self):
+        results = self._make_batched_results_with_structure_matrices()
+        result1 = results[1]
+        self.assertTrue(torch.equal(result1.structure_matrix.S11, self.batched_structure_matrix.S11[1]))
+        self.assertTrue(torch.equal(result1.structure_matrix.S11, result1.raw_data["smat_structure"].S11))
+        self.assertFalse(torch.equal(results[0].structure_matrix.S11, results[1].structure_matrix.S11))
+
+    def test_batched_slice_preserves_structure_matrix_and_raw_data(self):
+        results = self._make_batched_results_with_structure_matrices()
+        subset = results[1:2]
+        self.assertEqual(subset.structure_matrix.S11.shape, self.structure_matrix.S11.shape)
+        self.assertTrue(torch.equal(subset.structure_matrix.S11, self.batched_structure_matrix.S11[1]))
+        self.assertTrue(torch.equal(subset[0].structure_matrix.S11, results[1].structure_matrix.S11))
+        self.assertTrue(torch.equal(subset[0].to_dict()["REF"], results[1].to_dict()["REF"]))
 
 
 class TestBatchedDiffractionMethods(unittest.TestCase):

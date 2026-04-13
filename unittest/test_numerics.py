@@ -199,6 +199,80 @@ class TestSafeKzReciprocal:
         result = safe_kz_reciprocal(kz, dtype=dtype)
         assert torch.isfinite(result.real).all()
 
+    def test_near_grazing_fresnel_accuracy(self):
+        """Protection must not bias kz at 89° — the Fresnel regime.
+
+        At 89° incidence, kz₀ = cos(89°) ≈ 0.01745 is physically valid.
+        The protection floor should be far below this value, so the
+        reciprocal matches the unprotected analytic result to high precision.
+        """
+        import math
+        theta_deg = 89.0
+        cos_theta = math.cos(math.radians(theta_deg))
+        # Simulate a (1, 1, H) shaped kz with zeroth order + evanescent modes
+        kz = torch.tensor([[[cos_theta + 0j, 0.5 + 0j, 0.0 + 1.5j]]], dtype=torch.complex128)
+        result = safe_kz_reciprocal(kz, dtype=torch.complex128)
+        expected = 1.0 / (1j * kz)
+        # Zeroth-order mode (index 0) must match unprotected value
+        torch.testing.assert_close(
+            result[0, 0, 0], expected[0, 0, 0], atol=1e-10, rtol=1e-8
+        )
+
+    def test_propagating_modes_identity(self):
+        """For clearly non-singular propagating modes, protection ≈ identity.
+
+        All kz values here are well above any reasonable floor, so the
+        reciprocal must match bare 1/(1j*kz) to machine precision.
+        """
+        kz = torch.tensor([[0.3 + 0j, 0.7 + 0j, 1.0 + 0j, 0.5 + 0.1j]], dtype=torch.complex128)
+        result = safe_kz_reciprocal(kz, dtype=torch.complex128)
+        expected = 1.0 / (1j * kz)
+        torch.testing.assert_close(result, expected, atol=1e-12, rtol=1e-10)
+
+    def test_large_evanescent_does_not_inflate_floor(self):
+        """Evanescent modes with huge |kz| must not bias propagating modes.
+
+        In high-harmonic gratings, evanescent orders can have |kz| ~ 1e3
+        (purely imaginary). The scale must use Re(kz) so the floor stays
+        proportional to propagating modes, not evanescent ones.
+        """
+        import math
+        cos89 = math.cos(math.radians(89.0))
+        # Propagating near-grazing mode + large evanescent modes
+        kz = torch.tensor([[cos89 + 0j, 0.5 + 0j, 0.0 + 500j, 0.0 + 1000j]], dtype=torch.complex128)
+        result = safe_kz_reciprocal(kz, dtype=torch.complex128)
+        expected = 1.0 / (1j * kz)
+        # The propagating mode at cos(89°) must match unprotected value
+        torch.testing.assert_close(
+            result[0, 0], expected[0, 0], atol=1e-10, rtol=1e-8
+        )
+        # The other propagating mode too
+        torch.testing.assert_close(
+            result[0, 1], expected[0, 1], atol=1e-12, rtol=1e-10
+        )
+
+    @pytest.mark.parametrize("value", [1e-10, 1e-9, 1e-8])
+    def test_small_nonzero_fp64_modes_are_near_identity(self, value):
+        """Small-but-nonzero fp64 kz values should not be flattened by protection."""
+        kz = torch.tensor([value + 0j], dtype=torch.complex128)
+        result = safe_kz_reciprocal(kz, dtype=torch.complex128)
+        expected = 1.0 / (1j * kz)
+        torch.testing.assert_close(result, expected, atol=1e-12, rtol=1e-6)
+
+    def test_wood_anomaly_prevents_nan(self):
+        """True kz=0 (Wood anomaly) must not produce NaN/Inf.
+
+        When one or more harmonics have exactly kz=0, the reciprocal
+        is protected by the hybrid floor while other modes stay accurate.
+        """
+        # Mix of zero, near-zero, and normal kz values
+        kz = torch.tensor([[0.0 + 0j, 1e-18 + 0j, 0.8 + 0j, 0.0 + 0.5j]], dtype=torch.complex128)
+        result = safe_kz_reciprocal(kz, dtype=torch.complex128)
+        assert torch.isfinite(result.real).all() and torch.isfinite(result.imag).all()
+        # The healthy mode (0.8) should still match analytic value
+        expected_healthy = 1.0 / (1j * torch.tensor(0.8 + 0j, dtype=torch.complex128))
+        torch.testing.assert_close(result[0, 2], expected_healthy, atol=1e-12, rtol=1e-10)
+
 
 # ---------------------------------------------------------------------------
 # safe_sqrt_reciprocal

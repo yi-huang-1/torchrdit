@@ -1441,14 +1441,23 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin, LayerProcessingMixin, FieldC
             else:
                 fmt_fields[key] = None
 
+        # Detach smat_global once.  The full source-major tensor is stored in an
+        # internal cache for correct per-source indexing, while the public root
+        # structure_matrix keeps the historical (F, M, M) contract.
+        smat_det = ScatteringMatrix(
+            S11=smat_global.S11.detach(),
+            S12=smat_global.S12.detach(),
+            S21=smat_global.S21.detach(),
+            S22=smat_global.S22.detach(),
+        )
+
         # Per-source raw_data — full legacy schema for backward compat
         per_source_raw = []
         for i in range(n_sources):
+            # Views into the shared detached tensor — no extra memory
             smat_i = SMatrix(
-                S11=smat_global.S11[i].detach().clone(),
-                S12=smat_global.S12[i].detach().clone(),
-                S21=smat_global.S21[i].detach().clone(),
-                S22=smat_global.S22[i].detach().clone(),
+                S11=smat_det.S11[i], S12=smat_det.S12[i],
+                S21=smat_det.S21[i], S22=smat_det.S22[i],
             )
 
             def _get(key):
@@ -1491,9 +1500,10 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin, LayerProcessingMixin, FieldC
                 mag_x=_fmt("trn_u_x"), mag_y=_fmt("trn_u_y"), mag_z=_fmt("trn_u_z"),
             ),
             structure_matrix=ScatteringMatrix(
-                S11=smat_global.S11[0], S12=smat_global.S12[0],
-                S21=smat_global.S21[0], S22=smat_global.S22[0],
+                S11=smat_det.S11[0], S12=smat_det.S12[0],
+                S21=smat_det.S21[0], S22=smat_det.S22[0],
             ),
+            _structure_matrix_batched=smat_det,
             wave_vectors=WaveVectors(
                 kx=kx_0, ky=ky_0,
                 kinc=self.kinc, kzref=matrices["mat_kz_ref"], kztrn=matrices["mat_kz_trn"],

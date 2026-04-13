@@ -317,6 +317,7 @@ class SolverResults:
 
     # Raw dictionary for backward compatibility
     raw_data: Dict = field(default_factory=dict)
+    _structure_matrix_batched: Optional[ScatteringMatrix] = field(default=None, repr=False)
 
     # Field data
     mat_v_ref: Optional[torch.Tensor] = None  # V matrix for reflection region (magnetic field mode matrix)
@@ -379,6 +380,26 @@ class SolverResults:
             return self.wave_vectors[source_idx]
         return self.wave_vectors
 
+    @staticmethod
+    def _slice_scattering_matrix(matrix: ScatteringMatrix, idx: Union[int, slice]) -> ScatteringMatrix:
+        """Index or slice a source-major scattering matrix."""
+        return ScatteringMatrix(
+            S11=matrix.S11[idx],
+            S12=matrix.S12[idx],
+            S21=matrix.S21[idx],
+            S22=matrix.S22[idx],
+        )
+
+    @staticmethod
+    def _root_scattering_matrix(matrix: ScatteringMatrix) -> ScatteringMatrix:
+        """Return the public root-view scattering matrix for a batched result."""
+        return ScatteringMatrix(
+            S11=matrix.S11[0],
+            S12=matrix.S12[0],
+            S21=matrix.S21[0],
+            S22=matrix.S22[0],
+        )
+
     def __len__(self) -> int:
         """Return number of sources in the results."""
         return self.n_sources
@@ -421,10 +442,35 @@ class SolverResults:
             if not indices:
                 raise ValueError("Empty slice")
             n = len(indices)
-            raw = {}
+            per_source = (
+                self.raw_data.get("_per_source")
+                if isinstance(self.raw_data, dict)
+                else None
+            )
+            if per_source is not None:
+                raw = {"_per_source": [per_source[i] for i in indices]}
+            else:
+                raw = self.raw_data if isinstance(self.raw_data, dict) else {}
             src_params = [self.source_parameters[i] for i in indices] if self.source_parameters else None
         else:
             raise TypeError(f"Invalid index type: {type(idx)}")
+
+        sm = self.structure_matrix
+        sm_batched = None
+        if self.is_batched:
+            sm_batched = self._structure_matrix_batched
+            if sm_batched is None and sm is not None and sm.S11.dim() == 4:
+                sm_batched = sm
+
+        if sm_batched is not None:
+            sm_selected = self._slice_scattering_matrix(sm_batched, idx)
+            if isinstance(idx, int):
+                sm = sm_selected
+            else:
+                sm = self._root_scattering_matrix(sm_selected)
+                sm_batched = sm_selected
+        else:
+            sm_batched = None
 
         return SolverResults(
             reflection=self.reflection[idx],
@@ -433,9 +479,10 @@ class SolverResults:
             transmission_diffraction=self.transmission_diffraction[idx],
             reflection_field=self.reflection_field[idx],
             transmission_field=self.transmission_field[idx],
-            structure_matrix=self.structure_matrix,
+            structure_matrix=sm,
             wave_vectors=self.wave_vectors[idx] if self._wave_vectors_batched else self.wave_vectors,
             raw_data=raw,
+            _structure_matrix_batched=sm_batched,
             lattice_t1=self.lattice_t1,
             lattice_t2=self.lattice_t2,
             default_grids=self.default_grids,
