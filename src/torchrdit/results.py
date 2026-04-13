@@ -354,17 +354,22 @@ class SolverResults:
         """
         return (self.reflection_field.x.shape[-2], self.reflection_field.x.shape[-1])
 
+    @property
+    def _wave_vectors_batched(self) -> bool:
+        """True if wave_vectors tensors carry a leading source dimension."""
+        return self.wave_vectors.kinc.dim() >= 3
+
     def _resolve_wave_vectors(self, source_idx: Optional[int] = None) -> "WaveVectors":
         """Resolve wave vectors for a specific source.
 
         Args:
             source_idx: Source index for batched results.
-                Required when is_batched is True.
+                Required when wave_vectors are source-major.
 
         Returns:
             WaveVectors for the specified source (unbatched tensors).
         """
-        if self.is_batched:
+        if self._wave_vectors_batched:
             if source_idx is None:
                 raise ValueError(
                     "source_idx is required for batched results. "
@@ -422,7 +427,7 @@ class SolverResults:
             reflection_field=self.reflection_field[idx],
             transmission_field=self.transmission_field[idx],
             structure_matrix=self.structure_matrix,
-            wave_vectors=self.wave_vectors[idx],
+            wave_vectors=self.wave_vectors[idx] if self._wave_vectors_batched else self.wave_vectors,
             raw_data=raw,
             lattice_t1=self.lattice_t1,
             lattice_t2=self.lattice_t2,
@@ -1141,8 +1146,8 @@ class SolverResults:
         best_idx = results.find_optimal_source('min_reflection', frequency_idx=0)
         ```
         """
-        if self.n_sources <= 1:
-            raise ValueError("find_optimal_source() is only available for batched results (n_sources > 1)")
+        if not self.is_batched:
+            raise ValueError("find_optimal_source() is only available for batched results")
 
         if frequency_idx is None:
             # Use average over frequencies
@@ -1199,8 +1204,8 @@ class SolverResults:
         plt.ylabel('Transmission')
         ```
         """
-        if self.n_sources <= 1:
-            raise ValueError("get_parameter_sweep_data() is only available for batched results (n_sources > 1)")
+        if not self.is_batched:
+            raise ValueError("get_parameter_sweep_data() is only available for batched results")
 
         if self.source_parameters is None:
             raise ValueError("Source parameters not available. Ensure solver stores source_parameters in results.")

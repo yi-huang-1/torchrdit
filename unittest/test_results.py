@@ -748,6 +748,31 @@ class TestUnifiedSolverResults(unittest.TestCase):
         self.assertEqual(results.n_sources, 1)
         self.assertFalse(results.is_batched)
 
+    def test_single_element_list_batched_helpers(self):
+        """solve([single_source]) must support find_optimal_source/get_parameter_sweep_data."""
+        # Simulate solve([source]) — n_sources=1 but tensors are 2D (batched)
+        results = SolverResults(
+            reflection=self.batched_reflection[:1],  # (1, n_freqs)
+            transmission=self.batched_transmission[:1],
+            reflection_diffraction=self.batched_reflection_diffraction[:1],
+            transmission_diffraction=self.batched_transmission_diffraction[:1],
+            reflection_field=self.batched_reflection_field[:1],
+            transmission_field=self.batched_transmission_field[:1],
+            structure_matrix=self.structure_matrix,
+            wave_vectors=self.batched_wave_vectors[:1],
+            n_sources=1,
+            source_parameters=[self.source_parameters[0]],
+            loss=(1.0 - self.batched_reflection - self.batched_transmission)[:1],
+        )
+        self.assertTrue(results.is_batched)
+        self.assertEqual(results.n_sources, 1)
+        # These must not raise
+        best_idx = results.find_optimal_source('max_transmission')
+        self.assertEqual(best_idx, 0)
+        theta_vals, trans_vals = results.get_parameter_sweep_data('theta', 'transmission')
+        self.assertEqual(theta_vals.shape, (1,))
+        self.assertEqual(trans_vals.shape, (1,))
+
 
 class TestBatchedDiffractionMethods(unittest.TestCase):
     def setUp(self):
@@ -981,6 +1006,35 @@ class TestBatchedDiffractionMethods(unittest.TestCase):
         self.assertTrue(torch.equal(resolved.kinc, wave_vectors.kinc[0]))
         with self.assertRaisesRegex(ValueError, "source_idx"):
             results._resolve_wave_vectors()
+
+    def test_shared_wave_vectors_indexing(self):
+        """Batched results with shared (unbatched) WaveVectors must not mis-slice."""
+        results = self._make_results(batched=True, wave_vectors=self.single_wave_vectors)
+        # Indexing should preserve shared wave_vectors, not index into them
+        r0 = results[0]
+        self.assertIs(r0.wave_vectors, self.single_wave_vectors)
+        r1 = results[1]
+        self.assertIs(r1.wave_vectors, self.single_wave_vectors)
+        # Slicing should also preserve
+        subset = results[0:2]
+        self.assertIs(subset.wave_vectors, self.single_wave_vectors)
+
+    def test_shared_wave_vectors_iteration(self):
+        """Iterating batched results with shared WaveVectors must not crash."""
+        results = self._make_results(batched=True, wave_vectors=self.single_wave_vectors)
+        items = list(results)
+        self.assertEqual(len(items), self.n_sources)
+        for item in items:
+            self.assertIs(item.wave_vectors, self.single_wave_vectors)
+
+    def test_shared_wave_vectors_resolve_no_source_idx(self):
+        """Shared wave_vectors should not require source_idx."""
+        results = self._make_results(batched=True, wave_vectors=self.single_wave_vectors)
+        # Shared wave_vectors have no source dim, so no source_idx needed
+        resolved = results._resolve_wave_vectors()
+        self.assertIs(resolved, self.single_wave_vectors)
+        resolved_with_idx = results._resolve_wave_vectors(source_idx=0)
+        self.assertIs(resolved_with_idx, self.single_wave_vectors)
 
 
 if __name__ == '__main__':
