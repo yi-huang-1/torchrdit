@@ -142,6 +142,10 @@ For more detailed documentation, please visit our [Wiki](https://github.com/yi-h
 
 - [Eigendecomposition-free inverse design of meta-optics devices](https://opg.optica.org/oe/fulltext.cfm?uri=oe-32-8-13986&id=548527)
 - [Inverse Design of Photonic Structures Using Automatic Differentiable Rigorous Diffraction Interface Theory](https://opg.optica.org/abstract.cfm?uri=CLEO_AT-2023-JTu2A.119)
+- [Differentiable inverse design of free-form meta-optics using multiplicative filter network](https://ieeexplore.ieee.org/document/10580810)
+- [A 3D-Printed Millimeter-Wave Free-Form Metasurface Based on Automatic Differentiable Inverse Design](https://ieeexplore.ieee.org/document/10600252)
+- [MCP-enabled LLM for meta-optics inverse design: leveraging differentiable solver without LLM expertise](https://doi.org/10.1515/nanoph-2025-0507)
+- [A Self-Evolving Agentic Framework for Metasurface Inverse Design](https://arxiv.org/abs/2604.01480)
 
 ---
 
