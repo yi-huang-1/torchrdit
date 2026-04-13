@@ -4,8 +4,6 @@ Connects the global scattering matrix to reflection and transmission
 regions. Extracted from ``solver.py`` to reduce module size.
 """
 
-from __future__ import annotations
-
 from torch.linalg import inv as tinv
 from torch.linalg import solve as tsolve
 

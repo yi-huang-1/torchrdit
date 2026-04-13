@@ -5,11 +5,9 @@ updates, and Fast Fourier Factorization (FFF) tangent-field generation.
 Extracted from ``solver.py`` to reduce module size.
 """
 
-from __future__ import annotations
-
 import os
 import time
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import torch
 from torch.linalg import inv as tinv
@@ -19,9 +17,6 @@ from .cell import CellType
 from .materials import MaterialClass
 from .numerics import safe_kz_reciprocal
 from .utils import SMatrix, blockmat2x2, redhstar, to_diag_util
-
-if TYPE_CHECKING:
-    pass
 
 
 class LayerProcessingMixin:

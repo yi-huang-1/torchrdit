@@ -4,8 +4,6 @@ Computes polarization vectors, electromagnetic fields, and diffraction
 efficiencies. Extracted from ``solver.py`` to reduce module size.
 """
 
-from __future__ import annotations
-
 import torch
 from torch.linalg import solve as tsolve
 
