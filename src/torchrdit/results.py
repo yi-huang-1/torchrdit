@@ -411,6 +411,11 @@ class SolverResults:
             src_params = [self.source_parameters[idx]] if self.source_parameters else None
         elif isinstance(idx, slice):
             if not self.is_batched:
+                indices = range(*idx.indices(self.n_sources))
+                if not indices:
+                    raise ValueError("Empty slice")
+                if list(indices) != [0]:
+                    raise IndexError(f"Single source result only supports slice [0:1], got indices {list(indices)}")
                 return self
             indices = range(*idx.indices(self.n_sources))
             if not indices:
@@ -575,7 +580,8 @@ class SolverResults:
             }
 
         if self._wave_vectors_batched:
-            wavevectors_out = [_wavevectors_to_dict(self.wave_vectors[i]) for i in range(self.n_sources)]
+            n_wv = self.wave_vectors.kinc.shape[0]  # derive from tensor, not n_sources
+            wavevectors_out = [_wavevectors_to_dict(self.wave_vectors[i]) for i in range(n_wv)]
         else:
             wavevectors_out = _wavevectors_to_dict(self.wave_vectors)
 

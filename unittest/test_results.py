@@ -749,7 +749,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
         self.assertFalse(results.is_batched)
 
     def test_unbatched_slice_returns_self(self):
-        """Slicing unbatched results should return self (no source dim to slice)."""
+        """Slicing unbatched results with [0:1] should return self."""
         results = SolverResults(
             reflection=self.single_reflection,
             transmission=self.single_transmission,
@@ -762,6 +762,23 @@ class TestUnifiedSolverResults(unittest.TestCase):
         )
         sliced = results[0:1]
         self.assertIs(sliced, results)
+
+    def test_unbatched_slice_rejects_bad_slices(self):
+        """Slicing unbatched results with empty or out-of-range slices must raise."""
+        results = SolverResults(
+            reflection=self.single_reflection,
+            transmission=self.single_transmission,
+            reflection_diffraction=self.single_reflection_diffraction,
+            transmission_diffraction=self.single_transmission_diffraction,
+            reflection_field=self.single_reflection_field,
+            transmission_field=self.single_transmission_field,
+            structure_matrix=self.structure_matrix,
+            wave_vectors=self.wave_vectors,
+        )
+        with self.assertRaises(ValueError):
+            _ = results[:0]  # empty slice
+        with self.assertRaises((ValueError, IndexError)):
+            _ = results[1:2]  # out of range (clamps to empty)
 
     def test_batched_to_structured_dict_wavevectors_list(self):
         """to_structured_dict for batched results with source-major wave_vectors returns list."""
