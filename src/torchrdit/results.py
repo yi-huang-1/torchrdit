@@ -66,6 +66,16 @@ from typing import Dict, List, Tuple, Optional, Union
 import torch
 
 
+def _to_scattering_matrix(obj):
+    """Convert an SMatrix or dict to ScatteringMatrix."""
+    if isinstance(obj, ScatteringMatrix):
+        return obj
+    if isinstance(obj, dict):
+        return ScatteringMatrix(S11=obj["S11"], S12=obj["S12"], S21=obj["S21"], S22=obj["S22"])
+    # SMatrix (or any object with .S11 etc.) → ScatteringMatrix
+    return ScatteringMatrix(S11=obj.S11, S12=obj.S12, S21=obj.S21, S22=obj.S22)
+
+
 @dataclass
 class ScatteringMatrix:
     """Scattering matrix components for electromagnetic simulation.
@@ -164,6 +174,15 @@ class FieldComponents:
     mag_y: Optional[torch.Tensor] = None  # Magnetic field y-component
     mag_z: Optional[torch.Tensor] = None  # Magnetic field z-component
 
+    def __getitem__(self, idx):
+        """Slice all field tensors along the leading (source) dimension."""
+        return FieldComponents(
+            x=self.x[idx], y=self.y[idx], z=self.z[idx],
+            mag_x=self.mag_x[idx] if self.mag_x is not None else None,
+            mag_y=self.mag_y[idx] if self.mag_y is not None else None,
+            mag_z=self.mag_z[idx] if self.mag_z is not None else None,
+        )
+
 
 @dataclass
 class WaveVectors:
@@ -201,11 +220,18 @@ class WaveVectors:
         incident wave, reflected wave, transmitted wave, dispersion
     """
 
-    kx: torch.Tensor  # (harmonics[0], harmonics[1])
-    ky: torch.Tensor  # (harmonics[0], harmonics[1])
-    kinc: torch.Tensor  # (n_freqs, 3)
-    kzref: torch.Tensor  # (n_freqs, harmonics[0]*harmonics[1])
-    kztrn: torch.Tensor  # (n_freqs, harmonics[0]*harmonics[1])
+    kx: torch.Tensor  # (n_sources, n_freqs, harmonics[0], harmonics[1]) or (n_freqs, harmonics[0], harmonics[1])
+    ky: torch.Tensor  # (n_sources, n_freqs, harmonics[0], harmonics[1]) or (n_freqs, harmonics[0], harmonics[1])
+    kinc: torch.Tensor  # (n_sources, n_freqs, 3) or (n_freqs, 3)
+    kzref: torch.Tensor  # (n_sources, n_freqs, harmonics[0]*harmonics[1]) or (n_freqs, harmonics[0]*harmonics[1])
+    kztrn: torch.Tensor  # (n_sources, n_freqs, harmonics[0]*harmonics[1]) or (n_freqs, harmonics[0]*harmonics[1])
+
+    def __getitem__(self, idx):
+        """Slice all wave vector tensors along the leading (source) dimension."""
+        return WaveVectors(
+            kx=self.kx[idx], ky=self.ky[idx], kinc=self.kinc[idx],
+            kzref=self.kzref[idx], kztrn=self.kztrn[idx],
+        )
 
 
 @dataclass
@@ -234,8 +260,8 @@ class SolverResults:
         reflection_field (FieldComponents): Field Fourier coefficients in the reflection region.
         transmission_field (FieldComponents): Field Fourier coefficients in the transmission region.
         structure_matrix (ScatteringMatrix): Scattering matrix for the entire structure.
-        wave_vectors (Union[WaveVectors, List[WaveVectors]]): Wave vector components for
-            the simulation. Batched results may store one WaveVectors per source.
+        wave_vectors (WaveVectors): Wave vector components for the simulation.
+            Tensors have a leading n_sources dimension when is_batched is True.
         n_sources (int): Number of sources (1 for single, >1 for batched).
         lattice_t1, lattice_t2 (Optional[torch.Tensor]): Lattice vectors.
         default_grids (Optional[Tuple[int, int]]): Default spatial resolution from solver.
@@ -287,10 +313,11 @@ class SolverResults:
     structure_matrix: ScatteringMatrix
 
     # Wave vectors
-    wave_vectors: Union[WaveVectors, List[WaveVectors]]
+    wave_vectors: WaveVectors
 
     # Raw dictionary for backward compatibility
     raw_data: Dict = field(default_factory=dict)
+    _structure_matrix_batched: Optional[ScatteringMatrix] = field(default=None, repr=False)
 
     # Field data
     mat_v_ref: Optional[torch.Tensor] = None  # V matrix for reflection region (magnetic field mode matrix)
@@ -304,23 +331,20 @@ class SolverResults:
     lattice_t2: Optional[torch.Tensor] = None  # Second lattice vector [x, y] from solver
     default_grids: Optional[Tuple[int, int]] = None  # Default spatial resolution [height, width] from solver
 
-    # Unified batching support (new fields for merged BatchedSolverResults functionality)
+    # Unified batching support
     n_sources: int = field(default=1)  # Number of sources (1 for single, >1 for batched)
     source_parameters: Optional[List[Dict]] = None  # Original source dictionaries for batched case
-    loss: Optional[torch.Tensor] = None  # Total loss for each source/wavelength (batched only)
-    _is_batched: Optional[bool] = field(default=None)  # Explicit batched flag to override n_sources logic
+    loss: Optional[torch.Tensor] = None  # Total loss for each source/wavelength
 
     @property
     def is_batched(self) -> bool:
-        """Return True if this represents batched source results.
+        """Return True if result tensors carry a leading source dimension.
 
-        This is True when:
-        1. Explicitly set via _is_batched (for single-element list inputs)
-        2. When n_sources > 1 (multiple sources)
+        Derived from tensor shape: True when reflection has 2+ dims (i.e. shape (B, F)).
+        This is True for solve([source]) even when n_sources=1, because the
+        tensors retain the leading source dimension.
         """
-        if self._is_batched is not None:
-            return self._is_batched
-        return self.n_sources > 1
+        return self.reflection.dim() >= 2
 
     @property
     def harmonics(self) -> Tuple[int, int]:
@@ -331,138 +355,141 @@ class SolverResults:
         """
         return (self.reflection_field.x.shape[-2], self.reflection_field.x.shape[-1])
 
+    @property
+    def _wave_vectors_batched(self) -> bool:
+        """True if wave_vectors tensors carry a leading source dimension."""
+        return self.wave_vectors.kinc.dim() >= 3
+
     def _resolve_wave_vectors(self, source_idx: Optional[int] = None) -> "WaveVectors":
-        """Resolve wave vectors, handling both single and list formats.
+        """Resolve wave vectors for a specific source.
 
         Args:
-            source_idx: Source index for batched results with per-source wave vectors.
-                Required when wave_vectors is a list.
+            source_idx: Source index for batched results.
+                Required when wave_vectors are source-major.
 
         Returns:
-            WaveVectors for the specified source.
-
-        Raises:
-            ValueError: If wave_vectors is a list and source_idx is not provided.
+            WaveVectors for the specified source (unbatched tensors).
         """
-        if isinstance(self.wave_vectors, list):
+        if self._wave_vectors_batched:
             if source_idx is None:
                 raise ValueError(
-                    "source_idx is required for batched results with per-source wave vectors. "
+                    "source_idx is required for batched results. "
                     "Use results.get_propagating_orders(wavelength_idx, source_idx=i) "
                     "or results[i].get_propagating_orders(wavelength_idx)."
                 )
             return self.wave_vectors[source_idx]
         return self.wave_vectors
 
+    @staticmethod
+    def _slice_scattering_matrix(matrix: ScatteringMatrix, idx: Union[int, slice]) -> ScatteringMatrix:
+        """Index or slice a source-major scattering matrix."""
+        return ScatteringMatrix(
+            S11=matrix.S11[idx],
+            S12=matrix.S12[idx],
+            S21=matrix.S21[idx],
+            S22=matrix.S22[idx],
+        )
+
+    @staticmethod
+    def _root_scattering_matrix(matrix: ScatteringMatrix) -> ScatteringMatrix:
+        """Return the public root-view scattering matrix for a batched result."""
+        return ScatteringMatrix(
+            S11=matrix.S11[0],
+            S12=matrix.S12[0],
+            S21=matrix.S21[0],
+            S22=matrix.S22[0],
+        )
+
     def __len__(self) -> int:
         """Return number of sources in the results."""
         return self.n_sources
 
-    def __getitem__(self, idx: Union[int, slice]) -> Union["SolverResults", "SolverResults"]:
+    def __getitem__(self, idx: Union[int, slice]) -> "SolverResults":
         """Get results for specific source(s).
 
         Args:
             idx: Integer index or slice for source selection.
 
         Returns:
-            SolverResults for single index, SolverResults for slice (both single and batched compatible).
+            SolverResults with the source dimension indexed/sliced.
         """
         if isinstance(idx, int):
-            # Handle negative indexing
             if idx < 0:
                 idx = self.n_sources + idx
             if idx < 0 or idx >= self.n_sources:
                 raise IndexError(f"Source index {idx} out of range for {self.n_sources} sources")
-
             if not self.is_batched:
-                # For single source, only index 0 is valid
                 if idx != 0:
                     raise IndexError(f"Single source result only supports index 0, got {idx}")
                 return self
-
-            # Extract single source from batched results
-            # Handle both single and batched wave_vectors
-            single_wave_vectors = self.wave_vectors
-            if isinstance(self.wave_vectors, list):
-                single_wave_vectors = self.wave_vectors[idx]
-
-            return SolverResults(
-                reflection=self.reflection[idx],
-                transmission=self.transmission[idx],
-                reflection_diffraction=self.reflection_diffraction[idx],
-                transmission_diffraction=self.transmission_diffraction[idx],
-                reflection_field=FieldComponents(
-                    x=self.reflection_field.x[idx],
-                    y=self.reflection_field.y[idx],
-                    z=self.reflection_field.z[idx],
-                    mag_x=self.reflection_field.mag_x[idx] if self.reflection_field.mag_x is not None else None,
-                    mag_y=self.reflection_field.mag_y[idx] if self.reflection_field.mag_y is not None else None,
-                    mag_z=self.reflection_field.mag_z[idx] if self.reflection_field.mag_z is not None else None,
-                ),
-                transmission_field=FieldComponents(
-                    x=self.transmission_field.x[idx],
-                    y=self.transmission_field.y[idx],
-                    z=self.transmission_field.z[idx],
-                    mag_x=self.transmission_field.mag_x[idx] if self.transmission_field.mag_x is not None else None,
-                    mag_y=self.transmission_field.mag_y[idx] if self.transmission_field.mag_y is not None else None,
-                    mag_z=self.transmission_field.mag_z[idx] if self.transmission_field.mag_z is not None else None,
-                ),
-                structure_matrix=self.structure_matrix,
-                wave_vectors=single_wave_vectors,
-                raw_data={},  # Could populate with source-specific data
-                lattice_t1=self.lattice_t1,
-                lattice_t2=self.lattice_t2,
-                default_grids=self.default_grids,
-                n_sources=1,  # Single source result
-                source_parameters=[self.source_parameters[idx]] if self.source_parameters else None,
-                loss=self.loss[idx] if self.loss is not None else None,
-                _is_batched=None,  # Single source extracted from batch is not batched
+            n = 1
+            raw = (
+                self.raw_data["_per_source"][idx]
+                if isinstance(self.raw_data, dict) and "_per_source" in self.raw_data
+                and idx < len(self.raw_data["_per_source"])
+                else self.raw_data if isinstance(self.raw_data, dict) else {}
             )
-
+            src_params = [self.source_parameters[idx]] if self.source_parameters else None
         elif isinstance(idx, slice):
-            # Handle slicing
+            if not self.is_batched:
+                indices = range(*idx.indices(self.n_sources))
+                if not indices:
+                    raise ValueError("Empty slice")
+                if list(indices) != [0]:
+                    raise IndexError(f"Single source result only supports slice [0:1], got indices {list(indices)}")
+                return self
             indices = range(*idx.indices(self.n_sources))
-            if len(indices) == 0:
+            if not indices:
                 raise ValueError("Empty slice")
-
-            # Extract subset using slicing
-            subset_wave_vectors = self.wave_vectors
-            if isinstance(self.wave_vectors, list):
-                subset_wave_vectors = [self.wave_vectors[i] for i in indices]
-
-            return SolverResults(
-                reflection=self.reflection[idx],
-                transmission=self.transmission[idx],
-                reflection_diffraction=self.reflection_diffraction[idx],
-                transmission_diffraction=self.transmission_diffraction[idx],
-                reflection_field=FieldComponents(
-                    x=self.reflection_field.x[idx],
-                    y=self.reflection_field.y[idx],
-                    z=self.reflection_field.z[idx],
-                    mag_x=self.reflection_field.mag_x[idx] if self.reflection_field.mag_x is not None else None,
-                    mag_y=self.reflection_field.mag_y[idx] if self.reflection_field.mag_y is not None else None,
-                    mag_z=self.reflection_field.mag_z[idx] if self.reflection_field.mag_z is not None else None,
-                ),
-                transmission_field=FieldComponents(
-                    x=self.transmission_field.x[idx],
-                    y=self.transmission_field.y[idx],
-                    z=self.transmission_field.z[idx],
-                    mag_x=self.transmission_field.mag_x[idx] if self.transmission_field.mag_x is not None else None,
-                    mag_y=self.transmission_field.mag_y[idx] if self.transmission_field.mag_y is not None else None,
-                    mag_z=self.transmission_field.mag_z[idx] if self.transmission_field.mag_z is not None else None,
-                ),
-                structure_matrix=self.structure_matrix,
-                wave_vectors=subset_wave_vectors,
-                lattice_t1=self.lattice_t1,
-                lattice_t2=self.lattice_t2,
-                default_grids=self.default_grids,
-                n_sources=len(indices),
-                source_parameters=[self.source_parameters[i] for i in indices] if self.source_parameters else None,
-                loss=self.loss[idx] if self.loss is not None else None,
-                _is_batched=True if len(indices) >= 1 else None,  # Sliced results maintain batched status
+            n = len(indices)
+            per_source = (
+                self.raw_data.get("_per_source")
+                if isinstance(self.raw_data, dict)
+                else None
             )
+            if per_source is not None:
+                raw = {"_per_source": [per_source[i] for i in indices]}
+            else:
+                raw = self.raw_data if isinstance(self.raw_data, dict) else {}
+            src_params = [self.source_parameters[i] for i in indices] if self.source_parameters else None
         else:
             raise TypeError(f"Invalid index type: {type(idx)}")
+
+        sm = self.structure_matrix
+        sm_batched = None
+        if self.is_batched:
+            sm_batched = self._structure_matrix_batched
+            if sm_batched is None and sm is not None and sm.S11.dim() == 4:
+                sm_batched = sm
+
+        if sm_batched is not None:
+            sm_selected = self._slice_scattering_matrix(sm_batched, idx)
+            if isinstance(idx, int):
+                sm = sm_selected
+            else:
+                sm = self._root_scattering_matrix(sm_selected)
+                sm_batched = sm_selected
+        else:
+            sm_batched = None
+
+        return SolverResults(
+            reflection=self.reflection[idx],
+            transmission=self.transmission[idx],
+            reflection_diffraction=self.reflection_diffraction[idx],
+            transmission_diffraction=self.transmission_diffraction[idx],
+            reflection_field=self.reflection_field[idx],
+            transmission_field=self.transmission_field[idx],
+            structure_matrix=sm,
+            wave_vectors=self.wave_vectors[idx] if self._wave_vectors_batched else self.wave_vectors,
+            raw_data=raw,
+            _structure_matrix_batched=sm_batched,
+            lattice_t1=self.lattice_t1,
+            lattice_t2=self.lattice_t2,
+            default_grids=self.default_grids,
+            n_sources=n,
+            source_parameters=src_params,
+            loss=self.loss[idx] if self.loss is not None else None,
+        )
 
     def __iter__(self):
         """Iterate over individual source results."""
@@ -538,12 +565,7 @@ class SolverResults:
                 mag_y=data.get("trn_u_y", data.get("tmag_y")),  # Transmission H-field Fourier coeff, y
                 mag_z=data.get("trn_u_z", data.get("tmag_z")),  # Transmission H-field Fourier coeff, z
             ),
-            structure_matrix=ScatteringMatrix(
-                S11=data["smat_structure"]["S11"],
-                S12=data["smat_structure"]["S12"],
-                S21=data["smat_structure"]["S21"],
-                S22=data["smat_structure"]["S22"],
-            ),
+            structure_matrix=_to_scattering_matrix(data["smat_structure"]),
             wave_vectors=WaveVectors(
                 kx=data["kx"], ky=data["ky"], kinc=data["kinc"], kzref=data["kzref"], kztrn=data["kztrn"]
             ),
@@ -582,7 +604,33 @@ class SolverResults:
         Keywords:
             conversion, dictionary, legacy format, backward compatibility
         """
-        return self.raw_data
+        return self._serialize_raw_data(self.raw_data)
+
+    @staticmethod
+    def _serialize_smatrix(value):
+        """Convert SMatrix/ScatteringMatrix-like objects to plain dicts."""
+        if isinstance(value, dict):
+            return {key: value[key] for key in ("S11", "S12", "S21", "S22")}
+        if all(hasattr(value, key) for key in ("S11", "S12", "S21", "S22")):
+            return {key: getattr(value, key) for key in ("S11", "S12", "S21", "S22")}
+        return value
+
+    @classmethod
+    def _serialize_raw_data(cls, value):
+        """Recursively serialize raw_data without mutating the stored payload."""
+        if isinstance(value, dict):
+            serialized = {}
+            for key, item in value.items():
+                if key == "smat_structure":
+                    serialized[key] = cls._serialize_smatrix(item)
+                else:
+                    serialized[key] = cls._serialize_raw_data(item)
+            return serialized
+        if isinstance(value, list):
+            return [cls._serialize_raw_data(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(cls._serialize_raw_data(item) for item in value)
+        return value
 
     def to_structured_dict(self) -> Dict:
         """Convert results to a structured, self-describing dictionary format.
@@ -604,9 +652,9 @@ class SolverResults:
                 "kz": {"reflection": wv.kzref, "transmission": wv.kztrn},
             }
 
-        wavevectors_out: Union[Dict, List[Dict]]
-        if isinstance(self.wave_vectors, list):
-            wavevectors_out = [_wavevectors_to_dict(wv) for wv in self.wave_vectors]
+        if self._wave_vectors_batched:
+            n_wv = self.wave_vectors.kinc.shape[0]  # derive from tensor, not n_sources
+            wavevectors_out = [_wavevectors_to_dict(self.wave_vectors[i]) for i in range(n_wv)]
         else:
             wavevectors_out = _wavevectors_to_dict(self.wave_vectors)
 
@@ -1183,7 +1231,7 @@ class SolverResults:
         ```
         """
         if not self.is_batched:
-            raise ValueError("find_optimal_source() is only available for batched results (n_sources > 1)")
+            raise ValueError("find_optimal_source() is only available for batched results")
 
         if frequency_idx is None:
             # Use average over frequencies
@@ -1241,7 +1289,7 @@ class SolverResults:
         ```
         """
         if not self.is_batched:
-            raise ValueError("get_parameter_sweep_data() is only available for batched results (n_sources > 1)")
+            raise ValueError("get_parameter_sweep_data() is only available for batched results")
 
         if self.source_parameters is None:
             raise ValueError("Source parameters not available. Ensure solver stores source_parameters in results.")

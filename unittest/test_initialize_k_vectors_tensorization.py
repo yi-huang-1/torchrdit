@@ -54,7 +54,7 @@ class TestMathematicalEquivalence:
         self.solver.src = source
         self.solver._pre_solve()
 
-        # Call the single-source method
+        # Call the single-source method (now always returns 4D with n_sources=1)
         kx_single, ky_single, kz_ref_single, kz_trn_single = (
             self.solver._initialize_k_vectors()
         )
@@ -68,17 +68,11 @@ class TestMathematicalEquivalence:
             self.solver._initialize_k_vectors()
         )
 
-        # Extract single source results from batched
-        kx_batched_single = kx_batched[0]
-        ky_batched_single = ky_batched[0]
-        kz_ref_batched_single = kz_ref_batched[0]
-        kz_trn_batched_single = kz_trn_batched[0]
-
-        # Compare results
-        self._assert_tensors_equal(kx_single, kx_batched_single, "kx_0")
-        self._assert_tensors_equal(ky_single, ky_batched_single, "ky_0")
-        self._assert_tensors_equal(kz_ref_single, kz_ref_batched_single, "kz_ref_0")
-        self._assert_tensors_equal(kz_trn_single, kz_trn_batched_single, "kz_trn_0")
+        # Both single and batched now produce (1, n_freqs, ...) — compare directly
+        self._assert_tensors_equal(kx_single, kx_batched, "kx_0")
+        self._assert_tensors_equal(ky_single, ky_batched, "ky_0")
+        self._assert_tensors_equal(kz_ref_single, kz_ref_batched, "kz_ref_0")
+        self._assert_tensors_equal(kz_trn_single, kz_trn_batched, "kz_trn_0")
 
     def test_batched_vs_sequential(self):
         """Test that batched processing gives same results as sequential."""
@@ -89,13 +83,14 @@ class TestMathematicalEquivalence:
             self.solver.add_source(theta=0.3, phi=0.1, pte=0.0, ptm=1.0),
         ]
 
-        # Process sources sequentially
+        # Process sources sequentially (each now produces (1, n_freqs, ...))
         sequential_results = []
         for source in sources:
             self.solver.src = source
             self.solver._pre_solve()
             result = self.solver._initialize_k_vectors()
-            sequential_results.append(result)
+            # Squeeze out the n_sources=1 dim for per-source comparison
+            sequential_results.append(tuple(r[0] for r in result))
 
         # Process sources in batch
         self.solver._pre_solve(sources)
@@ -138,17 +133,17 @@ class TestMathematicalEquivalence:
         n_freqs = len(self.wavelengths)
         harmonics = self.solver.harmonics
 
-        # Single source shapes: (n_freqs, harmonics[0], harmonics[1])
-        assert kx_single.shape == (n_freqs, harmonics[0], harmonics[1])
-        assert ky_single.shape == (n_freqs, harmonics[0], harmonics[1])
+        # Single source shapes: now (1, n_freqs, harmonics[0], harmonics[1])
+        assert kx_single.shape == (1, n_freqs, harmonics[0], harmonics[1])
+        assert ky_single.shape == (1, n_freqs, harmonics[0], harmonics[1])
 
         # Batched shapes: (1, n_freqs, harmonics[0], harmonics[1])
         assert kx_batched.shape == (1, n_freqs, harmonics[0], harmonics[1])
         assert ky_batched.shape == (1, n_freqs, harmonics[0], harmonics[1])
 
-        # Compare values
-        self._assert_tensors_equal(kx_single, kx_batched[0], "kx_0 multi-freq")
-        self._assert_tensors_equal(ky_single, ky_batched[0], "ky_0 multi-freq")
+        # Compare values — both are now (1, n_freqs, ...) so compare directly
+        self._assert_tensors_equal(kx_single, kx_batched, "kx_0 multi-freq")
+        self._assert_tensors_equal(ky_single, ky_batched, "ky_0 multi-freq")
 
     def _assert_tensors_equal(self, tensor1, tensor2, name):
         """Assert that two tensors are equal within tolerance."""
@@ -304,8 +299,8 @@ class TestEdgeCases:
         # Check that relaxation was applied (no exact zeros should remain)
         zero_order_idx = self.solver.harmonics[0] // 2, self.solver.harmonics[1] // 2
 
-        kx_zero_single = kx_single[0, zero_order_idx[0], zero_order_idx[1]]
-        ky_zero_single = ky_single[0, zero_order_idx[0], zero_order_idx[1]]
+        kx_zero_single = kx_single[0, 0, zero_order_idx[0], zero_order_idx[1]]
+        ky_zero_single = ky_single[0, 0, zero_order_idx[0], zero_order_idx[1]]
 
         kx_zero_batched = kx_batched[0, 0, zero_order_idx[0], zero_order_idx[1]]
         ky_zero_batched = ky_batched[0, 0, zero_order_idx[0], zero_order_idx[1]]

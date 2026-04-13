@@ -20,10 +20,10 @@ class TestInitSmatrixDeviceFallback:
         dtype = torch.complex64
         smatrix = init_smatrix(shape, dtype, device="cpu")
         
-        assert smatrix["S11"].device.type == "cpu"
-        assert smatrix["S12"].device.type == "cpu"
-        assert smatrix["S21"].device.type == "cpu"
-        assert smatrix["S22"].device.type == "cpu"
+        assert smatrix.S11.device.type == "cpu"
+        assert smatrix.S12.device.type == "cpu"
+        assert smatrix.S21.device.type == "cpu"
+        assert smatrix.S22.device.type == "cpu"
 
     def test_init_smatrix_mps_fallback_to_cpu(self):
         """Test init_smatrix with MPS device falls back to CPU with warning."""
@@ -39,10 +39,10 @@ class TestInitSmatrixDeviceFallback:
             assert "mps" in str(w[0].message).lower()
             
             # All tensors should be on CPU
-            assert smatrix["S11"].device.type == "cpu"
-            assert smatrix["S12"].device.type == "cpu"
-            assert smatrix["S21"].device.type == "cpu"
-            assert smatrix["S22"].device.type == "cpu"
+            assert smatrix.S11.device.type == "cpu"
+            assert smatrix.S12.device.type == "cpu"
+            assert smatrix.S21.device.type == "cpu"
+            assert smatrix.S22.device.type == "cpu"
 
     def test_init_smatrix_invalid_device_fallback(self):
         """Test init_smatrix with invalid device falls back to CPU with warning."""
@@ -58,10 +58,10 @@ class TestInitSmatrixDeviceFallback:
             assert "unsupported" in str(w[0].message).lower()
             
             # All tensors should be on CPU
-            assert smatrix["S11"].device.type == "cpu"
-            assert smatrix["S12"].device.type == "cpu"
-            assert smatrix["S21"].device.type == "cpu"
-            assert smatrix["S22"].device.type == "cpu"
+            assert smatrix.S11.device.type == "cpu"
+            assert smatrix.S12.device.type == "cpu"
+            assert smatrix.S21.device.type == "cpu"
+            assert smatrix.S22.device.type == "cpu"
 
     def test_init_smatrix_2d_shape(self):
         """Test init_smatrix with 2D shape and MPS fallback."""
@@ -76,10 +76,10 @@ class TestInitSmatrixDeviceFallback:
             assert len(w) == 1
             
             # All tensors should be on CPU
-            assert smatrix["S11"].device.type == "cpu"
-            assert smatrix["S12"].device.type == "cpu"
-            assert smatrix["S21"].device.type == "cpu"
-            assert smatrix["S22"].device.type == "cpu"
+            assert smatrix.S11.device.type == "cpu"
+            assert smatrix.S12.device.type == "cpu"
+            assert smatrix.S21.device.type == "cpu"
+            assert smatrix.S22.device.type == "cpu"
 
 
 class TestCreateBlurKernelDeviceFallback:

@@ -54,17 +54,18 @@ class TestTensorizedBatching:
         # Get k-vectors
         kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
         
+        # Single-source now returns (1, ...) — squeeze to get non-batched for comparison
+        kx_0_s = kx_0.squeeze(0)
+        ky_0_s = ky_0.squeeze(0)
+        kz_ref_0_s = kz_ref_0.squeeze(0)
+        kz_trn_0_s = kz_trn_0.squeeze(0)
+
         # Non-batched matrices
-        matrices_single = solver._setup_common_matrices(kx_0, ky_0, kz_ref_0, kz_trn_0)
-        
-        # Batched with single source
-        kx_0_batched = kx_0.unsqueeze(0)
-        ky_0_batched = ky_0.unsqueeze(0)
-        kz_ref_0_batched = kz_ref_0.unsqueeze(0)
-        kz_trn_0_batched = kz_trn_0.unsqueeze(0)
-        
+        matrices_single = solver._setup_common_matrices(kx_0_s, ky_0_s, kz_ref_0_s, kz_trn_0_s)
+
+        # Batched with single source — k-vectors are already (1, ...)
         matrices_batched = solver._setup_common_matrices(
-            kx_0_batched, ky_0_batched, kz_ref_0_batched, kz_trn_0_batched
+            kx_0, ky_0, kz_ref_0, kz_trn_0
         )
         
         # Compare all matrices
@@ -108,6 +109,11 @@ class TestTensorizedBatching:
             solver.src = source
             solver._pre_solve()
             kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
+            # Single-source now returns (1, ...) — squeeze to get per-source tensors
+            kx_0 = kx_0.squeeze(0)
+            ky_0 = ky_0.squeeze(0)
+            kz_ref_0 = kz_ref_0.squeeze(0)
+            kz_trn_0 = kz_trn_0.squeeze(0)
             matrices = solver._setup_common_matrices(kx_0, ky_0, kz_ref_0, kz_trn_0)
             sequential_results.append(matrices)
         

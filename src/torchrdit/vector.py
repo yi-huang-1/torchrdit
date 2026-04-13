@@ -29,7 +29,10 @@ __all__ = [
 
 
 def _magnitude_floor(dtype: torch.dtype) -> float:
-    """Return a stable floor value for squared magnitudes."""
+    """Return a stable floor value for **squared** magnitudes.
+
+    Use ``_magnitude_atol`` for comparisons against unsquared magnitudes.
+    """
     if dtype == torch.float32:
         return 1e-8
     if dtype == torch.float64:
@@ -39,6 +42,20 @@ def _magnitude_floor(dtype: torch.dtype) -> float:
     if dtype == torch.bfloat16:
         return 1e-4
     raise TypeError(f"Unsupported dtype for stability epsilon {dtype}")
+
+
+def _magnitude_atol(dtype: torch.dtype) -> float:
+    """Return a near-zero threshold for unsquared magnitude comparisons.
+
+    This is ``sqrt(_magnitude_floor(dtype))``, converting the squared-magnitude
+    floor back to magnitude scale.  Using ``_magnitude_floor`` directly as an
+    ``atol`` for magnitude would set the f64 threshold to 1e-16 — the same order
+    as Fourier-reconstruction noise — causing Jones normalization and 1D-field
+    detection to treat noise as signal.
+
+    Values: f32 → 1e-4, f64 → 1e-8, f16/bf16 → 1e-2.
+    """
+    return math.sqrt(_magnitude_floor(dtype))
 
 
 def _complex_dtype(real_dtype: torch.dtype) -> torch.dtype:
@@ -465,7 +482,7 @@ def _angle(x: torch.Tensor) -> torch.Tensor:
     """Compute a stable angle for complex values."""
     abs_x = torch.abs(x)
     zero = torch.zeros(1, dtype=abs_x.dtype, device=x.device)
-    is_small = torch.isclose(abs_x, zero, atol=1e-12)
+    is_small = torch.isclose(abs_x, zero, atol=_magnitude_atol(abs_x.dtype))
     safe = torch.where(is_small, torch.ones_like(x), x)
     return torch.angle(safe)
 
@@ -476,7 +493,7 @@ def _normalize_jones(field: torch.Tensor) -> torch.Tensor:
     magnitude = _field_magnitude(field)
     zero = torch.zeros(1, dtype=magnitude.dtype, device=field.device)
     ones = torch.ones_like(magnitude)
-    magnitude_near_zero = torch.isclose(magnitude, zero, atol=1e-12)
+    magnitude_near_zero = torch.isclose(magnitude, zero, atol=_magnitude_atol(magnitude.dtype))
     magnitude_safe = torch.where(magnitude_near_zero, ones, magnitude)
 
     fallback = torch.full_like(field[..., :1], 1.0 / math.sqrt(2.0))
@@ -495,7 +512,7 @@ def _normalize_jones(field: torch.Tensor) -> torch.Tensor:
     complex_magnitude = torch.sqrt(torch.abs(concatenated[..., 0]) ** 2 + torch.abs(concatenated[..., 1]) ** 2)
     zero_c = torch.zeros(1, dtype=complex_magnitude.dtype, device=field.device)
     complex_magnitude = torch.where(
-        torch.isclose(complex_magnitude, zero_c, atol=1e-12),
+        torch.isclose(complex_magnitude, zero_c, atol=_magnitude_atol(complex_magnitude.dtype)),
         torch.ones_like(complex_magnitude),
         complex_magnitude,
     )
@@ -519,7 +536,7 @@ def _is_1d_field(field: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     tol = 1e-2
 
     zero = torch.zeros(1, dtype=magnitude.dtype, device=field.device)
-    mask = torch.isclose(magnitude, zero, atol=1e-12)
+    mask = torch.isclose(magnitude, zero, atol=_magnitude_atol(magnitude.dtype))
     for delta in (-2, -1, 0, 1, 2):
         mask = mask | torch.isclose(angle, ref_angle + delta * math.pi, atol=tol)
     is_1d = torch.all(mask)

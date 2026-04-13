@@ -270,6 +270,27 @@ class TestSolverResults(unittest.TestCase):
         self.assertTrue(torch.equal(dict_from_results['TRN'], self.transmission))
         self.assertTrue(torch.equal(dict_from_results['kx'], self.wave_vectors.kx))
 
+    def test_to_dict_serializes_smatrix_without_mutating_raw_data(self):
+        raw_data = dict(self.raw_data)
+        raw_data["smat_structure"] = self.structure_matrix
+        results = SolverResults(
+            reflection=self.reflection,
+            transmission=self.transmission,
+            reflection_diffraction=self.reflection_diffraction,
+            transmission_diffraction=self.transmission_diffraction,
+            reflection_field=self.reflection_field,
+            transmission_field=self.transmission_field,
+            structure_matrix=self.structure_matrix,
+            wave_vectors=self.wave_vectors,
+            raw_data=raw_data,
+        )
+
+        dict_from_results = results.to_dict()
+
+        self.assertIsInstance(dict_from_results["smat_structure"], dict)
+        self.assertTrue(torch.equal(dict_from_results["smat_structure"]["S11"], self.structure_matrix.S11))
+        self.assertIs(results.raw_data["smat_structure"], self.structure_matrix)
+
     def test_to_structured_dict(self):
         """Test the to_structured_dict method."""
         structured = self.results.to_structured_dict()
@@ -481,6 +502,12 @@ class TestUnifiedSolverResults(unittest.TestCase):
             S21=torch.randn(self.n_freqs, 2*self.n_harmonics, 2*self.n_harmonics, dtype=torch.complex64),
             S22=torch.randn(self.n_freqs, 2*self.n_harmonics, 2*self.n_harmonics, dtype=torch.complex64)
         )
+        self.batched_structure_matrix = ScatteringMatrix(
+            S11=torch.randn(self.n_sources, self.n_freqs, 2*self.n_harmonics, 2*self.n_harmonics, dtype=torch.complex64),
+            S12=torch.randn(self.n_sources, self.n_freqs, 2*self.n_harmonics, 2*self.n_harmonics, dtype=torch.complex64),
+            S21=torch.randn(self.n_sources, self.n_freqs, 2*self.n_harmonics, 2*self.n_harmonics, dtype=torch.complex64),
+            S22=torch.randn(self.n_sources, self.n_freqs, 2*self.n_harmonics, 2*self.n_harmonics, dtype=torch.complex64),
+        )
 
         self.wave_vectors = WaveVectors(
             kx=torch.randn(self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
@@ -488,6 +515,15 @@ class TestUnifiedSolverResults(unittest.TestCase):
             kinc=torch.randn(self.n_freqs, 3, dtype=torch.complex64),
             kzref=torch.randn(self.n_freqs, self.n_harmonics, dtype=torch.complex64),
             kztrn=torch.randn(self.n_freqs, self.n_harmonics, dtype=torch.complex64)
+        )
+
+        # Batched wave vectors (n_sources leading dim)
+        self.batched_wave_vectors = WaveVectors(
+            kx=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            ky=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            kinc=torch.randn(self.n_sources, self.n_freqs, 3, dtype=torch.complex64),
+            kzref=torch.randn(self.n_sources, self.n_freqs, self.n_harmonics, dtype=torch.complex64),
+            kztrn=torch.randn(self.n_sources, self.n_freqs, self.n_harmonics, dtype=torch.complex64),
         )
 
         # Lattice vectors for field reconstruction
@@ -501,6 +537,36 @@ class TestUnifiedSolverResults(unittest.TestCase):
             {"theta": 0.5, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
             {"theta": 1.0, "phi": 0.0, "pte": 1.0, "ptm": 0.0},
         ]
+
+    def _make_batched_results_with_structure_matrices(self):
+        per_source_raw = []
+        for i in range(self.n_sources):
+            per_source_raw.append({
+                "REF": self.batched_reflection[i],
+                "TRN": self.batched_transmission[i],
+                "smat_structure": ScatteringMatrix(
+                    S11=self.batched_structure_matrix.S11[i],
+                    S12=self.batched_structure_matrix.S12[i],
+                    S21=self.batched_structure_matrix.S21[i],
+                    S22=self.batched_structure_matrix.S22[i],
+                ),
+            })
+
+        return SolverResults(
+            reflection=self.batched_reflection,
+            transmission=self.batched_transmission,
+            reflection_diffraction=self.batched_reflection_diffraction,
+            transmission_diffraction=self.batched_transmission_diffraction,
+            reflection_field=self.batched_reflection_field,
+            transmission_field=self.batched_transmission_field,
+            structure_matrix=self.structure_matrix,
+            _structure_matrix_batched=self.batched_structure_matrix,
+            wave_vectors=self.batched_wave_vectors,
+            raw_data={"_per_source": per_source_raw},
+            n_sources=self.n_sources,
+            source_parameters=self.source_parameters,
+            loss=self.batched_loss,
+        )
 
     def test_single_source_creation(self):
         """Test creating unified SolverResults for single source (backward compatibility)."""
@@ -544,7 +610,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
             reflection_field=self.batched_reflection_field,
             transmission_field=self.batched_transmission_field,
             structure_matrix=self.structure_matrix,
-            wave_vectors=self.wave_vectors,
+            wave_vectors=self.batched_wave_vectors,
             lattice_t1=self.lattice_t1,
             lattice_t2=self.lattice_t2,
             default_grids=self.default_grids,
@@ -587,7 +653,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
             reflection_field=self.batched_reflection_field,
             transmission_field=self.batched_transmission_field,
             structure_matrix=self.structure_matrix,
-            wave_vectors=self.wave_vectors,
+            wave_vectors=self.batched_wave_vectors,
             n_sources=self.n_sources,
             source_parameters=self.source_parameters,
             loss=self.batched_loss,
@@ -620,7 +686,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
             reflection_field=self.batched_reflection_field,
             transmission_field=self.batched_transmission_field,
             structure_matrix=self.structure_matrix,
-            wave_vectors=self.wave_vectors,
+            wave_vectors=self.batched_wave_vectors,
             n_sources=self.n_sources,
             source_parameters=self.source_parameters,
             loss=self.batched_loss,
@@ -650,7 +716,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
             reflection_field=self.batched_reflection_field,
             transmission_field=self.batched_transmission_field,
             structure_matrix=self.structure_matrix,
-            wave_vectors=self.wave_vectors,
+            wave_vectors=self.batched_wave_vectors,
             n_sources=self.n_sources,
             source_parameters=self.source_parameters,
             loss=self.batched_loss,
@@ -683,7 +749,7 @@ class TestUnifiedSolverResults(unittest.TestCase):
             reflection_field=self.batched_reflection_field,
             transmission_field=self.batched_transmission_field,
             structure_matrix=self.structure_matrix,
-            wave_vectors=self.wave_vectors,
+            wave_vectors=self.batched_wave_vectors,
             n_sources=self.n_sources,
             source_parameters=self.source_parameters,
             loss=self.batched_loss,
@@ -723,10 +789,10 @@ class TestUnifiedSolverResults(unittest.TestCase):
         # Test all existing methods still work
         tx, ty, tz = results.get_zero_order_transmission()
         rx, ry, rz = results.get_zero_order_reflection()
-        t_eff = results.get_order_transmission_efficiency(0, 0)
-        r_eff = results.get_order_reflection_efficiency(0, 0)
+        _ = results.get_order_transmission_efficiency(0, 0)
+        _ = results.get_order_reflection_efficiency(0, 0)
         all_orders = results.get_all_diffraction_orders()
-        prop_orders = results.get_propagating_orders()
+        _ = results.get_propagating_orders()
 
         # Test shapes and values are as expected
         self.assertEqual(tx.shape, (self.n_freqs,))
@@ -738,6 +804,117 @@ class TestUnifiedSolverResults(unittest.TestCase):
         # Test that new batched attributes work for single source
         self.assertEqual(results.n_sources, 1)
         self.assertFalse(results.is_batched)
+
+    def test_unbatched_slice_returns_self(self):
+        """Slicing unbatched results with [0:1] should return self."""
+        results = SolverResults(
+            reflection=self.single_reflection,
+            transmission=self.single_transmission,
+            reflection_diffraction=self.single_reflection_diffraction,
+            transmission_diffraction=self.single_transmission_diffraction,
+            reflection_field=self.single_reflection_field,
+            transmission_field=self.single_transmission_field,
+            structure_matrix=self.structure_matrix,
+            wave_vectors=self.wave_vectors,
+        )
+        sliced = results[0:1]
+        self.assertIs(sliced, results)
+
+    def test_unbatched_slice_rejects_bad_slices(self):
+        """Slicing unbatched results with empty or out-of-range slices must raise."""
+        results = SolverResults(
+            reflection=self.single_reflection,
+            transmission=self.single_transmission,
+            reflection_diffraction=self.single_reflection_diffraction,
+            transmission_diffraction=self.single_transmission_diffraction,
+            reflection_field=self.single_reflection_field,
+            transmission_field=self.single_transmission_field,
+            structure_matrix=self.structure_matrix,
+            wave_vectors=self.wave_vectors,
+        )
+        with self.assertRaises(ValueError):
+            _ = results[:0]  # empty slice
+        with self.assertRaises((ValueError, IndexError)):
+            _ = results[1:2]  # out of range (clamps to empty)
+
+    def test_batched_to_structured_dict_wavevectors_list(self):
+        """to_structured_dict for batched results with source-major wave_vectors returns list."""
+        results = SolverResults(
+            reflection=self.batched_reflection,
+            transmission=self.batched_transmission,
+            reflection_diffraction=self.batched_reflection_diffraction,
+            transmission_diffraction=self.batched_transmission_diffraction,
+            reflection_field=self.batched_reflection_field,
+            transmission_field=self.batched_transmission_field,
+            structure_matrix=self.structure_matrix,
+            wave_vectors=self.batched_wave_vectors,
+            n_sources=self.n_sources,
+        )
+        structured = results.to_structured_dict()
+        wv_out = structured["wavevectors"]
+        self.assertIsInstance(wv_out, list)
+        self.assertEqual(len(wv_out), self.n_sources)
+        # Each entry should have per-source (unbatched) tensors
+        self.assertTrue(torch.equal(wv_out[0]["kx"], self.batched_wave_vectors.kx[0]))
+
+    def test_single_element_list_batched_helpers(self):
+        """solve([single_source]) must support find_optimal_source/get_parameter_sweep_data."""
+        # Simulate solve([source]) — n_sources=1 but tensors are 2D (batched)
+        results = SolverResults(
+            reflection=self.batched_reflection[:1],  # (1, n_freqs)
+            transmission=self.batched_transmission[:1],
+            reflection_diffraction=self.batched_reflection_diffraction[:1],
+            transmission_diffraction=self.batched_transmission_diffraction[:1],
+            reflection_field=self.batched_reflection_field[:1],
+            transmission_field=self.batched_transmission_field[:1],
+            structure_matrix=self.structure_matrix,
+            wave_vectors=self.batched_wave_vectors[:1],
+            n_sources=1,
+            source_parameters=[self.source_parameters[0]],
+            loss=(1.0 - self.batched_reflection - self.batched_transmission)[:1],
+        )
+        self.assertTrue(results.is_batched)
+        self.assertEqual(results.n_sources, 1)
+        # These must not raise
+        best_idx = results.find_optimal_source('max_transmission')
+        self.assertEqual(best_idx, 0)
+        theta_vals, trans_vals = results.get_parameter_sweep_data('theta', 'transmission')
+        self.assertEqual(theta_vals.shape, (1,))
+        self.assertEqual(trans_vals.shape, (1,))
+
+    def test_batched_root_structure_matrix_keeps_legacy_shape(self):
+        results = self._make_batched_results_with_structure_matrices()
+        self.assertEqual(results.structure_matrix.S11.shape, self.structure_matrix.S11.shape)
+        self.assertTrue(torch.equal(results.structure_matrix.S11, self.structure_matrix.S11))
+
+    def test_batched_indexing_uses_per_source_structure_matrix(self):
+        results = self._make_batched_results_with_structure_matrices()
+        result1 = results[1]
+        self.assertTrue(torch.equal(result1.structure_matrix.S11, self.batched_structure_matrix.S11[1]))
+        self.assertTrue(torch.equal(result1.structure_matrix.S11, result1.raw_data["smat_structure"].S11))
+        self.assertFalse(torch.equal(results[0].structure_matrix.S11, results[1].structure_matrix.S11))
+
+    def test_batched_slice_preserves_structure_matrix_and_raw_data(self):
+        results = self._make_batched_results_with_structure_matrices()
+        subset = results[1:2]
+        self.assertEqual(subset.structure_matrix.S11.shape, self.structure_matrix.S11.shape)
+        self.assertTrue(torch.equal(subset.structure_matrix.S11, self.batched_structure_matrix.S11[1]))
+        self.assertTrue(torch.equal(subset[0].structure_matrix.S11, results[1].structure_matrix.S11))
+        self.assertTrue(torch.equal(subset[0].to_dict()["REF"], results[1].to_dict()["REF"]))
+
+    def test_batched_to_dict_serializes_per_source_smat_without_mutation(self):
+        results = self._make_batched_results_with_structure_matrices()
+
+        dict_from_results = results.to_dict()
+
+        self.assertIsInstance(dict_from_results["_per_source"][0]["smat_structure"], dict)
+        self.assertTrue(
+            torch.equal(
+                dict_from_results["_per_source"][1]["smat_structure"]["S11"],
+                self.batched_structure_matrix.S11[1],
+            )
+        )
+        self.assertIsInstance(results.raw_data["_per_source"][0]["smat_structure"], ScatteringMatrix)
 
 
 class TestBatchedDiffractionMethods(unittest.TestCase):
@@ -865,27 +1042,23 @@ class TestBatchedDiffractionMethods(unittest.TestCase):
             wave_vectors=wave_vectors,
         )
 
-    def _make_wave_vector_list(self):
-        wave_vectors = []
-        for source_idx in range(self.n_sources):
-            kzref = torch.full((self.n_freqs, self.n_harmonics), 1j, dtype=torch.complex64)
-            kztrn = torch.full((self.n_freqs, self.n_harmonics), 1j, dtype=torch.complex64)
-            if source_idx == 0:
-                kzref[0, 4] = torch.tensor(1.0 + 0j, dtype=torch.complex64)
-                kzref[0, 7] = torch.tensor(0.5 + 0j, dtype=torch.complex64)
-            else:
-                kzref[0, 4] = torch.tensor(1.0 + 0j, dtype=torch.complex64)
-
-            wave_vectors.append(
-                WaveVectors(
-                    kx=torch.randn(self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
-                    ky=torch.randn(self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
-                    kinc=torch.randn(self.n_freqs, 3, dtype=torch.complex64),
-                    kzref=kzref,
-                    kztrn=kztrn,
-                )
-            )
-        return wave_vectors
+    def _make_batched_wave_vectors(self):
+        """Create a single batched WaveVectors with per-source kzref values."""
+        kzref = torch.full((self.n_sources, self.n_freqs, self.n_harmonics), 1j, dtype=torch.complex64)
+        kztrn = torch.full((self.n_sources, self.n_freqs, self.n_harmonics), 1j, dtype=torch.complex64)
+        # Source 0: two propagating orders
+        kzref[0, 0, 4] = torch.tensor(1.0 + 0j, dtype=torch.complex64)
+        kzref[0, 0, 7] = torch.tensor(0.5 + 0j, dtype=torch.complex64)
+        # Source 1+: one propagating order
+        for i in range(1, self.n_sources):
+            kzref[i, 0, 4] = torch.tensor(1.0 + 0j, dtype=torch.complex64)
+        return WaveVectors(
+            kx=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            ky=torch.randn(self.n_sources, self.n_freqs, self.harmonics[0], self.harmonics[1], dtype=torch.complex64),
+            kinc=torch.randn(self.n_sources, self.n_freqs, 3, dtype=torch.complex64),
+            kzref=kzref,
+            kztrn=kztrn,
+        )
 
     def test_harmonics_property_unbatched(self):
         results = self._make_results(batched=False, wave_vectors=self.single_wave_vectors)
@@ -949,14 +1122,14 @@ class TestBatchedDiffractionMethods(unittest.TestCase):
         self.assertEqual(orders, expected_orders)
 
     def test_get_propagating_orders_batched_with_source_idx(self):
-        wave_vectors = self._make_wave_vector_list()
+        wave_vectors = self._make_batched_wave_vectors()
         results = self._make_results(batched=True, wave_vectors=wave_vectors)
         propagating = results.get_propagating_orders(wavelength_idx=0, source_idx=0)
         self.assertIn((0, 0), propagating)
         self.assertEqual(set(propagating), {(0, 0), (1, 0)})
 
     def test_get_propagating_orders_batched_no_source_idx_raises(self):
-        wave_vectors = self._make_wave_vector_list()
+        wave_vectors = self._make_batched_wave_vectors()
         results = self._make_results(batched=True, wave_vectors=wave_vectors)
         with self.assertRaisesRegex(ValueError, "source_idx"):
             results.get_propagating_orders(0)
@@ -964,14 +1137,47 @@ class TestBatchedDiffractionMethods(unittest.TestCase):
     def test_resolve_wave_vectors_single(self):
         results = self._make_results(batched=False, wave_vectors=self.single_wave_vectors)
         self.assertIs(results._resolve_wave_vectors(), self.single_wave_vectors)
+        # For unbatched results, source_idx is ignored — returns wave_vectors directly
         self.assertIs(results._resolve_wave_vectors(source_idx=0), self.single_wave_vectors)
+        self.assertIs(results._resolve_wave_vectors(source_idx=1), self.single_wave_vectors)
 
-    def test_resolve_wave_vectors_list(self):
-        wave_vectors = self._make_wave_vector_list()
+    def test_resolve_wave_vectors_batched(self):
+        wave_vectors = self._make_batched_wave_vectors()
         results = self._make_results(batched=True, wave_vectors=wave_vectors)
-        self.assertIs(results._resolve_wave_vectors(source_idx=0), wave_vectors[0])
+        resolved = results._resolve_wave_vectors(source_idx=0)
+        self.assertTrue(torch.equal(resolved.kzref, wave_vectors.kzref[0]))
+        self.assertTrue(torch.equal(resolved.kinc, wave_vectors.kinc[0]))
         with self.assertRaisesRegex(ValueError, "source_idx"):
             results._resolve_wave_vectors()
+
+    def test_shared_wave_vectors_indexing(self):
+        """Batched results with shared (unbatched) WaveVectors must not mis-slice."""
+        results = self._make_results(batched=True, wave_vectors=self.single_wave_vectors)
+        # Indexing should preserve shared wave_vectors, not index into them
+        r0 = results[0]
+        self.assertIs(r0.wave_vectors, self.single_wave_vectors)
+        r1 = results[1]
+        self.assertIs(r1.wave_vectors, self.single_wave_vectors)
+        # Slicing should also preserve
+        subset = results[0:2]
+        self.assertIs(subset.wave_vectors, self.single_wave_vectors)
+
+    def test_shared_wave_vectors_iteration(self):
+        """Iterating batched results with shared WaveVectors must not crash."""
+        results = self._make_results(batched=True, wave_vectors=self.single_wave_vectors)
+        items = list(results)
+        self.assertEqual(len(items), self.n_sources)
+        for item in items:
+            self.assertIs(item.wave_vectors, self.single_wave_vectors)
+
+    def test_shared_wave_vectors_resolve_no_source_idx(self):
+        """Shared wave_vectors should not require source_idx."""
+        results = self._make_results(batched=True, wave_vectors=self.single_wave_vectors)
+        # Shared wave_vectors have no source dim, so no source_idx needed
+        resolved = results._resolve_wave_vectors()
+        self.assertIs(resolved, self.single_wave_vectors)
+        resolved_with_idx = results._resolve_wave_vectors(source_idx=0)
+        self.assertIs(resolved_with_idx, self.single_wave_vectors)
 
 
 if __name__ == '__main__':

@@ -137,7 +137,7 @@ def example_angle_sweep():
     
     plt.tight_layout()
     plt.savefig('example_angle_sweep.png', dpi=150)
-    plt.show()
+    plt.close()
     
     return batched_results
 
@@ -272,7 +272,7 @@ def example_polarization_sweep():
     
     plt.tight_layout()
     plt.savefig('example_polarization_sweep.png', dpi=150)
-    plt.show()
+    plt.close()
     
     return results
 
@@ -403,7 +403,7 @@ def example_optimization_with_batched_sources():
     
     plt.tight_layout()
     plt.savefig('example_optimization_batched.png', dpi=150)
-    plt.show()
+    plt.close()
     
     # Verify final performance with more angles
     print("\nFinal performance verification:")
@@ -486,7 +486,7 @@ def example_wavelength_and_angle_sweep():
     
     plt.tight_layout()
     plt.savefig('example_wavelength_angle_sweep.png', dpi=150)
-    plt.show()
+    plt.close()
     
     # Find optimal operating point
     best_idx = results.find_optimal_source('max_transmission')

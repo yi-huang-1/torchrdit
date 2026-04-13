@@ -71,7 +71,8 @@ class MockAlgorithm(SolverAlgorithm):
             'k_0': k_0,
             'kwargs': kwargs
         }
-        return {'S11': torch.tensor(1), 'S12': torch.tensor(2), 'S21': torch.tensor(3), 'S22': torch.tensor(4)}
+        from torchrdit.utils import SMatrix
+        return SMatrix(S11=torch.tensor(1), S12=torch.tensor(2), S21=torch.tensor(3), S22=torch.tensor(4))
     
     def set_rdit_order(self, rdit_order):
         """Set the R-DIT algorithm order.
@@ -191,8 +192,8 @@ class TestStrategyPattern(unittest.TestCase):
         
         # Verify delegation occurred
         self.assertEqual(self.mock_algorithm.solve_calls, 1)
-        self.assertEqual(result['S11'], torch.tensor(1))
-        self.assertEqual(result['S12'], torch.tensor(2))
+        self.assertEqual(result.S11, torch.tensor(1))
+        self.assertEqual(result.S12, torch.tensor(2))
         
     
     def test_algorithm_swapping(self):

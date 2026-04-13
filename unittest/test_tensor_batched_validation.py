@@ -187,16 +187,17 @@ class TestBatchedValidation:
         # Process as single
         single_result = solver.solve(sources[0])
         
-        # Results should match exactly
+        # List input returns batched even for single source — index [0] to compare
+        assert batched_result.is_batched
         torch.testing.assert_close(
-            batched_result.reflection[0],
+            batched_result[0].reflection,
             single_result.reflection,
             rtol=1e-6,
             atol=1e-8
         )
-        
+
         torch.testing.assert_close(
-            batched_result.transmission[0],
+            batched_result[0].transmission,
             single_result.transmission,
             rtol=1e-6,
             atol=1e-8

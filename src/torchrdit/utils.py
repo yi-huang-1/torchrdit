@@ -5,6 +5,8 @@ recommended high-level factory for creating `MaterialClass` instances via
 `create_material()`.
 """
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, Callable, List, Optional, Sequence, Tuple, Union
 from functools import partial, wraps
 
@@ -16,6 +18,48 @@ from .device import resolve_device
 
 # Function Type
 FuncType = Callable[..., Any]
+
+
+@dataclass
+class SMatrix(Mapping[str, torch.Tensor]):
+    """Typed scattering matrix container used throughout the solver internals.
+
+    Replaces the ``dict[str, Tensor]`` convention with attribute access,
+    enabling IDE autocompletion, static type checking, and ``torch.compile``
+    compatibility (attribute access is traceable; dict lookup is not).
+
+    Attributes:
+        S11: Reflection coefficient matrix (port 1 → port 1).
+        S12: Transmission coefficient matrix (port 2 → port 1).
+        S21: Transmission coefficient matrix (port 1 → port 2).
+        S22: Reflection coefficient matrix (port 2 → port 2).
+
+    All tensors share the same shape, typically ``(..., 2M, 2M)`` where
+    ``M = harmonics[0] * harmonics[1]`` and leading dims are
+    ``(n_sources, n_freqs)`` or similar batch dimensions.
+    """
+
+    S11: torch.Tensor
+    S12: torch.Tensor
+    S21: torch.Tensor
+    S22: torch.Tensor
+
+    # Dict-like access for backward compatibility
+    _KEYS = ("S11", "S12", "S21", "S22")
+
+    def __getitem__(self, key: str) -> torch.Tensor:
+        if key not in self._KEYS:
+            raise KeyError(key)
+        return getattr(self, key)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._KEYS
+
+    def __iter__(self):
+        return iter(self._KEYS)
+
+    def __len__(self) -> int:
+        return len(self._KEYS)
 
 
 def tensor_params_check(
@@ -372,8 +416,7 @@ def init_smatrix(shape: Tuple, dtype: torch.dtype, device: Union[str, torch.devi
                Default is 'cpu'.
 
     Returns:
-        dict: S-matrix dictionary with keys 'S11', 'S12', 'S21', 'S22' mapping to the
-             corresponding blocks of the scattering matrix.
+        SMatrix: Scattering matrix with S11=S22=0, S12=S21=I.
 
     Note:
         The default initialization represents a non-reflecting layer, where incoming
@@ -381,22 +424,35 @@ def init_smatrix(shape: Tuple, dtype: torch.dtype, device: Union[str, torch.devi
         (S12=S21=I, where I is the identity matrix).
     """
     device = resolve_device(device).resolved_device
-    smatrix = {}
-    if len(shape) == 3:
-        smatrix["S11"] = torch.zeros(size=shape, dtype=dtype, device=device)
-        smatrix["S12"] = torch.eye(shape[-2], shape[-1], dtype=dtype, device=device).unsqueeze(0).repeat(shape[0], 1, 1)
-        smatrix["S21"] = torch.eye(shape[-2], shape[-1], dtype=dtype, device=device).unsqueeze(0).repeat(shape[0], 1, 1)
-        smatrix["S22"] = torch.zeros(size=shape, dtype=dtype, device=device)
+    eye = torch.eye(shape[-2], shape[-1], dtype=dtype, device=device)
+
+    # Expand identity to match leading (batch) dimensions
+    leading = shape[:-2]  # () for 2D, (F,) for 3D, (B, F) for 4D
+    if leading:
+        eye_expanded = eye.reshape((1,) * len(leading) + eye.shape).expand(*leading, -1, -1)
     else:
-        smatrix["S11"] = torch.zeros(size=shape, dtype=dtype, device=device)
-        smatrix["S12"] = torch.eye(shape[-2], shape[-1], dtype=dtype, device=device)
-        smatrix["S21"] = torch.eye(shape[-2], shape[-1], dtype=dtype, device=device)
-        smatrix["S22"] = torch.zeros(size=shape, dtype=dtype, device=device)
+        eye_expanded = eye
 
-    return smatrix
+    return SMatrix(
+        S11=torch.zeros(size=shape, dtype=dtype, device=device),
+        S12=eye_expanded.clone(),
+        S21=eye_expanded.clone(),
+        S22=torch.zeros(size=shape, dtype=dtype, device=device),
+    )
 
 
-def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64) -> dict:
+def _redhstar_reg_eps(dtype: torch.dtype) -> float:
+    """Fixed diagonal regularization epsilon for the Redheffer star product.
+
+    Tighter than ``eps_for_dtype`` because it perturbs a near-identity matrix
+    ``(I - B11 @ A22)`` where a larger perturbation would bias the result.
+    """
+    if dtype in (torch.complex128, torch.float64):
+        return 1e-12
+    return 1e-8  # complex64 / float32
+
+
+def redhstar(smat_a: SMatrix, smat_b: SMatrix, tcomplex: torch.dtype = torch.complex64) -> SMatrix:
     """Compute the Redheffer star product of two scattering matrices (optimized version).
 
     The Redheffer star product (⋆) combines the scattering matrices of two adjacent
@@ -417,16 +473,13 @@ def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64
     - Full gradient preservation for optimization workflows
 
     Args:
-        smat_a: First scattering matrix (dictionary with keys 'S11', 'S12', 'S21', 'S22')
-               This represents the layer or structure closer to the reference medium.
-        smat_b: Second scattering matrix (dictionary with keys 'S11', 'S12', 'S21', 'S22')
-               This represents the layer or structure closer to the transmission medium.
+        smat_a: First scattering matrix (layer closer to the reference medium).
+        smat_b: Second scattering matrix (layer closer to the transmission medium).
         tcomplex: PyTorch complex data type to use for intermediate calculations.
                 Default is torch.complex64.
 
     Returns:
-        dict: Combined scattering matrix as a dictionary with keys 'S11', 'S12', 'S21', 'S22'
-             representing the four blocks of the scattering matrix of the combined system.
+        SMatrix: Combined scattering matrix of the cascaded system.
 
     Note:
         The function assumes that the S-matrices are properly formatted and have compatible
@@ -439,68 +492,45 @@ def redhstar(smat_a: dict, smat_b: dict, tcomplex: torch.dtype = torch.complex64
     # - 3D: (n_freqs, harmonics_0_tims_1, harmonics_0_tims_1) for single source, multiple frequencies
     # - 4D: (n_sources, n_freqs, harmonics_0_tims_1, harmonics_0_tims_1) for batched sources
 
-    # Construct identity matrix
-    ndim = smat_a["S11"].ndim
-    if ndim == 4:
-        # Batched sources
-        _, _, harmonic_m, harmonic_n = smat_a["S11"].shape
-    elif ndim == 3:
-        # Single source, multiple frequencies
-        _, harmonic_m, harmonic_n = smat_a["S11"].shape
-    else:
-        # Single source, single frequency
-        harmonic_m, harmonic_n = smat_a["S11"].shape
+    # Construct identity matrix — works for any leading batch dimensions.
+    # Derive dtype from the tensor itself so callers don't need to pass tcomplex.
+    actual_dtype = smat_a.S11.dtype
+    harmonic_m, harmonic_n = smat_a.S11.shape[-2:]
+    device = smat_a.S11.device
+    identity_mat = torch.eye(harmonic_m, harmonic_n, dtype=actual_dtype, device=device)
 
-    device = smat_a["S11"].device
-    identity_mat = torch.eye(harmonic_m, harmonic_n, dtype=tcomplex, device=device)
-
-    # Pre-allocate output dictionary for memory optimization
-    smatrix = {}
-    
     # Compute (I - B11 @ A22) with adaptive regularization for numerical stability
-    temp_mat = identity_mat - torch.matmul(smat_b["S11"], smat_a["S22"])
+    temp_mat = identity_mat - torch.matmul(smat_b.S11, smat_a.S22)
 
-    # Base regularization matches historical implementation to preserve accuracy
-    if tcomplex == torch.complex128:
-        eps_val = 1e-12
-        base_eps = torch.finfo(torch.float64).eps
-    else:
-        eps_val = 1e-8
-        base_eps = torch.finfo(torch.float32).eps
+    # Two-stage diagonal regularization (compile-safe, no data-dependent branching):
+    # Stage 1: fixed eps for well-conditioned matrices (preserves golden-value accuracy)
+    # Stage 2: norm-scaled machine-eps for ill-conditioned batches (proportional stabilization)
+    eps_val = _redhstar_reg_eps(actual_dtype)
     temp_mat = temp_mat + eps_val * identity_mat
+    # Norm-adaptive: use a tiny fraction of the matrix norm to stabilize
+    # near-singular batches proportionally. The scale (1e-14) is small enough
+    # to be negligible for well-conditioned matrices but prevents singular failures.
+    temp_norm = torch.linalg.norm(temp_mat, dim=(-2, -1), keepdim=True)
+    temp_mat = temp_mat + (1e-14 * temp_norm) * identity_mat
 
-    # Factorization with fallback for remaining singular batches (preserve autograd)
-    LU, pivots, info = torch.linalg.lu_factor_ex(temp_mat, check_errors=False)
-    if torch.any(info > 0):
-        temp_norm = torch.linalg.norm(temp_mat, dim=(-2, -1))
-        extra_scale = torch.clamp(temp_norm, min=1.0) * (1e3 * base_eps)
-        while extra_scale.dim() < temp_mat.dim():
-            extra_scale = extra_scale.unsqueeze(-1)
-        temp_mat = temp_mat + extra_scale * identity_mat
-        LU, pivots, info = torch.linalg.lu_factor_ex(temp_mat, check_errors=False)
-        if torch.any(info > 0):
-            cycle_1_smat_b_11 = torch.linalg.solve(temp_mat, smat_b["S11"])
-            cycle_1_smat_b_12 = torch.linalg.solve(temp_mat, smat_b["S12"])
-        else:
-            cycle_1_smat_b_11 = torch.linalg.lu_solve(LU, pivots, smat_b["S11"])
-            cycle_1_smat_b_12 = torch.linalg.lu_solve(LU, pivots, smat_b["S12"])
-    else:
-        cycle_1_smat_b_11 = torch.linalg.lu_solve(LU, pivots, smat_b["S11"])
-        cycle_1_smat_b_12 = torch.linalg.lu_solve(LU, pivots, smat_b["S12"])
-    
+    # Solve (I - B11 @ A22) X = B for both S11 and S12.
+    # torch.linalg.solve is torch.compile-friendly (no data-dependent branching).
+    cycle_1_b11 = torch.linalg.solve(temp_mat, smat_b.S11)
+    cycle_1_b12 = torch.linalg.solve(temp_mat, smat_b.S12)
+
     # Continue without in-place operations for autodiff compatibility
-    cycle_2 = identity_mat + smat_a["S22"] @ cycle_1_smat_b_11
-    
+    cycle_2 = identity_mat + smat_a.S22 @ cycle_1_b11
+
     # Continue with optimized matrix multiplications
-    smat_b_21_cycle_2 = smat_b["S21"] @ cycle_2
-    
+    b21_cycle_2 = smat_b.S21 @ cycle_2
+
     # Compute combined scattering matrix
-    smatrix["S11"] = smat_a["S11"] + smat_a["S12"] @ cycle_1_smat_b_11 @ smat_a["S21"]
-    smatrix["S12"] = smat_a["S12"] @ cycle_1_smat_b_12
-    smatrix["S21"] = smat_b_21_cycle_2 @ smat_a["S21"]
-    smatrix["S22"] = smat_b["S22"] + smat_b_21_cycle_2 @ smat_a["S22"] @ smat_b["S12"]
-    
-    return smatrix
+    return SMatrix(
+        S11=smat_a.S11 + smat_a.S12 @ cycle_1_b11 @ smat_a.S21,
+        S12=smat_a.S12 @ cycle_1_b12,
+        S21=b21_cycle_2 @ smat_a.S21,
+        S22=smat_b.S22 + b21_cycle_2 @ smat_a.S22 @ smat_b.S12,
+    )
 
 
 def _create_blur_kernel(radius: int, device: Union[str, torch.device] = torch.device("cpu"), tfloat: torch.dtype = torch.float32):

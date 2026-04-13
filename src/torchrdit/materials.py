@@ -125,10 +125,8 @@ def handle_plasmonic_materials(
     else:  # Array tensor - use vectorized approach
         mask = torch.abs(epsilon.real + 1.0) < threshold
         needs_damping = mask & (epsilon.imag > -min_loss)
-
-        if needs_damping.any():
-            # Apply stabilization only where needed
-            epsilon = torch.where(needs_damping, epsilon.real - 1j * min_loss, epsilon)
+        # torch.where is a no-op when mask is all-False; avoid .any() graph break
+        epsilon = torch.where(needs_damping, epsilon.real - 1j * min_loss, epsilon)
 
     return epsilon
 
@@ -154,10 +152,8 @@ def stabilize_epsilon_batch(
     # Create masks for materials that need stabilization
     mask = torch.abs(epsilon_tensor.real + 1.0) < threshold
     needs_damping = mask & (epsilon_tensor.imag > -min_loss)
-
-    if needs_damping.any():
-        # Apply stabilization only where needed
-        epsilon_tensor = torch.where(needs_damping, epsilon_tensor.real - 1j * min_loss, epsilon_tensor)
+    # torch.where is a no-op when mask is all-False; avoid .any() graph break
+    epsilon_tensor = torch.where(needs_damping, epsilon_tensor.real - 1j * min_loss, epsilon_tensor)
 
     return epsilon_tensor
 

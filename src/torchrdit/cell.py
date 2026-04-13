@@ -774,6 +774,9 @@ class Cell3D:
         Keywords:
             permittivity, reflection layer, material property, dielectric constant
         """
+        # clone() is required: these are public accessors and .to() is a no-op when
+        # dtype/device already match, so without clone() the caller would receive a
+        # mutable alias into _matlib — in-place writes would corrupt material state.
         return self._matlib[self.layer_manager.ref_material_name].er.to(self.tcomplex).detach().clone().to(self.device)
 
     @property

@@ -53,8 +53,11 @@ class TestBatchedMatrices:
         for src in sources:
             solver._pre_solve(src)
             kx_0, ky_0, kz_ref_0, kz_trn_0 = solver._initialize_k_vectors()
+            # Both k-vectors and matrices are always 4D (n_sources, n_freqs, ...)
+            # For single source: (1, n_freqs, ...) — squeeze source dim from output
             matrices = solver._setup_common_matrices(kx_0, ky_0, kz_ref_0, kz_trn_0)
-            mats.append(matrices)
+            squeezed = {k: v.squeeze(0) for k, v in matrices.items()}
+            mats.append(squeezed)
         return mats
 
     def test_setup_common_matrices_single_matches_batched(self):
@@ -62,7 +65,7 @@ class TestBatchedMatrices:
         solver = self.setup_solver(n_freqs=3, harmonics=(5, 5))
         source = {"theta": 0.1, "phi": 0.2, "pte": 1.0, "ptm": 0.0}
 
-        # Sequential
+        # Sequential — both k-vectors and matrices are always 4D (1, n_freqs, ...)
         solver._pre_solve(source)
         kx_s, ky_s, kz_ref_s, kz_trn_s = solver._initialize_k_vectors()
         mats_single = solver._setup_common_matrices(kx_s, ky_s, kz_ref_s, kz_trn_s)
@@ -79,7 +82,7 @@ class TestBatchedMatrices:
             "mat_w0", "mat_v0",
         ]
         for k in keys:
-            torch.testing.assert_close(mats_batched[k][0], mats_single[k], rtol=1e-5, atol=1e-6)
+            torch.testing.assert_close(mats_batched[k][0], mats_single[k][0], rtol=1e-5, atol=1e-6)
 
     def test_setup_common_matrices_multi_sources_consistency(self):
         """Batched matrices match sequential per-source results for multiple sources."""

@@ -117,40 +117,61 @@ class TestSolveUnification:
         with pytest.raises(ValueError, match="Invalid source format"):
             solver.solve(mixed_sources)
 
+        with pytest.raises(ValueError, match="Invalid source format"):
+            solver.solve({"theta": 0.0})
+
+        with pytest.raises(ValueError, match="Invalid source format"):
+            solver.solve([{"theta": 0.0}])
+
+    def test_rejects_non_scalar_polarization_amplitudes(self):
+        """Per-frequency pte/ptm tensors are rejected at the public API boundary."""
+        solver = self.create_test_solver()
+        invalid_source = {
+            "theta": 0.0,
+            "phi": 0.0,
+            "pte": torch.tensor([1.0, 0.0]),
+            "ptm": torch.tensor([0.0, 1.0]),
+        }
+
+        with pytest.raises(ValueError, match="must be scalar per source"):
+            solver.solve(invalid_source)
+
+        with pytest.raises(ValueError, match="must be scalar per source"):
+            solver.solve([invalid_source])
+
     def test_input_type_validation(self):
         """Non-dict/non-list inputs raise preserved errors/messages."""
         solver = self.create_test_solver()
-        
+
         # Test invalid input types - capturing current behavior exactly
-        
-        # String is iterable, so goes to validation and fails there
-        with pytest.raises(ValueError, match="Invalid source format"):
+
+        # String is neither dict nor list, so raises TypeError
+        with pytest.raises(TypeError, match="source must be a dict or list of dicts"):
             solver.solve("string")
-        
-        # Integer should go to _solve_batched and fail iteration
-        with pytest.raises(TypeError, match="'int' object is not iterable"):
+
+        # Integer is neither dict nor list, so raises TypeError
+        with pytest.raises(TypeError, match="source must be a dict or list of dicts"):
             solver.solve(42)
-        
-        # None is falsy, so hits the "At least one source required" check first
-        with pytest.raises(ValueError, match="At least one source required"):
+
+        # None is neither dict nor list, so raises TypeError
+        with pytest.raises(TypeError, match="source must be a dict or list of dicts"):
             solver.solve(None)
-        
-        # Tensor causes specific RuntimeError in current implementation
-        with pytest.raises(RuntimeError, match="Boolean value of Tensor"):
+
+        # Tensor is neither dict nor list, so raises TypeError
+        with pytest.raises(TypeError, match="source must be a dict or list of dicts"):
             solver.solve(torch.tensor([1, 2, 3]))
 
     def test_single_element_list_returns_batched(self):
-        """Single source in list returns batched SolverResults with length 1."""
+        """Single source in list returns batched SolverResults with n_sources=1."""
         solver = self.create_test_solver()
-        
+
         # Create single source in a list
         sources = [solver.add_source(theta=0.0, phi=0.0, pte=1.0, ptm=0.0)]
-        
+
         result = solver.solve(sources, compute_fields=True)
-        
+
         assert isinstance(result, SolverResults)
-        assert result.is_batched, f"Expected unified SolverResults with batching support, got {type(result)}"
-        assert len(result) == 1, f"Expected 1 result, got {len(result)}"
+        assert result.is_batched, f"Expected batched SolverResults for list input, got is_batched={result.is_batched}"
         assert result.reflection.shape == (1, 2), f"Expected shape (1, 2), got {result.reflection.shape}"
 
     def test_algorithm_independence(self):
@@ -181,7 +202,7 @@ class TestSolveUnification:
         
         # Single source should set self.src
         source = solver.add_source(theta=0.1, phi=0.0, pte=1.0, ptm=0.0)
-        result = solver.solve(source)
+        solver.solve(source)
         
         # Verify self.src is set correctly
         assert hasattr(solver, 'src')
