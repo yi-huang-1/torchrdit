@@ -270,6 +270,27 @@ class TestSolverResults(unittest.TestCase):
         self.assertTrue(torch.equal(dict_from_results['TRN'], self.transmission))
         self.assertTrue(torch.equal(dict_from_results['kx'], self.wave_vectors.kx))
 
+    def test_to_dict_serializes_smatrix_without_mutating_raw_data(self):
+        raw_data = dict(self.raw_data)
+        raw_data["smat_structure"] = self.structure_matrix
+        results = SolverResults(
+            reflection=self.reflection,
+            transmission=self.transmission,
+            reflection_diffraction=self.reflection_diffraction,
+            transmission_diffraction=self.transmission_diffraction,
+            reflection_field=self.reflection_field,
+            transmission_field=self.transmission_field,
+            structure_matrix=self.structure_matrix,
+            wave_vectors=self.wave_vectors,
+            raw_data=raw_data,
+        )
+
+        dict_from_results = results.to_dict()
+
+        self.assertIsInstance(dict_from_results["smat_structure"], dict)
+        self.assertTrue(torch.equal(dict_from_results["smat_structure"]["S11"], self.structure_matrix.S11))
+        self.assertIs(results.raw_data["smat_structure"], self.structure_matrix)
+
     def test_to_structured_dict(self):
         """Test the to_structured_dict method."""
         structured = self.results.to_structured_dict()
@@ -768,10 +789,10 @@ class TestUnifiedSolverResults(unittest.TestCase):
         # Test all existing methods still work
         tx, ty, tz = results.get_zero_order_transmission()
         rx, ry, rz = results.get_zero_order_reflection()
-        t_eff = results.get_order_transmission_efficiency(0, 0)
-        r_eff = results.get_order_reflection_efficiency(0, 0)
+        _ = results.get_order_transmission_efficiency(0, 0)
+        _ = results.get_order_reflection_efficiency(0, 0)
         all_orders = results.get_all_diffraction_orders()
-        prop_orders = results.get_propagating_orders()
+        _ = results.get_propagating_orders()
 
         # Test shapes and values are as expected
         self.assertEqual(tx.shape, (self.n_freqs,))
@@ -880,6 +901,20 @@ class TestUnifiedSolverResults(unittest.TestCase):
         self.assertTrue(torch.equal(subset.structure_matrix.S11, self.batched_structure_matrix.S11[1]))
         self.assertTrue(torch.equal(subset[0].structure_matrix.S11, results[1].structure_matrix.S11))
         self.assertTrue(torch.equal(subset[0].to_dict()["REF"], results[1].to_dict()["REF"]))
+
+    def test_batched_to_dict_serializes_per_source_smat_without_mutation(self):
+        results = self._make_batched_results_with_structure_matrices()
+
+        dict_from_results = results.to_dict()
+
+        self.assertIsInstance(dict_from_results["_per_source"][0]["smat_structure"], dict)
+        self.assertTrue(
+            torch.equal(
+                dict_from_results["_per_source"][1]["smat_structure"]["S11"],
+                self.batched_structure_matrix.S11[1],
+            )
+        )
+        self.assertIsInstance(results.raw_data["_per_source"][0]["smat_structure"], ScatteringMatrix)
 
 
 class TestBatchedDiffractionMethods(unittest.TestCase):

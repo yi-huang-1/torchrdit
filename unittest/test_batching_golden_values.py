@@ -227,3 +227,14 @@ class TestRawDataRoundTrip:
         assert torch.equal(smat["S11"], smat.S11)
         assert "S11" in smat
         assert set(smat.keys()) == {"S11", "S12", "S21", "S22"}
+        assert list(iter(smat)) == ["S11", "S12", "S21", "S22"]
+        assert len(smat) == 4
+        assert smat.get("S11") is smat.S11
+
+        captured = {}
+
+        def collect(**kwargs):
+            captured.update(kwargs)
+
+        collect(**smat)
+        assert torch.equal(captured["S11"], smat.S11)

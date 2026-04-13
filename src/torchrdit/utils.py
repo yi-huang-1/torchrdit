@@ -5,6 +5,7 @@ recommended high-level factory for creating `MaterialClass` instances via
 `create_material()`.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Callable, List, Optional, Sequence, Tuple, Union
 from functools import partial, wraps
@@ -20,7 +21,7 @@ FuncType = Callable[..., Any]
 
 
 @dataclass
-class SMatrix:
+class SMatrix(Mapping[str, torch.Tensor]):
     """Typed scattering matrix container used throughout the solver internals.
 
     Replaces the ``dict[str, Tensor]`` convention with attribute access,
@@ -54,11 +55,11 @@ class SMatrix:
     def __contains__(self, key: str) -> bool:
         return key in self._KEYS
 
-    def keys(self):
+    def __iter__(self):
         return iter(self._KEYS)
 
-    def items(self):
-        return ((k, getattr(self, k)) for k in self._KEYS)
+    def __len__(self) -> int:
+        return len(self._KEYS)
 
 
 def tensor_params_check(

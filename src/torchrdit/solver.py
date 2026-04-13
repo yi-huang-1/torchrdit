@@ -1125,6 +1125,50 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin, LayerProcessingMixin, FieldC
 
         return source_dict
 
+    @staticmethod
+    def _source_validation_error() -> str:
+        return "Invalid source format: each source must be a dict with 'theta', 'phi', 'pte', 'ptm'"
+
+    @staticmethod
+    def _is_scalar_source_value(value: Any) -> bool:
+        if isinstance(value, torch.Tensor):
+            return value.dim() == 0
+        if isinstance(value, np.ndarray):
+            return value.ndim == 0
+        try:
+            return np.ndim(value) == 0
+        except Exception:
+            return False
+
+    @staticmethod
+    def _source_value_shape(value: Any) -> Union[Tuple[int, ...], str]:
+        if isinstance(value, (torch.Tensor, np.ndarray)):
+            return tuple(value.shape)
+        try:
+            shape = np.shape(value)
+        except Exception:
+            return type(value).__name__
+        return tuple(shape) if isinstance(shape, tuple) else shape
+
+    @classmethod
+    def _validate_source_dict(cls, src: Dict[str, Any]) -> None:
+        if not isinstance(src, dict):
+            raise ValueError(cls._source_validation_error())
+
+        required_keys = ("theta", "phi", "pte", "ptm")
+        missing = [key for key in required_keys if key not in src]
+        if missing:
+            raise ValueError(cls._source_validation_error())
+
+        for pol_key in ("pte", "ptm"):
+            if not cls._is_scalar_source_value(src[pol_key]):
+                raise ValueError(
+                    f"Invalid source format: 'pte' and 'ptm' must be scalar per source; "
+                    f"got pte={cls._source_value_shape(src['pte'])}, "
+                    f"ptm={cls._source_value_shape(src['ptm'])}. "
+                    "Per-frequency polarization is not supported."
+                )
+
     def _initialize_k_vectors(self):
         """Initialize k-vectors from self.kinc.
 
@@ -1744,15 +1788,13 @@ class FourierBaseSolver(Cell3D, SolverSubjectMixin, LayerProcessingMixin, FieldC
         # Normalize input: single dict → [dict], then always process as list.
         is_single = isinstance(source, dict)
         if is_single:
+            self._validate_source_dict(source)
             sources = [source]
         elif isinstance(source, list):
             if not source:
                 raise ValueError("At least one source required")
             for src in source:
-                if not isinstance(src, dict) or "theta" not in src:
-                    raise ValueError(
-                        "Invalid source format: each source must be a dict with 'theta', 'phi', 'pte', 'ptm'"
-                    )
+                self._validate_source_dict(src)
             sources = source
         else:
             raise TypeError(f"source must be a dict or list of dicts, got {type(source).__name__}")

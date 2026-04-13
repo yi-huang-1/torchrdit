@@ -604,7 +604,33 @@ class SolverResults:
         Keywords:
             conversion, dictionary, legacy format, backward compatibility
         """
-        return self.raw_data
+        return self._serialize_raw_data(self.raw_data)
+
+    @staticmethod
+    def _serialize_smatrix(value):
+        """Convert SMatrix/ScatteringMatrix-like objects to plain dicts."""
+        if isinstance(value, dict):
+            return {key: value[key] for key in ("S11", "S12", "S21", "S22")}
+        if all(hasattr(value, key) for key in ("S11", "S12", "S21", "S22")):
+            return {key: getattr(value, key) for key in ("S11", "S12", "S21", "S22")}
+        return value
+
+    @classmethod
+    def _serialize_raw_data(cls, value):
+        """Recursively serialize raw_data without mutating the stored payload."""
+        if isinstance(value, dict):
+            serialized = {}
+            for key, item in value.items():
+                if key == "smat_structure":
+                    serialized[key] = cls._serialize_smatrix(item)
+                else:
+                    serialized[key] = cls._serialize_raw_data(item)
+            return serialized
+        if isinstance(value, list):
+            return [cls._serialize_raw_data(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(cls._serialize_raw_data(item) for item in value)
+        return value
 
     def to_structured_dict(self) -> Dict:
         """Convert results to a structured, self-describing dictionary format.
